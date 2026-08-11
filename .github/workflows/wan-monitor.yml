@@ -2,7 +2,7 @@ name: WAN-Volumen LSB--UDM-1
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
           python3 udm_wan_monitor.py --once \
             --start "${{ vars.MESS_START || '2026-08-11T08:00' }}" \
             --days "${{ vars.MESS_TAGE || '3' }}" \
-            --interval "${{ vars.POLL_INTERVAL || '300' }}" \
+            --interval "${{ vars.POLL_INTERVAL || '600' }}" \
             --site "${{ vars.SITE_FILTER || 'LSB--UDM-1' }}"
 
       - name: Ergebnis sichern
