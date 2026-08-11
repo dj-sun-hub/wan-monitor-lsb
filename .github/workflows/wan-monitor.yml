@@ -16,13 +16,21 @@ permissions:
 
 concurrency:
   group: wan-monitor
-  cancel-in-progress: false
+  # Lieber den aktuellsten Trigger gewinnen lassen und einen veralteten,
+  # noch laufenden Poll abbrechen, als dass sich Trigger in der Warteschlange
+  # stauen (das fuehrte zu kaskadierenden "cancelled"-Laeufen und Datenluecken).
+  cancel-in-progress: true
 
 jobs:
   poll:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Volle Git-Historie (waechst mit jedem Lauf) macht den Checkout mit
+          # der Zeit langsamer, bis der 2-Minuten-Takt gesprengt wird. Flacher
+          # Klon reicht, wir brauchen keine Historie, nur den aktuellen Stand.
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
         with:
