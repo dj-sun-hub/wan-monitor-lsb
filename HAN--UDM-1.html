@@ -50,6 +50,12 @@
   .dim { color: var(--dim); }
   .value-warn { color: var(--warn); }
   .value-alert { color: var(--alert); }
+  .flow-chart { cursor: crosshair; }
+  .flow-tooltip { position: fixed; display: none; z-index: 50; pointer-events: none;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 11px; font-size: 12px; line-height: 1.5; color: var(--text);
+    box-shadow: 0 4px 14px rgba(0,0,0,.45); white-space: nowrap; }
+  .flow-tooltip b { color: #fff; }
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
@@ -69,8 +75,8 @@
     <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
       Messung läuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 66 h 39 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 13:20 &nbsp;&middot;&nbsp;
+      Restlaufzeit 66 h 38 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 13:21 &nbsp;&middot;&nbsp;
       nächster Refresh in <span id="refresh-cd">2:00</span></div>
     <div class="bar"><span style="width:7.4%"></span></div>
   </header>
@@ -78,12 +84,12 @@
   <div class="grid-cards">
     <div class="card"><div class="label">Bisher gemessen</div>
       <div class="value">5.7 MB</div>
-      <div class="foot">über 5.3 Stunden, 4 Stunden mit Daten</div></div>
+      <div class="foot">über 5.4 Stunden, 4 Stunden mit Daten</div></div>
     <div class="card"><div class="label">Pro Tag</div>
-      <div class="value">25.5 MB</div>
+      <div class="value">25.4 MB</div>
       <div class="foot">laufender Mittelwert</div></div>
     <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">763.5 MB</div>
+      <div class="value">761.6 MB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
     <div class="card"><div class="label">Verhältnis</div>
       <div class="value">3.0 MB</div>
@@ -102,7 +108,7 @@
 
   <h2>Traffic-Flow (Rate je Messpunkt)</h2>
   <div class="panel">
-    <svg viewBox="0 0 960 200" preserveAspectRatio="none" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">13 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">26 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">39 kbps</text><polygon points="493.2,172.0 493.2,167.7 548.5,168.7 613.3,161.3 618.7,159.1 624.0,166.6 629.5,12.0 635.1,168.7 641.7,168.7 646.5,160.1 651.9,168.7 657.4,168.8 663.0,167.6 669.0,168.9 680.1,168.7 685.6,168.7 691.0,168.7 697.2,168.7 702.0,161.6 707.7,159.5 713.3,159.9 719.6,168.7 725.5,168.7 729.9,168.7 735.5,167.4 741.1,168.7 746.7,167.6 756.2,168.9 757.9,168.7 763.4,161.9 769.2,168.7 774.6,168.7 780.5,168.7 786.0,161.3 791.2,161.3 797.1,168.7 802.8,167.4 808.8,165.9 813.5,168.7 819.3,167.4 824.8,168.7 830.3,168.7 836.2,168.7 847.3,160.7 852.7,161.3 858.2,167.4 864.2,168.7 869.3,137.3 878.9,168.7 881.6,167.7 886.0,160.1 892.9,161.3 898.1,168.7 902.8,160.1 908.7,168.7 913.9,168.8 919.9,168.7 925.1,168.7 930.7,168.7 936.2,168.7 941.9,168.7 947.9,71.3 947.9,172.0" class="flow-down-fill"/><polyline points="493.2,167.7 548.5,168.7 613.3,161.3 618.7,159.1 624.0,166.6 629.5,12.0 635.1,168.7 641.7,168.7 646.5,160.1 651.9,168.7 657.4,168.8 663.0,167.6 669.0,168.9 680.1,168.7 685.6,168.7 691.0,168.7 697.2,168.7 702.0,161.6 707.7,159.5 713.3,159.9 719.6,168.7 725.5,168.7 729.9,168.7 735.5,167.4 741.1,168.7 746.7,167.6 756.2,168.9 757.9,168.7 763.4,161.9 769.2,168.7 774.6,168.7 780.5,168.7 786.0,161.3 791.2,161.3 797.1,168.7 802.8,167.4 808.8,165.9 813.5,168.7 819.3,167.4 824.8,168.7 830.3,168.7 836.2,168.7 847.3,160.7 852.7,161.3 858.2,167.4 864.2,168.7 869.3,137.3 878.9,168.7 881.6,167.7 886.0,160.1 892.9,161.3 898.1,168.7 902.8,160.1 908.7,168.7 913.9,168.8 919.9,168.7 925.1,168.7 930.7,168.7 936.2,168.7 941.9,168.7 947.9,71.3" class="flow-down-line"/><polyline points="493.2,167.7 548.5,168.7 613.3,161.3 618.7,159.1 624.0,166.6 629.5,34.6 635.1,168.7 641.7,168.7 646.5,160.1 651.9,168.7 657.4,168.8 663.0,167.6 669.0,168.9 680.1,168.7 685.6,168.7 691.0,168.7 697.2,168.7 702.0,161.6 707.7,158.3 713.3,159.9 719.6,168.7 725.5,168.7 729.9,168.7 735.5,167.4 741.1,168.7 746.7,167.6 756.2,168.9 757.9,168.7 763.4,161.9 769.2,168.7 774.6,164.4 780.5,168.7 786.0,161.3 791.2,161.3 797.1,168.7 802.8,167.4 808.8,165.9 813.5,168.7 819.3,167.4 824.8,168.7 830.3,168.7 836.2,168.7 847.3,165.2 852.7,161.3 858.2,167.4 864.2,168.7 869.3,161.8 878.9,168.7 881.6,166.4 886.0,160.1 892.9,161.3 898.1,168.7 902.8,160.1 908.7,168.7 913.9,168.8 919.9,168.7 925.1,168.7 930.7,168.7 936.2,167.3 941.9,168.7 947.9,83.7" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+    <svg viewBox="0 0 960 200" preserveAspectRatio="none" class="chart flow-chart" role="img" aria-label="Traffic-Flow" data-samples="[[&quot;2026-08-11T08:37:31.789636+00:00&quot;, 1.4, 1.4], [&quot;2026-08-11T08:57:21.106022+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T09:20:35.794650+00:00&quot;, 3.4, 3.4], [&quot;2026-08-11T09:22:31.109415+00:00&quot;, 4.1, 4.1], [&quot;2026-08-11T09:24:24.896326+00:00&quot;, 1.7, 1.7], [&quot;2026-08-11T09:26:24.292172+00:00&quot;, 51.4, 44.2], [&quot;2026-08-11T09:28:25.330968+00:00&quot;, 1.0, 1.0], [&quot;2026-08-11T09:30:46.159300+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T09:32:29.561299+00:00&quot;, 3.8, 3.8], [&quot;2026-08-11T09:34:26.849798+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T09:36:23.402244+00:00&quot;, 1.0, 1.0], [&quot;2026-08-11T09:38:23.888165+00:00&quot;, 1.4, 1.4], [&quot;2026-08-11T09:40:34.301680+00:00&quot;, 1.0, 1.0], [&quot;2026-08-11T09:44:31.676223+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T09:46:32.027168+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T09:48:26.396369+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T09:50:41.527083+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T09:52:24.664039+00:00&quot;, 3.3, 3.3], [&quot;2026-08-11T09:54:26.202268+00:00&quot;, 4.0, 4.4], [&quot;2026-08-11T09:56:27.667810+00:00&quot;, 3.9, 3.9], [&quot;2026-08-11T09:58:41.820824+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:00:50.497951+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:02:23.834746+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:04:24.388067+00:00&quot;, 1.5, 1.5], [&quot;2026-08-11T10:06:25.862905+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:08:25.037106+00:00&quot;, 1.4, 1.4], [&quot;2026-08-11T10:11:49.584820+00:00&quot;, 1.0, 1.0], [&quot;2026-08-11T10:12:27.781394+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:14:26.283891+00:00&quot;, 3.2, 3.2], [&quot;2026-08-11T10:16:30.093657+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:18:26.794681+00:00&quot;, 1.1, 2.4], [&quot;2026-08-11T10:20:33.829578+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:22:31.426530+00:00&quot;, 3.4, 3.4], [&quot;2026-08-11T10:24:24.211617+00:00&quot;, 3.4, 3.4], [&quot;2026-08-11T10:26:31.332356+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:28:32.166680+00:00&quot;, 1.5, 1.5], [&quot;2026-08-11T10:30:42.765334+00:00&quot;, 2.0, 2.0], [&quot;2026-08-11T10:32:23.920661+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:34:27.112181+00:00&quot;, 1.5, 1.5], [&quot;2026-08-11T10:36:25.729253+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:38:24.218336+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:40:32.405482+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:44:30.542126+00:00&quot;, 3.6, 2.2], [&quot;2026-08-11T10:46:26.322264+00:00&quot;, 3.4, 3.4], [&quot;2026-08-11T10:48:24.682431+00:00&quot;, 1.5, 1.5], [&quot;2026-08-11T10:50:35.278132+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:52:24.200747+00:00&quot;, 11.2, 3.3], [&quot;2026-08-11T10:55:49.764968+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T10:56:48.613482+00:00&quot;, 1.4, 1.8], [&quot;2026-08-11T10:58:22.942360+00:00&quot;, 3.8, 3.8], [&quot;2026-08-11T11:00:51.515044+00:00&quot;, 3.4, 3.4], [&quot;2026-08-11T11:02:43.082386+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T11:04:25.510738+00:00&quot;, 3.8, 3.8], [&quot;2026-08-11T11:06:31.802480+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T11:08:24.399750+00:00&quot;, 1.0, 1.0], [&quot;2026-08-11T11:10:33.951263+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T11:12:25.147394+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T11:14:25.665082+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T11:16:23.516413+00:00&quot;, 1.1, 1.5], [&quot;2026-08-11T11:18:25.963773+00:00&quot;, 1.1, 1.1], [&quot;2026-08-11T11:20:35.111541+00:00&quot;, 32.4, 28.4]]" data-left="54" data-plot-w="894.00"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">13 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">26 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">39 kbps</text><polygon points="492.1,172.0 492.1,167.7 547.3,168.7 611.9,161.3 617.3,159.1 622.5,166.6 628.1,12.0 633.7,168.7 640.2,168.7 645.0,160.1 650.4,168.7 655.8,168.8 661.4,167.6 667.5,168.9 678.5,168.7 684.0,168.7 689.3,168.7 695.6,168.7 700.4,161.6 706.0,159.5 711.7,159.9 717.9,168.7 723.8,168.7 728.2,168.7 733.8,167.4 739.4,168.7 744.9,167.6 754.4,168.9 756.2,168.7 761.7,161.9 767.4,168.7 772.8,168.7 778.7,168.7 784.1,161.3 789.4,161.3 795.3,168.7 800.9,167.4 806.9,165.9 811.6,168.7 817.3,167.4 822.8,168.7 828.3,168.7 834.3,168.7 845.3,160.7 850.7,161.3 856.1,167.4 862.2,168.7 867.2,137.3 876.8,168.7 879.5,167.7 883.9,160.1 890.8,161.3 895.9,168.7 900.7,160.1 906.5,168.7 911.8,168.8 917.8,168.7 922.9,168.7 928.5,168.7 934.0,168.7 939.6,168.7 945.6,71.3 945.6,172.0" class="flow-down-fill"/><polyline points="492.1,167.7 547.3,168.7 611.9,161.3 617.3,159.1 622.5,166.6 628.1,12.0 633.7,168.7 640.2,168.7 645.0,160.1 650.4,168.7 655.8,168.8 661.4,167.6 667.5,168.9 678.5,168.7 684.0,168.7 689.3,168.7 695.6,168.7 700.4,161.6 706.0,159.5 711.7,159.9 717.9,168.7 723.8,168.7 728.2,168.7 733.8,167.4 739.4,168.7 744.9,167.6 754.4,168.9 756.2,168.7 761.7,161.9 767.4,168.7 772.8,168.7 778.7,168.7 784.1,161.3 789.4,161.3 795.3,168.7 800.9,167.4 806.9,165.9 811.6,168.7 817.3,167.4 822.8,168.7 828.3,168.7 834.3,168.7 845.3,160.7 850.7,161.3 856.1,167.4 862.2,168.7 867.2,137.3 876.8,168.7 879.5,167.7 883.9,160.1 890.8,161.3 895.9,168.7 900.7,160.1 906.5,168.7 911.8,168.8 917.8,168.7 922.9,168.7 928.5,168.7 934.0,168.7 939.6,168.7 945.6,71.3" class="flow-down-line"/><polyline points="492.1,167.7 547.3,168.7 611.9,161.3 617.3,159.1 622.5,166.6 628.1,34.6 633.7,168.7 640.2,168.7 645.0,160.1 650.4,168.7 655.8,168.8 661.4,167.6 667.5,168.9 678.5,168.7 684.0,168.7 689.3,168.7 695.6,168.7 700.4,161.6 706.0,158.3 711.7,159.9 717.9,168.7 723.8,168.7 728.2,168.7 733.8,167.4 739.4,168.7 744.9,167.6 754.4,168.9 756.2,168.7 761.7,161.9 767.4,168.7 772.8,164.4 778.7,168.7 784.1,161.3 789.4,161.3 795.3,168.7 800.9,167.4 806.9,165.9 811.6,168.7 817.3,167.4 822.8,168.7 828.3,168.7 834.3,168.7 845.3,165.2 850.7,161.3 856.1,167.4 862.2,168.7 867.2,161.8 876.8,168.7 879.5,166.4 883.9,160.1 890.8,161.3 895.9,168.7 900.7,160.1 906.5,168.7 911.8,168.8 917.8,168.7 922.9,168.7 928.5,168.7 934.0,167.3 939.6,168.7 945.6,83.7" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
@@ -145,7 +151,7 @@
 </div>
 <script>
 (function() {
-  var generatedAtMs = new Date("2026-08-11T11:20:37.562620+00:00").getTime();
+  var generatedAtMs = new Date("2026-08-11T11:21:26.275909+00:00").getTime();
   var refreshS = 120;
   var minRetryMs = 10000;
   var el = document.getElementById('refresh-cd');
@@ -169,6 +175,54 @@
     setTimeout(tick, 1000);
   }
   tick();
+})();
+</script>
+<script>
+(function() {
+  var tip = document.createElement('div');
+  tip.className = 'flow-tooltip';
+  document.body.appendChild(tip);
+
+  function fmtKbps(v) {
+    if (v >= 1000) return (v / 1000).toFixed(2).replace('.', ',') + ' Mbps';
+    return v.toFixed(1).replace('.', ',') + ' kbps';
+  }
+
+  document.querySelectorAll('svg.flow-chart').forEach(function (svg) {
+    var samples;
+    try { samples = JSON.parse(svg.getAttribute('data-samples')); } catch (e) { return; }
+    if (!samples || !samples.length) return;
+    var left = parseFloat(svg.getAttribute('data-left'));
+    var plotW = parseFloat(svg.getAttribute('data-plot-w'));
+
+    function nearest(svgX) {
+      var frac = Math.min(Math.max((svgX - left) / plotW, 0), 1);
+      var idx = Math.round(frac * (samples.length - 1));
+      return samples[Math.min(Math.max(idx, 0), samples.length - 1)];
+    }
+
+    svg.addEventListener('mousemove', function (ev) {
+      var pt = svg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      var svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+      var s = nearest(svgP.x);
+      var d = new Date(s[0]);
+      var timeStr = d.toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      tip.innerHTML = '<b>' + timeStr + '</b><br>Down: ' + fmtKbps(s[1]) +
+        '<br>Up: ' + fmtKbps(s[2]);
+      var x = ev.clientX + 16, y = ev.clientY + 16;
+      if (x + 170 > window.innerWidth) x = ev.clientX - 186;
+      if (y + 60 > window.innerHeight) y = ev.clientY - 76;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+      tip.style.display = 'block';
+    });
+    svg.addEventListener('mouseleave', function () {
+      tip.style.display = 'none';
+    });
+  });
 })();
 </script>
 </body>
