@@ -545,8 +545,8 @@ def render_html(**c):
       Management-Grundlast diese Stunden abziehen.</p>
   </div>
 
-  <footer>Datenquelle UniFi Site Manager API, {len(c['window'])} Messpunkte im Fenster.
-    Seite aktualisiert sich alle 5 Minuten selbst.</footer>
+  <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
+    {len(c['window'])} Messpunkte im Fenster. Seite aktualisiert sich alle 5 Minuten selbst.</footer>
 </div>
 </body>
 </html>"""
