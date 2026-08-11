@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="600">
-<title>WAN-Volumen LSB--UDM-1</title>
+<title>WAN-Volumen Uebersicht</title>
 <style>
+
   :root {
     --ink: #0e1620; --panel: #16212e; --line: #24344a;
     --text: #dbe6f0; --dim: #7f93a8;
@@ -19,7 +20,7 @@
   h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -.01em; font-weight: 600; }
   .sub { color: var(--dim); font-size: 13.5px; }
   .bar { height: 5px; background: var(--line); border-radius: 3px; margin-top: 16px; overflow: hidden; }
-  .bar span { display: block; height: 100%; width: 3.3%; background: var(--down); }
+  .bar span { display: block; height: 100%; background: var(--down); }
   .grid-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 30px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
   .card .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; }
@@ -38,7 +39,8 @@
   .chart .flow-down-fill { fill: var(--down); opacity: .16; stroke: none; }
   .chart .flow-down-line { fill: none; stroke: var(--down); stroke-width: 1.6; }
   .chart .flow-up-line { fill: none; stroke: var(--up); stroke-width: 1.6; }
-  .legend { display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; }
+  .legend { display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; flex-wrap: wrap; }
+  .legend.small { font-size: 11.5px; gap: 12px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th { text-align: left; color: var(--dim); font-weight: 500; font-size: 12px;
@@ -52,95 +54,144 @@
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   footer { color: var(--dim); font-size: 12.5px; margin-top: 34px;
     border-top: 1px solid var(--line); padding-top: 14px; }
+  a { color: inherit; }
   @media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
+
+  .wrap { max-width: 1400px; }
+  .overview-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+  .console-card { display: flex; flex-direction: column; gap: 10px; }
+  .card-head { display: flex; align-items: center; gap: 8px; }
+  .card-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .mini-grid { display: flex; gap: 18px; }
+  .mlabel { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .mvalue { font: 600 18px/1.3 ui-monospace, monospace; margin-top: 2px; }
+  .detail-link { align-self: flex-start; font-size: 13px; color: var(--down); text-decoration: none; margin-top: 2px; }
+  .detail-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>WAN-Volumen LSB--UDM-1</h1>
+    <h1>WAN-Volumen Uebersicht</h1>
     <div class="sub">Messung laeuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 69 h 35 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 10:24 &nbsp;&middot;&nbsp;
+      Restlaufzeit 69 h 22 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 10:37 &nbsp;&middot;&nbsp;
       naechster Refresh in <span id="refresh-cd">10:00</span></div>
-    <div class="bar"><span></span></div>
+    <div class="bar"><span style="width:3.6%"></span></div>
   </header>
 
   <div class="grid-cards">
-    <div class="card"><div class="label">Bisher gemessen</div>
-      <div class="value">356.0 MB</div>
-      <div class="foot">ueber 2.4 Stunden, 3 Stunden mit Daten</div></div>
-    <div class="card"><div class="label">Pro Tag</div>
-      <div class="value">3.5 GB</div>
+    <div class="card"><div class="label">Alle Konsolen zusammen</div>
+      <div class="value">410.8 MB</div>
+      <div class="foot">bisher gemessen</div></div>
+    <div class="card"><div class="label">Pro Tag (Summe)</div>
+      <div class="value">3.7 GB</div>
       <div class="foot">laufender Mittelwert</div></div>
-    <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">103.9 GB</div>
+    <div class="card"><div class="label">Hochrechnung 30 Tage (Summe)</div>
+      <div class="value">110.0 GB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
-    <div class="card"><div class="label">Verhaeltnis</div>
-      <div class="value">23.6 MB</div>
-      <div class="foot">Download, dazu 332.5 MB Upload</div></div>
   </div>
 
-  <h2>Stundenvolumen im Messfenster</h2>
-  <div class="panel">
-    <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">51.7 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">103.3 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">155.0 MB</text><rect x="55.7" y="181.6" width="8.9" height="10.4" class="down"/><rect x="55.7" y="65.4" width="8.9" height="116.3" class="up"/><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="68.2" y="191.1" width="8.9" height="0.9" class="down"/><rect x="68.2" y="188.5" width="8.9" height="2.7" class="up"/><rect x="80.6" y="182.7" width="8.9" height="9.3" class="down"/><rect x="80.6" y="12.0" width="8.9" height="170.7" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
-    <div class="legend">
-      <span><span class="dot" style="background:var(--down)"></span>Download</span>
-      <span><span class="dot" style="background:var(--up)"></span>Upload</span>
-      <span>Spitze 206.6 MB pro Stunde</span>
+  <div class="overview-grid">
+    <div class="card console-card">
+      <div class="card-head"><h3>HAN--UDM-1</h3><span class="live-tag">laeuft</span></div>
+      <div class="mini-grid">
+        <div><div class="mlabel">Bisher</div><div class="mvalue">203.9 KB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">1.8 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">54.6 MB</div></div>
+      </div>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">51.0 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">102.0 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">152.9 KB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="102.0" width="8.9" height="90.0" class="down"/><rect x="80.6" y="12.0" width="8.9" height="90.0" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
+      <div class="legend small">
+        <span><span class="dot" style="background:var(--down)"></span>Down</span>
+        <span><span class="dot" style="background:var(--up)"></span>Up</span>
+        <span>Spitze 203.9 KB/h</span>
+      </div>
+      <a class="detail-link" href="HAN--UDM-1.html">Details &rarr;</a>
     </div>
-  </div>
-
-  <h2>Traffic-Flow (Rate je Messpunkt)</h2>
-  <div class="panel">
-    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">178 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">356 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">534 kbps</text><polygon points="123.0,172.0 123.0,160.9 277.4,169.0 369.1,166.1 418.7,157.5 562.1,165.8 860.0,165.1 877.8,165.5 904.2,159.3 948.0,164.6 948.0,172.0" class="flow-down-fill"/><polyline points="123.0,160.9 277.4,169.0 369.1,166.1 418.7,157.5 562.1,165.8 860.0,165.1 877.8,165.5 904.2,159.3 948.0,164.6" class="flow-down-line"/><polyline points="123.0,111.2 277.4,118.0 369.1,45.8 418.7,57.0 562.1,152.7 860.0,12.0 877.8,20.9 904.2,14.1 948.0,25.8" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
-    <div class="legend">
-      <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
-      <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
-      <span>9 Messpunkte, Pollintervall ~5 Min</span>
+    <div class="card console-card">
+      <div class="card-head"><h3>KLO--UDM-1</h3><span class="live-tag">laeuft</span></div>
+      <div class="mini-grid">
+        <div><div class="mlabel">Bisher</div><div class="mvalue">240.2 KB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">2.1 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">64.3 MB</div></div>
+      </div>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">60.1 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">120.1 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">180.2 KB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="102.0" width="8.9" height="90.0" class="down"/><rect x="80.6" y="12.0" width="8.9" height="90.0" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
+      <div class="legend small">
+        <span><span class="dot" style="background:var(--down)"></span>Down</span>
+        <span><span class="dot" style="background:var(--up)"></span>Up</span>
+        <span>Spitze 240.2 KB/h</span>
+      </div>
+      <a class="detail-link" href="KLO--UDM-1.html">Details &rarr;</a>
     </div>
-  </div>
-
-  <h2>Tageswerte</h2>
-  <div class="panel">
-    <table>
-      <thead><tr><th>Tag</th><th class="num">Download</th><th class="num">Upload</th>
-        <th class="num">Gesamt</th><th class="num">Abdeckung</th></tr></thead>
-      <tbody><tr><td>11.08.2026</td><td class='num'>23.6 MB</td><td class='num'>332.5 MB</td><td class='num strong'>356.0 MB</td><td class='num dim'>3 h</td></tr><tr><td>12.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr><tr><td>13.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr><tr><td>14.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr></tbody>
-    </table>
-  </div>
-
-  <h2>Letzte 24 Stunden</h2>
-  <div class="panel">
-    <table>
-      <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
-        <th class="num">Gesamt</th></tr></thead>
-      <tbody><tr><td>11.08. 10:00 <span class="live-tag">laeuft</span></td><td class='num'>10.7 MB</td><td class='num'>196.0 MB</td><td class='num strong'>206.6 MB</td></tr><tr><td>11.08. 09:00</td><td class='num'>1.016.0 KB</td><td class='num'>3.1 MB</td><td class='num strong'>4.1 MB</td></tr><tr><td>11.08. 08:00</td><td class='num'>11.9 MB</td><td class='num'>133.5 MB</td><td class='num strong'>145.4 MB</td></tr></tbody>
-    </table>
-  </div>
-
-  <h2>Groesste Stunden</h2>
-  <div class="panel">
-    <table>
-      <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
-        <th class="num">Gesamt</th></tr></thead>
-      <tbody><tr><td>11.08. 10:00</td><td class='num'>10.7 MB</td><td class='num'>196.0 MB</td><td class='num strong'>206.6 MB</td></tr><tr><td>11.08. 08:00</td><td class='num'>11.9 MB</td><td class='num'>133.5 MB</td><td class='num strong'>145.4 MB</td></tr><tr><td>11.08. 09:00</td><td class='num'>1.016.0 KB</td><td class='num'>3.1 MB</td><td class='num strong'>4.1 MB</td></tr></tbody>
-    </table>
-    <p class="dim" style="margin:14px 0 0;font-size:13px">Ausschlaege deutlich ueber der Grundlast
-      stammen erfahrungsgemaess von Speedtests, Firmware- oder Signatur-Downloads. Fuer die reine
-      Management-Grundlast diese Stunden abziehen.</p>
+    <div class="card console-card">
+      <div class="card-head"><h3>KNZ--UDM-1</h3><span class="live-tag">laeuft</span></div>
+      <div class="mini-grid">
+        <div><div class="mlabel">Bisher</div><div class="mvalue">555.5 KB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">5.0 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">148.7 MB</div></div>
+      </div>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">138.9 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">277.7 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">416.6 KB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="102.0" width="8.9" height="90.0" class="down"/><rect x="80.6" y="12.0" width="8.9" height="90.0" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
+      <div class="legend small">
+        <span><span class="dot" style="background:var(--down)"></span>Down</span>
+        <span><span class="dot" style="background:var(--up)"></span>Up</span>
+        <span>Spitze 555.5 KB/h</span>
+      </div>
+      <a class="detail-link" href="KNZ--UDM-1.html">Details &rarr;</a>
+    </div>
+    <div class="card console-card">
+      <div class="card-head"><h3>LSB--UDM-1</h3><span class="live-tag">laeuft</span></div>
+      <div class="mini-grid">
+        <div><div class="mlabel">Bisher</div><div class="mvalue">409.0 MB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">3.6 GB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">109.5 GB</div></div>
+      </div>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">64.9 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">129.8 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">194.6 MB</text><rect x="55.7" y="183.8" width="8.9" height="8.2" class="down"/><rect x="55.7" y="91.2" width="8.9" height="92.6" class="up"/><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="68.2" y="191.3" width="8.9" height="0.7" class="down"/><rect x="68.2" y="189.2" width="8.9" height="2.1" class="up"/><rect x="80.6" y="183.1" width="8.9" height="8.9" class="down"/><rect x="80.6" y="12.0" width="8.9" height="171.1" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
+      <div class="legend small">
+        <span><span class="dot" style="background:var(--down)"></span>Down</span>
+        <span><span class="dot" style="background:var(--up)"></span>Up</span>
+        <span>Spitze 259.5 MB/h</span>
+      </div>
+      <a class="detail-link" href="LSB--UDM-1.html">Details &rarr;</a>
+    </div>
+    <div class="card console-card">
+      <div class="card-head"><h3>NID--UDM-1</h3><span class="live-tag">laeuft</span></div>
+      <div class="mini-grid">
+        <div><div class="mlabel">Bisher</div><div class="mvalue">410.7 KB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">3.7 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">110.0 MB</div></div>
+      </div>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">102.7 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">205.4 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">308.1 KB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="109.6" width="8.9" height="82.4" class="down"/><rect x="80.6" y="12.0" width="8.9" height="97.6" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
+      <div class="legend small">
+        <span><span class="dot" style="background:var(--down)"></span>Down</span>
+        <span><span class="dot" style="background:var(--up)"></span>Up</span>
+        <span>Spitze 410.7 KB/h</span>
+      </div>
+      <a class="detail-link" href="NID--UDM-1.html">Details &rarr;</a>
+    </div>
+    <div class="card console-card">
+      <div class="card-head"><h3>WTB--UDM-1</h3><span class="live-tag">laeuft</span></div>
+      <div class="mini-grid">
+        <div><div class="mlabel">Bisher</div><div class="mvalue">502.7 KB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">4.5 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">134.6 MB</div></div>
+      </div>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">125.7 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">251.4 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">377.1 KB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="102.0" width="8.9" height="90.0" class="down"/><rect x="80.6" y="12.0" width="8.9" height="90.0" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
+      <div class="legend small">
+        <span><span class="dot" style="background:var(--down)"></span>Down</span>
+        <span><span class="dot" style="background:var(--up)"></span>Up</span>
+        <span>Spitze 502.7 KB/h</span>
+      </div>
+      <a class="detail-link" href="WTB--UDM-1.html">Details &rarr;</a>
+    </div>
   </div>
 
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
-    9 Messpunkte im Fenster. Seite aktualisiert sich alle 10 Minuten selbst.</footer>
+    6 Konsolen. Seite aktualisiert sich alle 10 Minuten selbst.</footer>
 </div>
 <script>
 (function() {
-  // Countdown ist an den tatsaechlichen Erzeugungszeitpunkt der Seite gekoppelt
-  // (nicht an den Moment des Ladens) - ein manueller Reload durch den Nutzer
-  // darf den Countdown nicht wieder auf voll zuruecksetzen.
-  var generatedAtMs = new Date("2026-08-11T08:24:36.217650+00:00").getTime();
+  var generatedAtMs = new Date("2026-08-11T08:37:35.337477+00:00").getTime();
   var refreshS = 600;
   var el = document.getElementById('refresh-cd');
   if (!el) return;
