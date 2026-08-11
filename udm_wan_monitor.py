@@ -522,10 +522,17 @@ def render_flow_chart(window, start, end):
     parts.append(f'<polyline points="{down_pts_str}" class="flow-down-line"/>')
     parts.append(f'<polyline points="{up_pts_str}" class="flow-up-line"/>')
     parts.append(f'<line x1="{left}" y1="{baseline_y:.1f}" x2="{left + plot_w}" y2="{baseline_y:.1f}" class="baseline"/>')
+    # Hover-Linie: unsichtbar per Default, wird von flow_tooltip_script beim Hovern
+    # an die x-Position des naechstgelegenen Messpunkts verschoben und eingeblendet.
+    parts.append(f'<line class="hover-line" x1="0" y1="12" x2="0" y2="{baseline_y:.1f}"/>')
 
-    # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel + Rate
-    # je Punkt, plus die Plot-Geometrie, damit JS Maus-X auf den naechsten Punkt mappen kann.
-    samples_json = json.dumps([[ts.isoformat(), round(d, 1), round(u, 1)] for ts, d, u in samples])
+    # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel, Rate
+    # und die exakte x-Pixel-Position je Punkt (fuer die Hover-Linie), plus die
+    # Plot-Geometrie, damit JS Maus-X auf den naechsten Punkt mappen kann.
+    samples_json = json.dumps([
+        [ts.isoformat(), round(d, 1), round(u, 1), round(x, 1)]
+        for (ts, d, u), (x, _y) in zip(samples, down_line)
+    ])
     samples_attr = html.escape(samples_json, quote=True)
     return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart flow-chart" '
             f'role="img" aria-label="Traffic-Flow" '
@@ -578,7 +585,8 @@ BASE_CSS = """
   .dim { color: var(--dim); }
   .value-warn { color: var(--warn); }
   .value-alert { color: var(--alert); }
-  .flow-chart { cursor: crosshair; }
+  .flow-chart .hover-line { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3;
+    opacity: 0; pointer-events: none; }
   .flow-tooltip { position: fixed; display: none; z-index: 50; pointer-events: none;
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 7px 11px; font-size: 12px; line-height: 1.5; color: var(--text);
@@ -663,6 +671,7 @@ def flow_tooltip_script():
     if (!samples || !samples.length) return;
     var left = parseFloat(svg.getAttribute('data-left'));
     var plotW = parseFloat(svg.getAttribute('data-plot-w'));
+    var hoverLine = svg.querySelector('.hover-line');
 
     function nearest(svgX) {
       var frac = Math.min(Math.max((svgX - left) / plotW, 0), 1);
@@ -687,9 +696,15 @@ def flow_tooltip_script():
       tip.style.left = x + 'px';
       tip.style.top = y + 'px';
       tip.style.display = 'block';
+      if (hoverLine) {
+        hoverLine.setAttribute('x1', s[3]);
+        hoverLine.setAttribute('x2', s[3]);
+        hoverLine.style.opacity = '1';
+      }
     });
     svg.addEventListener('mouseleave', function () {
       tip.style.display = 'none';
+      if (hoverLine) hoverLine.style.opacity = '0';
     });
   });
 })();
