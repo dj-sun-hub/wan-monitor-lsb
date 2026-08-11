@@ -52,7 +52,7 @@ RAW_PATH = os.path.join(DATA_DIR, "raw_sample.json")
 STATE_PATH = os.path.join(DATA_DIR, "monitor_state.json")
 
 CSV_FIELDS = ["ts", "site", "uplink", "interval_s", "down_bytes", "up_bytes"]
-REPORT_REFRESH_S = 300  # Seite laedt sich automatisch neu, siehe <meta refresh> und Countdown
+REPORT_REFRESH_S = 600  # Seite laedt sich automatisch neu, siehe <meta refresh> und Countdown
 
 TIME_KEYS = ("metrictime", "timestamp", "time", "periodstart", "starttime", "date")
 
@@ -623,18 +623,23 @@ def render_html(**c):
   </div>
 
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
-    {len(c['window'])} Messpunkte im Fenster. Seite aktualisiert sich alle 5 Minuten selbst.</footer>
+    {len(c['window'])} Messpunkte im Fenster. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
 </div>
 <script>
 (function() {{
-  var totalSec = {REPORT_REFRESH_S};
+  // Countdown ist an den tatsaechlichen Erzeugungszeitpunkt der Seite gekoppelt
+  // (nicht an den Moment des Ladens) - ein manueller Reload durch den Nutzer
+  // darf den Countdown nicht wieder auf voll zuruecksetzen.
+  var generatedAtMs = new Date("{now.isoformat()}").getTime();
+  var refreshS = {REPORT_REFRESH_S};
   var el = document.getElementById('refresh-cd');
   if (!el) return;
   function tick() {{
-    var m = Math.floor(totalSec / 60), s = totalSec % 60;
+    var elapsedS = Math.floor((Date.now() - generatedAtMs) / 1000);
+    var remaining = Math.max(refreshS - elapsedS, 0);
+    var m = Math.floor(remaining / 60), s = remaining % 60;
     el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
-    if (totalSec <= 0) return;
-    totalSec -= 1;
+    if (remaining <= 0) return;
     setTimeout(tick, 1000);
   }}
   tick();
