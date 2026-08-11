@@ -67,8 +67,8 @@
     <div class="sub"><a class="detail-link" href="index.html">&larr; Uebersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
       Messung laeuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 68 h 25 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 11:34 &nbsp;&middot;&nbsp;
+      Restlaufzeit 68 h 24 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 11:35 &nbsp;&middot;&nbsp;
       naechster Refresh in <span id="refresh-cd">2:00</span></div>
     <div class="bar"><span style="width:5.0%"></span></div>
   </header>
@@ -81,7 +81,7 @@
       <div class="value">12.2 MB</div>
       <div class="foot">laufender Mittelwert</div></div>
     <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">366.6 MB</div>
+      <div class="value">365.3 MB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
     <div class="card"><div class="label">Verhaeltnis</div>
       <div class="value">973.5 KB</div>
@@ -100,7 +100,7 @@
 
   <h2>Traffic-Flow (Rate je Messpunkt)</h2>
   <div class="panel">
-    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">5 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">9 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">14 kbps</text><polygon points="710.6,172.0 710.6,157.7 793.2,159.6 890.1,143.6 898.1,160.1 906.0,130.1 914.3,163.1 922.7,157.0 932.5,20.7 939.7,143.3 947.8,12.0 947.8,172.0" class="flow-down-fill"/><polyline points="710.6,157.7 793.2,159.6 890.1,143.6 898.1,160.1 906.0,130.1 914.3,163.1 922.7,157.0 932.5,20.7 939.7,143.3 947.8,12.0" class="flow-down-line"/><polyline points="710.6,157.7 793.2,159.6 890.1,143.6 898.1,150.8 906.0,127.0 914.3,163.1 922.7,157.0 932.5,52.7 939.7,143.3 947.8,41.9" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">5 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">9 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">14 kbps</text><polygon points="708.2,172.0 708.2,157.7 790.5,159.6 887.1,143.6 895.1,160.1 902.9,130.1 911.2,163.1 919.6,157.0 929.3,20.7 936.5,143.3 944.6,12.0 944.6,172.0" class="flow-down-fill"/><polyline points="708.2,157.7 790.5,159.6 887.1,143.6 895.1,160.1 902.9,130.1 911.2,163.1 919.6,157.0 929.3,20.7 936.5,143.3 944.6,12.0" class="flow-down-line"/><polyline points="708.2,157.7 790.5,159.6 887.1,143.6 895.1,150.8 902.9,127.0 911.2,163.1 919.6,157.0 929.3,52.7 936.5,143.3 944.6,41.9" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
@@ -143,8 +143,9 @@
 </div>
 <script>
 (function() {
-  var generatedAtMs = new Date("2026-08-11T09:34:29.750226+00:00").getTime();
+  var generatedAtMs = new Date("2026-08-11T09:35:15.849668+00:00").getTime();
   var refreshS = 120;
+  var minRetryMs = 10000;
   var el = document.getElementById('refresh-cd');
   if (!el) return;
   function tick() {
@@ -153,7 +154,14 @@
     var m = Math.floor(remaining / 60), s = remaining % 60;
     el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
     if (remaining <= 0) {
-      window.location.href = window.location.pathname + '?_=' + Date.now();
+      var lastTry = parseInt(sessionStorage.getItem('wanmon_last_reload') || '0', 10);
+      var nowMs = Date.now();
+      if (nowMs - lastTry > minRetryMs) {
+        sessionStorage.setItem('wanmon_last_reload', String(nowMs));
+        window.location.href = window.location.pathname + '?_=' + nowMs;
+      } else {
+        setTimeout(tick, 2000);
+      }
       return;
     }
     setTimeout(tick, 1000);
