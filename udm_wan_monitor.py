@@ -796,7 +796,9 @@ def render_overview_html(consoles, start, end, now):
   header {{ margin-bottom: 16px; padding-bottom: 12px; }}
   .totals {{ margin-top: 4px; }}
   .totals b {{ color: #fff; font-weight: 600; }}
-  .overview-grid {{ display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }}
+  .overview-grid {{ display: grid; gap: 14px; grid-template-columns: repeat(3, 1fr); }}
+  @media (max-width: 900px) {{ .overview-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+  @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
   .console-card {{ display: flex; flex-direction: column; gap: 5px; padding: 13px 15px; }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
   .card-head h3 {{ margin: 0; font-size: 14px; font-weight: 600; }}
