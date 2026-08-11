@@ -9,7 +9,7 @@
   :root {
     --ink: #0e1620; --panel: #16212e; --line: #24344a;
     --text: #dbe6f0; --dim: #7f93a8;
-    --down: #46b3a3; --up: #e0a458; --alert: #d4675b;
+    --down: #46b3a3; --up: #e0a458; --alert: #d4675b; --warn: #e8c14c;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ink); color: var(--text);
@@ -48,6 +48,8 @@
   .num { text-align: right; font-family: ui-monospace, monospace; }
   .strong { color: #fff; }
   .dim { color: var(--dim); }
+  .value-warn { color: var(--warn); }
+  .value-alert { color: var(--alert); }
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
@@ -67,8 +69,8 @@
     <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
       Messung läuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 68 h 3 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 11:56 &nbsp;&middot;&nbsp;
+      Restlaufzeit 68 h 2 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 11:57 &nbsp;&middot;&nbsp;
       nächster Refresh in <span id="refresh-cd">2:00</span></div>
     <div class="bar"><span style="width:5.5%"></span></div>
   </header>
@@ -76,12 +78,12 @@
   <div class="grid-cards">
     <div class="card"><div class="label">Bisher gemessen</div>
       <div class="value">4.9 MB</div>
-      <div class="foot">ueber 3.9 Stunden, 2 Stunden mit Daten</div></div>
+      <div class="foot">über 4.0 Stunden, 2 Stunden mit Daten</div></div>
     <div class="card"><div class="label">Pro Tag</div>
-      <div class="value">29.8 MB</div>
+      <div class="value">29.7 MB</div>
       <div class="foot">laufender Mittelwert</div></div>
     <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">895.1 MB</div>
+      <div class="value">891.7 MB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
     <div class="card"><div class="label">Verhältnis</div>
       <div class="value">2.8 MB</div>
@@ -100,7 +102,7 @@
 
   <h2>Traffic-Flow (Rate je Messpunkt)</h2>
   <div class="panel">
-    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">19 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">39 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">58 kbps</text><polygon points="649.4,172.0 649.4,166.7 724.4,164.9 812.2,164.9 819.5,135.9 826.7,165.3 834.2,164.9 841.8,165.3 850.7,169.8 857.2,159.2 864.6,12.0 871.9,164.9 879.5,159.3 887.7,168.4 902.7,164.9 910.3,164.9 917.5,109.3 926.0,168.4 932.5,169.8 940.1,169.8 947.8,169.9 947.8,172.0" class="flow-down-fill"/><polyline points="649.4,166.7 724.4,164.9 812.2,164.9 819.5,135.9 826.7,165.3 834.2,164.9 841.8,165.3 850.7,169.8 857.2,159.2 864.6,12.0 871.9,164.9 879.5,159.3 887.7,168.4 902.7,164.9 910.3,164.9 917.5,109.3 926.0,168.4 932.5,169.8 940.1,169.8 947.8,169.9" class="flow-down-line"/><polyline points="649.4,165.7 724.4,164.9 812.2,164.9 819.5,143.7 826.7,165.3 834.2,164.9 841.8,167.6 850.7,169.8 857.2,159.2 864.6,88.1 871.9,164.9 879.5,159.3 887.7,168.4 902.7,164.9 910.3,164.9 917.5,141.3 926.0,168.4 932.5,169.8 940.1,169.8 947.8,169.9" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">19 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">39 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">58 kbps</text><polygon points="647.2,172.0 647.2,166.7 721.9,164.9 809.4,164.9 816.6,135.9 823.8,165.3 831.3,164.9 838.9,165.3 847.7,169.8 854.2,159.2 861.6,12.0 868.9,164.9 876.4,159.3 884.6,168.4 899.5,164.9 907.1,164.9 914.3,109.3 922.7,168.4 929.2,169.8 936.8,169.8 944.5,169.9 944.5,172.0" class="flow-down-fill"/><polyline points="647.2,166.7 721.9,164.9 809.4,164.9 816.6,135.9 823.8,165.3 831.3,164.9 838.9,165.3 847.7,169.8 854.2,159.2 861.6,12.0 868.9,164.9 876.4,159.3 884.6,168.4 899.5,164.9 907.1,164.9 914.3,109.3 922.7,168.4 929.2,169.8 936.8,169.8 944.5,169.9" class="flow-down-line"/><polyline points="647.2,165.7 721.9,164.9 809.4,164.9 816.6,143.7 823.8,165.3 831.3,164.9 838.9,167.6 847.7,169.8 854.2,159.2 861.6,88.1 868.9,164.9 876.4,159.3 884.6,168.4 899.5,164.9 907.1,164.9 914.3,141.3 922.7,168.4 929.2,169.8 936.8,169.8 944.5,169.9" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
@@ -143,7 +145,7 @@
 </div>
 <script>
 (function() {
-  var generatedAtMs = new Date("2026-08-11T09:56:31.110982+00:00").getTime();
+  var generatedAtMs = new Date("2026-08-11T09:57:23.993570+00:00").getTime();
   var refreshS = 120;
   var minRetryMs = 10000;
   var el = document.getElementById('refresh-cd');
