@@ -669,14 +669,22 @@ def flow_tooltip_script():
     var samples;
     try { samples = JSON.parse(svg.getAttribute('data-samples')); } catch (e) { return; }
     if (!samples || !samples.length) return;
-    var left = parseFloat(svg.getAttribute('data-left'));
-    var plotW = parseFloat(svg.getAttribute('data-plot-w'));
     var hoverLine = svg.querySelector('.hover-line');
 
+    // Suche ueber die tatsaechliche Pixel-Position jedes Punkts (samples[i][3]),
+    // NICHT ueber den Index - die Messpunkte liegen wegen wechselnder Poll-
+    // Intervalle in der Historie nicht gleichmaessig verteilt auf der x-Achse.
+    // Binaersuche, da samples nach x aufsteigend sortiert sind.
     function nearest(svgX) {
-      var frac = Math.min(Math.max((svgX - left) / plotW, 0), 1);
-      var idx = Math.round(frac * (samples.length - 1));
-      return samples[Math.min(Math.max(idx, 0), samples.length - 1)];
+      var lo = 0, hi = samples.length - 1;
+      while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        if (samples[mid][3] < svgX) lo = mid + 1; else hi = mid;
+      }
+      if (lo > 0 && Math.abs(samples[lo - 1][3] - svgX) < Math.abs(samples[lo][3] - svgX)) {
+        lo -= 1;
+      }
+      return samples[lo];
     }
 
     svg.addEventListener('mousemove', function (ev) {
