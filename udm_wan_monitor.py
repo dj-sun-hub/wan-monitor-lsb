@@ -812,19 +812,21 @@ def render_overview_html(consoles, start, end, now):
   header {{ margin-bottom: 16px; padding-bottom: 12px; }}
   .totals {{ margin-top: 4px; }}
   .totals b {{ color: #fff; font-weight: 600; }}
-  .overview-grid {{ display: grid; gap: 28px; grid-template-columns: repeat(3, 1fr); }}
+  .overview-grid {{ display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); }}
   @media (max-width: 900px) {{ .overview-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
   @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
-  .console-card {{ display: flex; flex-direction: column; gap: 18px; padding: 32px 34px; }}
-  .card-head {{ display: flex; align-items: center; gap: 10px; }}
-  .card-head h3 {{ margin: 0; font-size: 22px; font-weight: 600; }}
-  .mini-grid {{ display: flex; gap: 30px; }}
-  .mlabel {{ color: var(--dim); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }}
-  .mvalue {{ font: 600 26px/1.3 ui-monospace, monospace; margin-top: 4px; }}
-  .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 10px; }}
-  .mini-chart-col .chart {{ height: 190px; }}
-  .mini-chart-label {{ color: var(--dim); font-size: 12px; text-transform: uppercase;
-    letter-spacing: .07em; margin-bottom: 4px; }}
+  .console-card {{ display: flex; flex-direction: column; gap: 9px; padding: 18px 20px; }}
+  .card-head {{ display: flex; align-items: center; gap: 8px; }}
+  .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
+  .mini-grid {{ display: flex; gap: 20px; }}
+  .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }}
+  .mvalue {{ font: 600 18px/1.25 ui-monospace, monospace; margin-top: 2px; }}
+  .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 3px; }}
+  .mini-chart-col .chart {{ height: 115px; }}
+  .mini-chart-label {{ color: var(--dim); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .07em; margin-bottom: 2px; }}
+  .console-card .legend {{ font-size: 12px; margin-top: 2px; }}
+  .console-card .detail-link {{ font-size: 12.5px; margin-top: 2px; }}
   .console-card .legend {{ font-size: 13px; margin-top: 6px; }}
   .console-card .detail-link {{ font-size: 14px; margin-top: 6px; }}
   .console-card .legend {{ margin-top: 0; }}
