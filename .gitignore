@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 _archiv_ispmetrics_experiment/
 .claude/
+failover_status.html
