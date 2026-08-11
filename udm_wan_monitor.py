@@ -335,6 +335,20 @@ def human_bytes(value):
     return f"{value:.1f} TB"
 
 
+GIB = 1024 ** 3
+WARN_THRESHOLD_BYTES = 1 * GIB
+ALERT_THRESHOLD_BYTES = 4.8 * GIB
+
+
+def total_alert_class(total_bytes):
+    """CSS-Klassen-Zusatz fuer den 'Bisher'-Wert: gelb ab 1 GB, rot ab 4.8 GB."""
+    if total_bytes > ALERT_THRESHOLD_BYTES:
+        return " value-alert"
+    if total_bytes > WARN_THRESHOLD_BYTES:
+        return " value-warn"
+    return ""
+
+
 def compute_stats(rows, start, end, site_filter=None):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
     leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird sowohl fuer
@@ -513,7 +527,7 @@ BASE_CSS = """
   :root {
     --ink: #0e1620; --panel: #16212e; --line: #24344a;
     --text: #dbe6f0; --dim: #7f93a8;
-    --down: #46b3a3; --up: #e0a458; --alert: #d4675b;
+    --down: #46b3a3; --up: #e0a458; --alert: #d4675b; --warn: #e8c14c;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ink); color: var(--text);
@@ -552,6 +566,8 @@ BASE_CSS = """
   .num { text-align: right; font-family: ui-monospace, monospace; }
   .strong { color: #fff; }
   .dim { color: var(--dim); }
+  .value-warn { color: var(--warn); }
+  .value-alert { color: var(--alert); }
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
@@ -666,8 +682,8 @@ def render_html(**c):
 
   <div class="grid-cards">
     <div class="card"><div class="label">Bisher gemessen</div>
-      <div class="value">{human_bytes(c['total'])}</div>
-      <div class="foot">ueber {c['elapsed_h']:.1f} Stunden, {c['covered_h']} Stunden mit Daten</div></div>
+      <div class="value{total_alert_class(c['total'])}">{human_bytes(c['total'])}</div>
+      <div class="foot">über {c['elapsed_h']:.1f} Stunden, {c['covered_h']} Stunden mit Daten</div></div>
     <div class="card"><div class="label">Pro Tag</div>
       <div class="value">{human_bytes(c['per_day'])}</div>
       <div class="foot">laufender Mittelwert</div></div>
@@ -761,7 +777,7 @@ def render_overview_html(consoles, start, end, now):
         cards.append(f"""<div class="card console-card">
       <div class="card-head"><h3>{c['device']}</h3>{live_badge}</div>
       <div class="mini-grid">
-        <div><div class="mlabel">Bisher</div><div class="mvalue">{human_bytes(c['total'])}</div></div>
+        <div><div class="mlabel">Bisher</div><div class="mvalue{total_alert_class(c['total'])}">{human_bytes(c['total'])}</div></div>
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">{human_bytes(c['per_day'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['per_month'])}</div></div>
       </div>
