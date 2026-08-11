@@ -505,14 +505,16 @@ def render_flow_chart(window, start, end):
 
     # Laufender Durchschnitt (kumulativer Mittelwert bis zu jedem Punkt) - passt
     # sich mit fortschreitender Zeit an, statt eine starre Gesamt-Durchschnittslinie
-    # zu sein.
-    avg_down_line, avg_up_line = [], []
+    # zu sein. Werte werden auch fuer den Hover-Tooltip mitgefuehrt.
+    avg_down_line, avg_up_line, avgs = [], [], []
     sum_d = sum_u = 0.0
     for i, (ts, d, u) in enumerate(samples):
         sum_d += d
         sum_u += u
-        avg_down_line.append(xy(ts, sum_d / (i + 1)))
-        avg_up_line.append(xy(ts, sum_u / (i + 1)))
+        avg_d, avg_u = sum_d / (i + 1), sum_u / (i + 1)
+        avg_down_line.append(xy(ts, avg_d))
+        avg_up_line.append(xy(ts, avg_u))
+        avgs.append((avg_d, avg_u))
     avg_down_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in avg_down_line)
     avg_up_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in avg_up_line)
 
@@ -541,12 +543,12 @@ def render_flow_chart(window, start, end):
     # an die x-Position des naechstgelegenen Messpunkts verschoben und eingeblendet.
     parts.append(f'<line class="hover-line" x1="0" y1="12" x2="0" y2="{baseline_y:.1f}"/>')
 
-    # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel, Rate
-    # und die exakte x-Pixel-Position je Punkt (fuer die Hover-Linie), plus die
-    # Plot-Geometrie, damit JS Maus-X auf den naechsten Punkt mappen kann.
+    # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel, Rate,
+    # laufender Durchschnitt und die exakte x-Pixel-Position je Punkt (fuer die
+    # Hover-Linie).
     samples_json = json.dumps([
-        [ts.isoformat(), round(d, 1), round(u, 1), round(x, 1)]
-        for (ts, d, u), (x, _y) in zip(samples, down_line)
+        [ts.isoformat(), round(d, 1), round(u, 1), round(x, 1), round(avg_d, 1), round(avg_u, 1)]
+        for (ts, d, u), (x, _y), (avg_d, avg_u) in zip(samples, down_line, avgs)
     ])
     samples_attr = html.escape(samples_json, quote=True)
     return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart flow-chart" '
@@ -611,6 +613,8 @@ BASE_CSS = """
     padding: 7px 11px; font-size: 12px; line-height: 1.5; color: var(--text);
     box-shadow: 0 4px 14px rgba(0,0,0,.45); white-space: nowrap; }
   .flow-tooltip b { color: #fff; }
+  .flow-tooltip-avg { color: var(--dim); display: inline-block; margin-top: 3px;
+    padding-top: 3px; border-top: 1px dashed var(--line); }
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
@@ -716,10 +720,12 @@ def flow_tooltip_script():
         day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
       });
       tip.innerHTML = '<b>' + timeStr + '</b><br>Down: ' + fmtKbps(s[1]) +
-        '<br>Up: ' + fmtKbps(s[2]);
+        '<br>Up: ' + fmtKbps(s[2]) +
+        '<br><span class="flow-tooltip-avg">Ø Down: ' + fmtKbps(s[4]) +
+        '<br>Ø Up: ' + fmtKbps(s[5]) + '</span>';
       var x = ev.clientX + 16, y = ev.clientY + 16;
       if (x + 170 > window.innerWidth) x = ev.clientX - 186;
-      if (y + 60 > window.innerHeight) y = ev.clientY - 76;
+      if (y + 92 > window.innerHeight) y = ev.clientY - 108;
       tip.style.left = x + 'px';
       tip.style.top = y + 'px';
       tip.style.display = 'block';
