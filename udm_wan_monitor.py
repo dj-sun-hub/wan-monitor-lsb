@@ -64,7 +64,7 @@ RAW_PATH = os.path.join(DATA_DIR, "raw_sample.json")
 STATE_PATH = os.path.join(DATA_DIR, "monitor_state.json")
 
 CSV_FIELDS = ["ts", "site", "uplink", "interval_s", "down_bytes", "up_bytes"]
-REPORT_REFRESH_S = 600  # Seite laedt sich automatisch neu, siehe <meta refresh> und Countdown
+REPORT_REFRESH_S = 120  # Seite laedt sich automatisch neu, siehe <meta refresh> und Countdown
 
 TIME_KEYS = ("metrictime", "timestamp", "time", "periodstart", "starttime", "date")
 
