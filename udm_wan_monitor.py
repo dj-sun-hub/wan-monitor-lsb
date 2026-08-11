@@ -372,6 +372,10 @@ def build_report(rows, start, end, site_filter=None):
     spikes = sorted(series, key=lambda item: item[1] + item[2], reverse=True)[:5]
     spikes = [s for s in spikes if (s[1] + s[2]) > 0]
 
+    # Letzte 24 Stunden, Einzelauflistung
+    last24_start = now - timedelta(hours=24)
+    last24 = [s for s in series if last24_start <= s[0] <= now]
+
     chart = render_chart(series, peak, start)
     flow_chart = render_flow_chart(window, start, min(now, end))
     flow_points = len(window)
@@ -384,6 +388,7 @@ def build_report(rows, start, end, site_filter=None):
         per_day=per_day, per_month=per_month, days=days, spikes=spikes,
         chart=chart, start=start, end=end, now=now, peak=peak, device=device,
         flow_chart=flow_chart, flow_points=flow_points, flow_interval_min=flow_interval_min,
+        last24=last24,
     )
 
 
@@ -500,6 +505,13 @@ def render_html(**c):
         for b, d, u in c["spikes"]
     ) or "<tr><td colspan='4' class='dim'>Noch keine Auffaelligkeiten.</td></tr>"
 
+    last24_rows = "".join(
+        f"<tr><td>{b.astimezone().strftime('%d.%m. %H:%M')}</td>"
+        f"<td class='num'>{human_bytes(d)}</td><td class='num'>{human_bytes(u)}</td>"
+        f"<td class='num strong'>{human_bytes(d + u)}</td></tr>"
+        for b, d, u in sorted(c["last24"], key=lambda item: item[0], reverse=True)
+    ) or "<tr><td colspan='4' class='dim'>Noch keine Daten in den letzten 24 Stunden.</td></tr>"
+
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -607,6 +619,15 @@ def render_html(**c):
       <thead><tr><th>Tag</th><th class="num">Download</th><th class="num">Upload</th>
         <th class="num">Gesamt</th><th class="num">Abdeckung</th></tr></thead>
       <tbody>{day_rows}</tbody>
+    </table>
+  </div>
+
+  <h2>Letzte 24 Stunden</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
+        <th class="num">Gesamt</th></tr></thead>
+      <tbody>{last24_rows}</tbody>
     </table>
   </div>
 
