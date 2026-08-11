@@ -505,8 +505,10 @@ def render_html(**c):
         for b, d, u in c["spikes"]
     ) or "<tr><td colspan='4' class='dim'>Noch keine Auffaelligkeiten.</td></tr>"
 
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
     last24_rows = "".join(
-        f"<tr><td>{b.astimezone().strftime('%d.%m. %H:%M')}</td>"
+        f"<tr><td>{b.astimezone().strftime('%d.%m. %H:%M')}"
+        + (' <span class="live-tag">laeuft</span>' if b == current_hour else '') + "</td>"
         f"<td class='num'>{human_bytes(d)}</td><td class='num'>{human_bytes(u)}</td>"
         f"<td class='num strong'>{human_bytes(d + u)}</td></tr>"
         for b, d, u in sorted(c["last24"], key=lambda item: item[0], reverse=True)
@@ -561,6 +563,9 @@ def render_html(**c):
   .num {{ text-align: right; font-family: ui-monospace, monospace; }}
   .strong {{ color: #fff; }}
   .dim {{ color: var(--dim); }}
+  .live-tag {{ display: inline-block; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
+    border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }}
   footer {{ color: var(--dim); font-size: 12.5px; margin-top: 34px;
     border-top: 1px solid var(--line); padding-top: 14px; }}
   @media (prefers-reduced-motion: no-preference) {{ .bar span {{ transition: width .4s ease; }} }}
