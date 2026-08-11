@@ -339,6 +339,10 @@ def human_bytes(value):
 GIB = 1024 ** 3
 WARN_THRESHOLD_BYTES = 1 * GIB
 ALERT_THRESHOLD_BYTES = 4.8 * GIB
+# Live am NAS-Failover-Monitor kalibriert (siehe failover_monitor.py): Grundlast
+# lag im Ernstfall bei KNZ im einstelligen kbps-Bereich, der echte LTE-Failover-
+# Ausschlag bei 400-877 kbps.
+FAILOVER_THRESHOLD_KBPS = 500.0
 
 
 def total_alert_class(total_bytes):
@@ -365,6 +369,19 @@ def compute_stats(rows, start, end, site_filter=None):
     total_down = sum(r["down_bytes"] for r in window)
     total_up = sum(r["up_bytes"] for r in window)
     total = total_down + total_up
+
+    # Failover-Verdacht: letzter Messpunkt ueber dem Schwellwert (kbps), der sich
+    # live am NAS-Failover-Monitor bewaehrt hat (siehe failover_monitor.py).
+    # Hier nur der letzte Punkt statt "3 in Folge", da Polls schon 2 Min
+    # auseinanderliegen - fuer ein Live-Board waere das sonst zu traege.
+    is_failover = False
+    last_rate_kbps = 0.0
+    if window:
+        last_row = max(window, key=lambda r: r["ts"])
+        if last_row["interval_s"]:
+            last_rate_kbps = ((last_row["down_bytes"] + last_row["up_bytes"])
+                               * 8.0 / last_row["interval_s"] / 1000.0)
+            is_failover = last_rate_kbps > FAILOVER_THRESHOLD_KBPS
 
     elapsed_h = max((min(now, end) - start).total_seconds() / 3600.0, 0.001)
     remaining = max((end - now).total_seconds(), 0)
@@ -419,7 +436,7 @@ def compute_stats(rows, start, end, site_filter=None):
         per_day=per_day, per_month=per_month, days=days, spikes=spikes,
         chart=chart, start=start, end=end, now=now, peak=peak, device=device,
         flow_chart=flow_chart, flow_points=flow_points, flow_interval_min=flow_interval_min,
-        last24=last24,
+        last24=last24, is_failover=is_failover, last_rate_kbps=last_rate_kbps,
     )
 
 
@@ -618,6 +635,9 @@ BASE_CSS = """
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .failover-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .06em; color: #fff; background: var(--alert); border: 1px solid var(--alert);
+    border-radius: 3px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; font-weight: 600; }
   footer { color: var(--dim); font-size: 12.5px; margin-top: 34px;
     border-top: 1px solid var(--line); padding-top: 14px; }
   a { color: inherit; }
@@ -790,7 +810,7 @@ def render_html(**c):
 <body>
 <div class="wrap">
   <header>
-    <h1>WAN-Volumen {c['device']}</h1>
+    <h1>WAN-Volumen {c['device']}{' <span class="failover-tag">FAILOVER VERMUTET</span>' if c['is_failover'] else ''}</h1>
     <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
       {status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
       bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
@@ -895,9 +915,11 @@ def render_overview_html(consoles, start, end, now):
         has_current_point = any(r["ts"] >= current_hour for r in c["window"])
         if has_current_point:
             live_badge = '<span class="live-tag">läuft</span>'
+        failover_badge = '<span class="failover-tag">FAILOVER</span>' if c["is_failover"] else ""
+        card_class = "card console-card" + (" failover" if c["is_failover"] else "")
         filename = f"{c['device']}.html"
-        cards.append(f"""<div class="card console-card">
-      <div class="card-head"><h3>{c['device']}</h3>{live_badge}</div>
+        cards.append(f"""<div class="{card_class}">
+      <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}</div>
       <div class="mini-grid">
         <div><div class="mlabel">Bisher</div><div class="mvalue{total_alert_class(c['total'])}">{human_bytes(c['total'])}</div></div>
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">{human_bytes(c['per_day'])}</div></div>
@@ -938,6 +960,7 @@ def render_overview_html(consoles, start, end, now):
   @media (max-width: 900px) {{ .overview-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
   @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
   .console-card {{ display: flex; flex-direction: column; gap: 11px; padding: 21px 23px; }}
+  .console-card.failover {{ border-color: var(--alert); background: #2a1414; }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
   .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
   .mini-grid {{ display: flex; gap: 20px; }}
