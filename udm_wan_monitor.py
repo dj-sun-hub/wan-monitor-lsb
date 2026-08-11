@@ -815,14 +815,14 @@ def render_overview_html(consoles, start, end, now):
   .overview-grid {{ display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); }}
   @media (max-width: 900px) {{ .overview-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
   @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
-  .console-card {{ display: flex; flex-direction: column; gap: 9px; padding: 18px 20px; }}
+  .console-card {{ display: flex; flex-direction: column; gap: 11px; padding: 21px 23px; }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
   .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
   .mini-grid {{ display: flex; gap: 20px; }}
   .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }}
   .mvalue {{ font: 600 18px/1.25 ui-monospace, monospace; margin-top: 2px; }}
   .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 3px; }}
-  .mini-chart-col .chart {{ height: 115px; }}
+  .mini-chart-col .chart {{ height: 140px; }}
   .mini-chart-label {{ color: var(--dim); font-size: 10px; text-transform: uppercase;
     letter-spacing: .07em; margin-bottom: 2px; }}
   .console-card .legend {{ font-size: 12px; margin-top: 2px; }}
