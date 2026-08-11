@@ -9,7 +9,7 @@
   :root {
     --ink: #0e1620; --panel: #16212e; --line: #24344a;
     --text: #dbe6f0; --dim: #7f93a8;
-    --down: #46b3a3; --up: #e0a458; --alert: #d4675b;
+    --down: #46b3a3; --up: #e0a458; --alert: #d4675b; --warn: #e8c14c;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ink); color: var(--text);
@@ -48,6 +48,8 @@
   .num { text-align: right; font-family: ui-monospace, monospace; }
   .strong { color: #fff; }
   .dim { color: var(--dim); }
+  .value-warn { color: var(--warn); }
+  .value-alert { color: var(--alert); }
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
@@ -67,30 +69,30 @@
     <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
       Messung läuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 68 h 3 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 11:56 &nbsp;&middot;&nbsp;
+      Restlaufzeit 68 h 1 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 11:58 &nbsp;&middot;&nbsp;
       nächster Refresh in <span id="refresh-cd">2:00</span></div>
     <div class="bar"><span style="width:5.5%"></span></div>
   </header>
 
   <div class="grid-cards">
     <div class="card"><div class="label">Bisher gemessen</div>
-      <div class="value">622.5 MB</div>
-      <div class="foot">ueber 3.9 Stunden, 4 Stunden mit Daten</div></div>
+      <div class="value">626.7 MB</div>
+      <div class="foot">über 4.0 Stunden, 4 Stunden mit Daten</div></div>
     <div class="card"><div class="label">Pro Tag</div>
       <div class="value">3.7 GB</div>
       <div class="foot">laufender Mittelwert</div></div>
     <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">111.0 GB</div>
+      <div class="value">110.7 GB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
     <div class="card"><div class="label">Verhältnis</div>
-      <div class="value">35.2 MB</div>
-      <div class="foot">Download, dazu 587.3 MB Upload</div></div>
+      <div class="value">35.4 MB</div>
+      <div class="foot">Download, dazu 591.3 MB Upload</div></div>
   </div>
 
   <h2>Stundenvolumen im Messfenster</h2>
   <div class="panel">
-    <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">99.0 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">197.9 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">296.9 MB</text><rect x="55.7" y="186.6" width="8.9" height="5.4" class="down"/><rect x="55.7" y="125.9" width="8.9" height="60.7" class="up"/><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="68.2" y="191.5" width="8.9" height="0.5" class="down"/><rect x="68.2" y="190.2" width="8.9" height="1.4" class="up"/><rect x="80.6" y="183.7" width="8.9" height="8.3" class="down"/><rect x="80.6" y="12.0" width="8.9" height="171.7" class="up"/><rect x="93.0" y="190.1" width="8.9" height="1.9" class="down"/><rect x="93.0" y="156.9" width="8.9" height="33.2" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
+    <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">99.0 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">197.9 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">296.9 MB</text><rect x="55.7" y="186.6" width="8.9" height="5.4" class="down"/><rect x="55.7" y="125.9" width="8.9" height="60.7" class="up"/><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="68.2" y="191.5" width="8.9" height="0.5" class="down"/><rect x="68.2" y="190.2" width="8.9" height="1.4" class="up"/><rect x="80.6" y="183.7" width="8.9" height="8.3" class="down"/><rect x="80.6" y="12.0" width="8.9" height="171.7" class="up"/><rect x="93.0" y="190.0" width="8.9" height="2.0" class="down"/><rect x="93.0" y="155.0" width="8.9" height="35.0" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload</span>
@@ -100,11 +102,11 @@
 
   <h2>Traffic-Flow (Rate je Messpunkt)</h2>
   <div class="panel">
-    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">458 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">916 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">1.373 kbps</text><polygon points="96.2,172.0 96.2,167.7 190.6,170.8 246.6,169.7 277.0,166.4 364.6,169.6 546.8,169.3 557.7,169.5 573.8,167.1 600.6,169.1 649.4,169.4 724.4,165.4 812.2,170.9 819.5,171.0 826.7,170.9 834.2,170.4 841.8,170.3 850.7,170.6 857.2,170.7 864.6,170.8 871.9,169.9 879.5,170.5 887.7,170.9 902.7,170.8 910.3,170.5 917.5,170.6 926.0,168.4 932.5,170.6 940.1,171.1 947.8,171.5 947.8,172.0" class="flow-down-fill"/><polyline points="96.2,167.7 190.6,170.8 246.6,169.7 277.0,166.4 364.6,169.6 546.8,169.3 557.7,169.5 573.8,167.1 600.6,169.1 649.4,169.4 724.4,165.4 812.2,170.9 819.5,171.0 826.7,170.9 834.2,170.4 841.8,170.3 850.7,170.6 857.2,170.7 864.6,170.8 871.9,169.9 879.5,170.5 887.7,170.9 902.7,170.8 910.3,170.5 917.5,170.6 926.0,168.4 932.5,170.6 940.1,171.1 947.8,171.5" class="flow-down-line"/><polyline points="96.2,148.3 190.6,151.0 246.6,122.9 277.0,127.2 364.6,164.5 546.8,109.7 557.7,113.2 573.8,110.6 600.6,115.1 649.4,110.0 724.4,12.0 812.2,147.9 819.5,147.9 826.7,147.7 834.2,139.5 841.8,147.2 850.7,147.6 857.2,148.4 864.6,147.7 871.9,159.8 879.5,145.0 887.7,147.9 902.7,147.7 910.3,144.1 917.5,144.5 926.0,146.7 932.5,145.9 940.1,149.2 947.8,145.3" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">458 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">916 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">1.373 kbps</text><polygon points="95.8,172.0 95.8,167.7 189.3,170.8 244.8,169.7 274.9,166.4 361.7,169.6 542.2,169.3 552.9,169.5 568.9,167.1 595.5,169.1 643.9,169.4 718.1,165.4 805.1,170.9 812.3,171.0 819.4,170.9 826.9,170.4 834.4,170.3 843.2,170.6 849.7,170.7 857.0,170.8 864.2,169.9 871.8,170.5 879.9,170.9 894.7,170.8 902.2,170.5 909.4,170.6 917.8,168.4 924.2,170.6 931.8,171.1 939.4,171.5 947.8,170.8 947.8,172.0" class="flow-down-fill"/><polyline points="95.8,167.7 189.3,170.8 244.8,169.7 274.9,166.4 361.7,169.6 542.2,169.3 552.9,169.5 568.9,167.1 595.5,169.1 643.9,169.4 718.1,165.4 805.1,170.9 812.3,171.0 819.4,170.9 826.9,170.4 834.4,170.3 843.2,170.6 849.7,170.7 857.0,170.8 864.2,169.9 871.8,170.5 879.9,170.9 894.7,170.8 902.2,170.5 909.4,170.6 917.8,168.4 924.2,170.6 931.8,171.1 939.4,171.5 947.8,170.8" class="flow-down-line"/><polyline points="95.8,148.3 189.3,151.0 244.8,122.9 274.9,127.2 361.7,164.5 542.2,109.7 552.9,113.2 568.9,110.6 595.5,115.1 643.9,110.0 718.1,12.0 805.1,147.9 812.3,147.9 819.4,147.7 826.9,139.5 834.4,147.2 843.2,147.6 849.7,148.4 857.0,147.7 864.2,159.8 871.8,145.0 879.9,147.9 894.7,147.7 902.2,144.1 909.4,144.5 917.8,146.7 924.2,145.9 931.8,149.2 939.4,145.3 947.8,147.4" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
-      <span>29 Messpunkte, Pollintervall ~2 Min</span>
+      <span>30 Messpunkte, Pollintervall ~2 Min</span>
     </div>
   </div>
 
@@ -113,7 +115,7 @@
     <table>
       <thead><tr><th>Tag</th><th class="num">Download</th><th class="num">Upload</th>
         <th class="num">Gesamt</th><th class="num">Abdeckung</th></tr></thead>
-      <tbody><tr><td>11.08.2026</td><td class='num'>35.2 MB</td><td class='num'>587.3 MB</td><td class='num strong'>622.5 MB</td><td class='num dim'>4 h</td></tr><tr><td>12.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr><tr><td>13.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr><tr><td>14.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr></tbody>
+      <tbody><tr><td>11.08.2026</td><td class='num'>35.4 MB</td><td class='num'>591.3 MB</td><td class='num strong'>626.7 MB</td><td class='num dim'>4 h</td></tr><tr><td>12.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr><tr><td>13.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr><tr><td>14.08.2026</td><td class='num'>0.0 B</td><td class='num'>0.0 B</td><td class='num strong'>0.0 B</td><td class='num dim'>0 h</td></tr></tbody>
     </table>
   </div>
 
@@ -122,7 +124,7 @@
     <table>
       <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
         <th class="num">Gesamt</th></tr></thead>
-      <tbody><tr><td>11.08. 11:00 <span class="live-tag">läuft</span></td><td class='num'>4.2 MB</td><td class='num'>73.0 MB</td><td class='num strong'>77.2 MB</td></tr><tr><td>11.08. 10:00</td><td class='num'>18.2 MB</td><td class='num'>377.7 MB</td><td class='num strong'>395.9 MB</td></tr><tr><td>11.08. 09:00</td><td class='num'>1.016.0 KB</td><td class='num'>3.1 MB</td><td class='num strong'>4.1 MB</td></tr><tr><td>11.08. 08:00</td><td class='num'>11.9 MB</td><td class='num'>133.5 MB</td><td class='num strong'>145.4 MB</td></tr></tbody>
+      <tbody><tr><td>11.08. 11:00 <span class="live-tag">läuft</span></td><td class='num'>4.4 MB</td><td class='num'>77.0 MB</td><td class='num strong'>81.4 MB</td></tr><tr><td>11.08. 10:00</td><td class='num'>18.2 MB</td><td class='num'>377.7 MB</td><td class='num strong'>395.9 MB</td></tr><tr><td>11.08. 09:00</td><td class='num'>1.016.0 KB</td><td class='num'>3.1 MB</td><td class='num strong'>4.1 MB</td></tr><tr><td>11.08. 08:00</td><td class='num'>11.9 MB</td><td class='num'>133.5 MB</td><td class='num strong'>145.4 MB</td></tr></tbody>
     </table>
   </div>
 
@@ -131,7 +133,7 @@
     <table>
       <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
         <th class="num">Gesamt</th></tr></thead>
-      <tbody><tr><td>11.08. 10:00</td><td class='num'>18.2 MB</td><td class='num'>377.7 MB</td><td class='num strong'>395.9 MB</td></tr><tr><td>11.08. 08:00</td><td class='num'>11.9 MB</td><td class='num'>133.5 MB</td><td class='num strong'>145.4 MB</td></tr><tr><td>11.08. 11:00</td><td class='num'>4.2 MB</td><td class='num'>73.0 MB</td><td class='num strong'>77.2 MB</td></tr><tr><td>11.08. 09:00</td><td class='num'>1.016.0 KB</td><td class='num'>3.1 MB</td><td class='num strong'>4.1 MB</td></tr></tbody>
+      <tbody><tr><td>11.08. 10:00</td><td class='num'>18.2 MB</td><td class='num'>377.7 MB</td><td class='num strong'>395.9 MB</td></tr><tr><td>11.08. 08:00</td><td class='num'>11.9 MB</td><td class='num'>133.5 MB</td><td class='num strong'>145.4 MB</td></tr><tr><td>11.08. 11:00</td><td class='num'>4.4 MB</td><td class='num'>77.0 MB</td><td class='num strong'>81.4 MB</td></tr><tr><td>11.08. 09:00</td><td class='num'>1.016.0 KB</td><td class='num'>3.1 MB</td><td class='num strong'>4.1 MB</td></tr></tbody>
     </table>
     <p class="dim" style="margin:14px 0 0;font-size:13px">Ausschläge deutlich über der Grundlast
       stammen erfahrungsgemäß von Speedtests, Firmware- oder Signatur-Downloads. Für die reine
@@ -139,11 +141,11 @@
   </div>
 
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
-    29 Messpunkte im Fenster. Seite aktualisiert sich alle 2 Minuten selbst.</footer>
+    30 Messpunkte im Fenster. Seite aktualisiert sich alle 2 Minuten selbst.</footer>
 </div>
 <script>
 (function() {
-  var generatedAtMs = new Date("2026-08-11T09:56:31.109864+00:00").getTime();
+  var generatedAtMs = new Date("2026-08-11T09:58:45.472463+00:00").getTime();
   var refreshS = 120;
   var minRetryMs = 10000;
   var el = document.getElementById('refresh-cd');
