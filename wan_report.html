@@ -58,8 +58,9 @@
     <h1>WAN-Volumen LSB--UDM-1</h1>
     <div class="sub">Messung laeuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 71 h 1 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 08:58</div>
+      Restlaufzeit 70 h 58 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 09:01 &nbsp;&middot;&nbsp;
+      naechster Refresh in <span id="refresh-cd">5:00</span></div>
     <div class="bar"><span></span></div>
   </header>
 
@@ -68,10 +69,10 @@
       <div class="value">145.4 MB</div>
       <div class="foot">ueber 1.0 Stunden, 1 Stunden mit Daten</div></div>
     <div class="card"><div class="label">Pro Tag</div>
-      <div class="value">3.5 GB</div>
+      <div class="value">3.3 GB</div>
       <div class="foot">laufender Mittelwert</div></div>
     <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">104.0 GB</div>
+      <div class="value">99.9 GB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
     <div class="card"><div class="label">Verhaeltnis</div>
       <div class="value">11.9 MB</div>
@@ -90,7 +91,7 @@
 
   <h2>Traffic-Flow (Rate je Messpunkt)</h2>
   <div class="panel">
-    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">140 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">281 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">421 kbps</text><polygon points="223.1,172.0 223.1,157.9 601.7,168.2 826.4,164.5 948.0,153.6 948.0,172.0" class="flow-down-fill"/><polyline points="223.1,157.9 601.7,168.2 826.4,164.5 948.0,153.6" class="flow-down-line"/><polyline points="223.1,94.9 601.7,103.6 826.4,12.0 948.0,26.1" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">140 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">281 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">421 kbps</text><polygon points="216.5,172.0 216.5,157.9 580.4,168.2 796.3,164.5 913.2,153.6 913.2,172.0" class="flow-down-fill"/><polyline points="216.5,157.9 580.4,168.2 796.3,164.5 913.2,153.6" class="flow-down-line"/><polyline points="216.5,94.9 580.4,103.6 796.3,12.0 913.2,26.1" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
@@ -122,5 +123,20 @@
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
     4 Messpunkte im Fenster. Seite aktualisiert sich alle 5 Minuten selbst.</footer>
 </div>
+<script>
+(function() {
+  var totalSec = 300;
+  var el = document.getElementById('refresh-cd');
+  if (!el) return;
+  function tick() {
+    var m = Math.floor(totalSec / 60), s = totalSec % 60;
+    el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    if (totalSec <= 0) return;
+    totalSec -= 1;
+    setTimeout(tick, 1000);
+  }
+  tick();
+})();
+</script>
 </body>
 </html>

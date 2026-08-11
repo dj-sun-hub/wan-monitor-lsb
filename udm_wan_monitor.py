@@ -52,6 +52,7 @@ RAW_PATH = os.path.join(DATA_DIR, "raw_sample.json")
 STATE_PATH = os.path.join(DATA_DIR, "monitor_state.json")
 
 CSV_FIELDS = ["ts", "site", "uplink", "interval_s", "down_bytes", "up_bytes"]
+REPORT_REFRESH_S = 300  # Seite laedt sich automatisch neu, siehe <meta refresh> und Countdown
 
 TIME_KEYS = ("metrictime", "timestamp", "time", "periodstart", "starttime", "date")
 
@@ -504,7 +505,7 @@ def render_html(**c):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="300">
+<meta http-equiv="refresh" content="{REPORT_REFRESH_S}">
 <title>WAN-Volumen {c['device']}</title>
 <style>
   :root {{
@@ -560,7 +561,8 @@ def render_html(**c):
     <div class="sub">{status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
       bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
-      Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')}</div>
+      Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
+      naechster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
     <div class="bar"><span></span></div>
   </header>
 
@@ -623,6 +625,21 @@ def render_html(**c):
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
     {len(c['window'])} Messpunkte im Fenster. Seite aktualisiert sich alle 5 Minuten selbst.</footer>
 </div>
+<script>
+(function() {{
+  var totalSec = {REPORT_REFRESH_S};
+  var el = document.getElementById('refresh-cd');
+  if (!el) return;
+  function tick() {{
+    var m = Math.floor(totalSec / 60), s = totalSec % 60;
+    el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    if (totalSec <= 0) return;
+    totalSec -= 1;
+    setTimeout(tick, 1000);
+  }}
+  tick();
+}})();
+</script>
 </body>
 </html>"""
 
