@@ -48,13 +48,13 @@ from datetime import datetime, timezone
 
 CONNECTOR_BASE = "https://api.ui.com/v1/connector/consoles"
 
-# Dieselben 6 Konsolen wie beim WAN-Volumen-Monitor (WSG bewusst aussen vor).
-# Bei Bedarf einfach anpassen.
+# Dieselben Konsolen wie beim WAN-Volumen-Monitor (WSG bewusst aussen vor).
+# LSB ist vorerst ausgenommen: dauerhaft erhoehte, noch ungeklaerte Grundlast
+# wuerde staendige Fehlalarme erzeugen, solange die Ursache nicht gefunden ist.
 MONITORED_HOSTS = [
     ("HAN--UDM-1", "6C63F8AA761300000000093BE1DD0000000009BB150D00000000685B037F:1493605141"),
     ("KLO--UDM-1", "6C63F8E2993E000000000941189A0000000009C0A86600000000686B5BD1:662409267"),
     ("KNZ--UDM-1", "0CEA14D5BB63000000000899F5C200000000090F78C6000000006763F2E2:1427694241"),
-    ("LSB--UDM-1", "6C63F8E29F260000000009410E510000000009C09DF000000000686B4930:173285773"),
     ("NID--UDM-1", "6C63F8AB54A900000000093C22300000000009BB5AAA00000000685B7889:144919651"),
     ("WTB--UDM-1", "0CEA146F1C450000000008887B2B0000000008FCF87300000000674692E9:927254559"),
 ]
