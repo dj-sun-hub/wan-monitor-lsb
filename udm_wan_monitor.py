@@ -138,7 +138,7 @@ def connector_get(host_id, path, timeout=30):
             if exc.code == 403:
                 sys.exit(
                     f"403: Key hat keinen Zugriff auf Konsole {host_id} (Connector-Proxy).\n"
-                    "  Pruefen: API-Key auf unifi.ui.com bearbeiten, alle benoetigten\n"
+                    "  Prüfen: API-Key auf unifi.ui.com bearbeiten, alle benötigten\n"
                     "  Konsolen im Scope freigeben."
                 )
             sys.exit(f"HTTP {exc.code} beim Connector-Proxy {path}: {body}")
@@ -162,7 +162,7 @@ def find_gateway_device(host_id):
         mac = dev.get("macAddress", "").replace(":", "").upper()
         if mac == mac_target:
             return site_id, dev["id"]
-    sys.exit(f"Gateway-Geraet fuer Host {host_id} nicht in Network-API gefunden.")
+    sys.exit(f"Gateway-Gerät für Host {host_id} nicht in Network-API gefunden.")
 
 
 def get_uplink_rates(host_id, site_id, device_id):
@@ -233,7 +233,7 @@ def to_bytes(record, direction, interval_s):
 
 
 def collect_points(payload, interval_s):
-    """Durchlaeuft die Antwort und sammelt alle Messpunkte mit Zeitstempel."""
+    """Durchläuft die Antwort und sammelt alle Messpunkte mit Zeitstempel."""
     points = []
 
     def walk(node, ctx):
@@ -338,7 +338,7 @@ def human_bytes(value):
 def compute_stats(rows, start, end, site_filter=None):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
     leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird sowohl fuer
-    Detailseiten (render_html) als auch fuer Karten der Uebersichtsseite
+    Detailseiten (render_html) als auch für Karten der Übersichtsseite
     (render_overview_html) genutzt."""
     now = datetime.now(timezone.utc)
     window = [r for r in rows if start <= r["ts"] < end]
@@ -563,7 +563,7 @@ BASE_CSS = """
 
 
 def refresh_countdown_script(now):
-    """Gemeinsames Countdown-Skript fuer Detail- und Uebersichtsseite. An den
+    """Gemeinsames Countdown-Skript für Detail- und Übersichtsseite. An den
     tatsaechlichen Erzeugungszeitpunkt gekoppelt, damit ein manueller Reload
     den Countdown nicht auf voll zuruecksetzt.
 
@@ -613,7 +613,7 @@ def render_html(**c):
     pct = min(c["elapsed_h"] / max((end - start).total_seconds() / 3600.0, 0.001), 1.0)
     rem_h = int(c["remaining"] // 3600)
     rem_m = int((c["remaining"] % 3600) // 60)
-    status = "Messung laeuft" if c["remaining"] > 0 else "Messung abgeschlossen"
+    status = "Messung läuft" if c["remaining"] > 0 else "Messung abgeschlossen"
 
     day_rows = "".join(
         f"<tr><td>{day}</td><td class='num'>{human_bytes(v[0])}</td>"
@@ -628,12 +628,12 @@ def render_html(**c):
         f"<td class='num'>{human_bytes(d)}</td><td class='num'>{human_bytes(u)}</td>"
         f"<td class='num strong'>{human_bytes(d + u)}</td></tr>"
         for b, d, u in c["spikes"]
-    ) or "<tr><td colspan='4' class='dim'>Noch keine Auffaelligkeiten.</td></tr>"
+    ) or "<tr><td colspan='4' class='dim'>Noch keine Auffälligkeiten.</td></tr>"
 
     current_hour = now.replace(minute=0, second=0, microsecond=0)
     last24_rows = "".join(
         f"<tr><td>{b.astimezone().strftime('%d.%m. %H:%M')}"
-        + (' <span class="live-tag">laeuft</span>' if b == current_hour else '') + "</td>"
+        + (' <span class="live-tag">läuft</span>' if b == current_hour else '') + "</td>"
         f"<td class='num'>{human_bytes(d)}</td><td class='num'>{human_bytes(u)}</td>"
         f"<td class='num strong'>{human_bytes(d + u)}</td></tr>"
         for b, d, u in sorted(c["last24"], key=lambda item: item[0], reverse=True)
@@ -655,12 +655,12 @@ def render_html(**c):
 <div class="wrap">
   <header>
     <h1>WAN-Volumen {c['device']}</h1>
-    <div class="sub"><a class="detail-link" href="index.html">&larr; Uebersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
+    <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
       {status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
       bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-      naechster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
+      nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
   </header>
 
@@ -674,7 +674,7 @@ def render_html(**c):
     <div class="card"><div class="label">Hochrechnung 30 Tage</div>
       <div class="value">{human_bytes(c['per_month'])}</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
-    <div class="card"><div class="label">Verhaeltnis</div>
+    <div class="card"><div class="label">Verhältnis</div>
       <div class="value">{human_bytes(c['total_down'])}</div>
       <div class="foot">Download, dazu {human_bytes(c['total_up'])} Upload</div></div>
   </div>
@@ -717,15 +717,15 @@ def render_html(**c):
     </table>
   </div>
 
-  <h2>Groesste Stunden</h2>
+  <h2>Größte Stunden</h2>
   <div class="panel">
     <table>
       <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
         <th class="num">Gesamt</th></tr></thead>
       <tbody>{spike_rows}</tbody>
     </table>
-    <p class="dim" style="margin:14px 0 0;font-size:13px">Ausschlaege deutlich ueber der Grundlast
-      stammen erfahrungsgemaess von Speedtests, Firmware- oder Signatur-Downloads. Fuer die reine
+    <p class="dim" style="margin:14px 0 0;font-size:13px">Ausschläge deutlich über der Grundlast
+      stammen erfahrungsgemäß von Speedtests, Firmware- oder Signatur-Downloads. Für die reine
       Management-Grundlast diese Stunden abziehen.</p>
   </div>
 
@@ -738,13 +738,13 @@ def render_html(**c):
 
 
 def render_overview_html(consoles, start, end, now):
-    """Uebersichtsseite: eine Karte pro Konsole (Kernzahlen + Mini-Chart),
+    """Übersichtsseite: eine Karte pro Konsole (Kernzahlen + Mini-Chart),
     Link zur jeweiligen Detailseite. consoles = Liste von compute_stats()-dicts."""
     remaining = max((end - now).total_seconds(), 0)
     rem_h = int(remaining // 3600)
     rem_m = int((remaining % 3600) // 60)
     pct = min((min(now, end) - start).total_seconds() / max((end - start).total_seconds(), 0.001), 1.0)
-    status = "Messung laeuft" if remaining > 0 else "Messung abgeschlossen"
+    status = "Messung läuft" if remaining > 0 else "Messung abgeschlossen"
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
     total_all = sum(c["total"] for c in consoles)
@@ -756,7 +756,7 @@ def render_overview_html(consoles, start, end, now):
         live_badge = ""
         has_current_point = any(r["ts"] >= current_hour for r in c["window"])
         if has_current_point:
-            live_badge = '<span class="live-tag">laeuft</span>'
+            live_badge = '<span class="live-tag">läuft</span>'
         filename = f"{c['device']}.html"
         cards.append(f"""<div class="card console-card">
       <div class="card-head"><h3>{c['device']}</h3>{live_badge}</div>
@@ -789,25 +789,28 @@ def render_overview_html(consoles, start, end, now):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WAN-Volumen Uebersicht</title>
+<title>WAN-Volumen Übersicht</title>
 <style>
 {BASE_CSS}
   .wrap {{ max-width: 1500px; }}
   header {{ margin-bottom: 16px; padding-bottom: 12px; }}
   .totals {{ margin-top: 4px; }}
   .totals b {{ color: #fff; font-weight: 600; }}
-  .overview-grid {{ display: grid; gap: 14px; grid-template-columns: repeat(3, 1fr); }}
+  .overview-grid {{ display: grid; gap: 28px; grid-template-columns: repeat(3, 1fr); }}
   @media (max-width: 900px) {{ .overview-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
   @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
-  .console-card {{ display: flex; flex-direction: column; gap: 5px; padding: 13px 15px; }}
-  .card-head {{ display: flex; align-items: center; gap: 8px; }}
-  .card-head h3 {{ margin: 0; font-size: 14px; font-weight: 600; }}
-  .mini-grid {{ display: flex; gap: 14px; }}
-  .mlabel {{ color: var(--dim); font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; }}
-  .mvalue {{ font: 600 13.5px/1.25 ui-monospace, monospace; margin-top: 1px; }}
-  .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px; }}
-  .mini-chart-label {{ color: var(--dim); font-size: 9px; text-transform: uppercase;
-    letter-spacing: .07em; margin-bottom: 1px; }}
+  .console-card {{ display: flex; flex-direction: column; gap: 18px; padding: 32px 34px; }}
+  .card-head {{ display: flex; align-items: center; gap: 10px; }}
+  .card-head h3 {{ margin: 0; font-size: 22px; font-weight: 600; }}
+  .mini-grid {{ display: flex; gap: 30px; }}
+  .mlabel {{ color: var(--dim); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }}
+  .mvalue {{ font: 600 26px/1.3 ui-monospace, monospace; margin-top: 4px; }}
+  .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 10px; }}
+  .mini-chart-col .chart {{ height: 190px; }}
+  .mini-chart-label {{ color: var(--dim); font-size: 12px; text-transform: uppercase;
+    letter-spacing: .07em; margin-bottom: 4px; }}
+  .console-card .legend {{ font-size: 13px; margin-top: 6px; }}
+  .console-card .detail-link {{ font-size: 14px; margin-top: 6px; }}
   .console-card .legend {{ margin-top: 0; }}
   .detail-link {{ align-self: flex-start; font-size: 12.5px; color: var(--down); text-decoration: none; margin-top: 1px; }}
   .detail-link:hover {{ text-decoration: underline; }}
@@ -816,12 +819,12 @@ def render_overview_html(consoles, start, end, now):
 <body>
 <div class="wrap">
   <header>
-    <h1>WAN-Volumen Uebersicht</h1>
+    <h1>WAN-Volumen Übersicht</h1>
     <div class="sub">{status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
       bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-      naechster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
+      nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
     <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_all)}</b> bisher &nbsp;&middot;&nbsp;
       <b>{human_bytes(per_day_all)}</b>/Tag &nbsp;&middot;&nbsp;
       <b>{human_bytes(per_month_all)}</b> Hochrechnung/30 Tage</div>
@@ -848,7 +851,7 @@ def write_report(rows, start, end, site_filter=None):
 
 
 def write_reports(rows, start, end, console_names):
-    """Schreibt die Uebersichtsseite (wan_report.html) plus eine Detailseite
+    """Schreibt die Übersichtsseite (wan_report.html) plus eine Detailseite
     pro Konsole ({Konsolenname}.html)."""
     overview_html = build_overview(rows, start, end, console_names)
     with open(HTML_PATH, "w", encoding="utf-8") as handle:
@@ -908,7 +911,7 @@ def discover(host_id=DEFAULT_HOST_ID):
     print(json.dumps(stats, indent=2))
     rx_bps, tx_bps = get_uplink_rates(host_id, site_id, device_id)
     print(f"\nAktuelle Rate: down={rx_bps/1000:.1f} kbps, up={tx_bps/1000:.1f} kbps")
-    print(f"Vollstaendige Rohdaten in {RAW_PATH}")
+    print(f"Vollständige Rohdaten in {RAW_PATH}")
     print("Hinweis: isp-metrics wird nicht mehr genutzt (lieferte falsche Werte, "
           "siehe Support-Ticket). Diese Live-Rate via Connector-Proxy ist die "
           "verifizierte Datenquelle.")
@@ -919,10 +922,10 @@ def main():
     parser.add_argument("--start", help="Messbeginn, z.B. 2026-08-07T12:00 (lokale Zeit)")
     parser.add_argument("--days", type=float, default=3.0, help="Messdauer in Tagen")
     parser.add_argument("--interval", type=int, default=900, help="Pollintervall in Sekunden")
-    parser.add_argument("--site", help="Bericht auf einen einzelnen Konsolennamen beschraenken")
+    parser.add_argument("--site", help="Bericht auf einen einzelnen Konsolennamen beschränken")
     parser.add_argument("--host-id", default=None,
                          help="Nur diese eine Konsole pollen/berichten (Site-Manager hostId). "
-                              "Ohne Angabe: alle Konsolen aus MONITORED_HOSTS (Uebersicht + Details).")
+                              "Ohne Angabe: alle Konsolen aus MONITORED_HOSTS (Übersicht + Details).")
     parser.add_argument("--discover", action="store_true")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--loop", action="store_true")
@@ -963,7 +966,7 @@ def main():
             print(f"Bericht geschrieben: {write_report(rows, start, end, single)}")
         else:
             index_path, detail_paths = write_reports(rows, start, end, console_names)
-            print(f"Uebersicht geschrieben: {index_path}")
+            print(f"Übersicht geschrieben: {index_path}")
             for p in detail_paths:
                 print(f"  Detail: {p}")
         return
