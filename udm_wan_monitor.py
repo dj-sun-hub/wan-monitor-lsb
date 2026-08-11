@@ -765,7 +765,16 @@ def render_overview_html(consoles, start, end, now):
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">{human_bytes(c['per_day'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['per_month'])}</div></div>
       </div>
-      {c['chart']}
+      <div class="mini-charts">
+        <div class="mini-chart-col">
+          <div class="mini-chart-label">Stunde</div>
+          {c['chart']}
+        </div>
+        <div class="mini-chart-col">
+          <div class="mini-chart-label">Flow</div>
+          {c['flow_chart']}
+        </div>
+      </div>
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
@@ -783,15 +792,22 @@ def render_overview_html(consoles, start, end, now):
 <title>WAN-Volumen Uebersicht</title>
 <style>
 {BASE_CSS}
-  .wrap {{ max-width: 1400px; }}
-  .overview-grid {{ display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }}
-  .console-card {{ display: flex; flex-direction: column; gap: 10px; }}
+  .wrap {{ max-width: 1500px; }}
+  header {{ margin-bottom: 16px; padding-bottom: 12px; }}
+  .totals {{ margin-top: 4px; }}
+  .totals b {{ color: #fff; font-weight: 600; }}
+  .overview-grid {{ display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }}
+  .console-card {{ display: flex; flex-direction: column; gap: 5px; padding: 13px 15px; }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
-  .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
-  .mini-grid {{ display: flex; gap: 18px; }}
-  .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }}
-  .mvalue {{ font: 600 18px/1.3 ui-monospace, monospace; margin-top: 2px; }}
-  .detail-link {{ align-self: flex-start; font-size: 13px; color: var(--down); text-decoration: none; margin-top: 2px; }}
+  .card-head h3 {{ margin: 0; font-size: 14px; font-weight: 600; }}
+  .mini-grid {{ display: flex; gap: 14px; }}
+  .mlabel {{ color: var(--dim); font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; }}
+  .mvalue {{ font: 600 13.5px/1.25 ui-monospace, monospace; margin-top: 1px; }}
+  .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px; }}
+  .mini-chart-label {{ color: var(--dim); font-size: 9px; text-transform: uppercase;
+    letter-spacing: .07em; margin-bottom: 1px; }}
+  .console-card .legend {{ margin-top: 0; }}
+  .detail-link {{ align-self: flex-start; font-size: 12.5px; color: var(--down); text-decoration: none; margin-top: 1px; }}
   .detail-link:hover {{ text-decoration: underline; }}
 </style>
 </head>
@@ -804,20 +820,11 @@ def render_overview_html(consoles, start, end, now):
       Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       naechster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
+    <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_all)}</b> bisher &nbsp;&middot;&nbsp;
+      <b>{human_bytes(per_day_all)}</b>/Tag &nbsp;&middot;&nbsp;
+      <b>{human_bytes(per_month_all)}</b> Hochrechnung/30 Tage</div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
   </header>
-
-  <div class="grid-cards">
-    <div class="card"><div class="label">Alle Konsolen zusammen</div>
-      <div class="value">{human_bytes(total_all)}</div>
-      <div class="foot">bisher gemessen</div></div>
-    <div class="card"><div class="label">Pro Tag (Summe)</div>
-      <div class="value">{human_bytes(per_day_all)}</div>
-      <div class="foot">laufender Mittelwert</div></div>
-    <div class="card"><div class="label">Hochrechnung 30 Tage (Summe)</div>
-      <div class="value">{human_bytes(per_month_all)}</div>
-      <div class="foot">bei gleichbleibender Grundlast</div></div>
-  </div>
 
   <div class="overview-grid">
     {cards_html}
