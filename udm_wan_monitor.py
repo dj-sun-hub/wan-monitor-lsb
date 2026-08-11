@@ -372,11 +372,12 @@ def build_report(rows, start, end, site_filter=None):
     spikes = [s for s in spikes if (s[1] + s[2]) > 0]
 
     chart = render_chart(series, peak, start)
+    device = site_filter or (window[0]["site"] if window else (rows[0]["site"] if rows else "unbekannt"))
     return render_html(
         window=window, total=total, total_down=total_down, total_up=total_up,
         elapsed_h=elapsed_h, remaining=remaining, covered_h=covered_h,
         per_day=per_day, per_month=per_month, days=days, spikes=spikes,
-        chart=chart, start=start, end=end, now=now, peak=peak,
+        chart=chart, start=start, end=end, now=now, peak=peak, device=device,
     )
 
 
@@ -443,7 +444,7 @@ def render_html(**c):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="300">
-<title>WAN-Volumen UDM Pro</title>
+<title>WAN-Volumen {c['device']}</title>
 <style>
   :root {{
     --ink: #0e1620; --panel: #16212e; --line: #24344a;
@@ -491,7 +492,7 @@ def render_html(**c):
 <body>
 <div class="wrap">
   <header>
-    <h1>WAN-Volumen UDM Pro</h1>
+    <h1>WAN-Volumen {c['device']}</h1>
     <div class="sub">{status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
       bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
