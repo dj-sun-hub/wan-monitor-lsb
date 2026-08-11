@@ -503,6 +503,19 @@ def render_flow_chart(window, start, end):
     up_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in up_line)
     down_area = f"{down_line[0][0]:.1f},{baseline_y:.1f} {down_pts_str} {down_line[-1][0]:.1f},{baseline_y:.1f}"
 
+    # Laufender Durchschnitt (kumulativer Mittelwert bis zu jedem Punkt) - passt
+    # sich mit fortschreitender Zeit an, statt eine starre Gesamt-Durchschnittslinie
+    # zu sein.
+    avg_down_line, avg_up_line = [], []
+    sum_d = sum_u = 0.0
+    for i, (ts, d, u) in enumerate(samples):
+        sum_d += d
+        sum_u += u
+        avg_down_line.append(xy(ts, sum_d / (i + 1)))
+        avg_up_line.append(xy(ts, sum_u / (i + 1)))
+    avg_down_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in avg_down_line)
+    avg_up_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in avg_up_line)
+
     parts = []
     for i in range(1, 4):
         y = 12 + plot_h * (1 - i / 4.0)
@@ -521,6 +534,8 @@ def render_flow_chart(window, start, end):
     parts.append(f'<polygon points="{down_area}" class="flow-down-fill"/>')
     parts.append(f'<polyline points="{down_pts_str}" class="flow-down-line"/>')
     parts.append(f'<polyline points="{up_pts_str}" class="flow-up-line"/>')
+    parts.append(f'<polyline points="{avg_down_pts_str}" class="flow-avg-down-line"/>')
+    parts.append(f'<polyline points="{avg_up_pts_str}" class="flow-avg-up-line"/>')
     parts.append(f'<line x1="{left}" y1="{baseline_y:.1f}" x2="{left + plot_w}" y2="{baseline_y:.1f}" class="baseline"/>')
     # Hover-Linie: unsichtbar per Default, wird von flow_tooltip_script beim Hovern
     # an die x-Position des naechstgelegenen Messpunkts verschoben und eingeblendet.
@@ -573,6 +588,10 @@ BASE_CSS = """
   .chart .flow-down-fill { fill: var(--down); opacity: .16; stroke: none; }
   .chart .flow-down-line { fill: none; stroke: var(--down); stroke-width: 1.6; }
   .chart .flow-up-line { fill: none; stroke: var(--up); stroke-width: 1.6; }
+  .chart .flow-avg-down-line { fill: none; stroke: var(--down); stroke-width: 1.1;
+    stroke-dasharray: 5 3; opacity: .8; }
+  .chart .flow-avg-up-line { fill: none; stroke: var(--up); stroke-width: 1.1;
+    stroke-dasharray: 5 3; opacity: .8; }
   .legend { display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; flex-wrap: wrap; }
   .legend.small { font-size: 11.5px; gap: 12px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
@@ -806,6 +825,7 @@ def render_html(**c):
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
+      <span class="dim">- - - laufender Durchschnitt</span>
       <span>{c['flow_points']} Messpunkte, Pollintervall ~{c['flow_interval_min']} Min</span>
     </div>
   </div>
