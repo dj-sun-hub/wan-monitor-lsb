@@ -565,7 +565,15 @@ BASE_CSS = """
 def refresh_countdown_script(now):
     """Gemeinsames Countdown-Skript fuer Detail- und Uebersichtsseite. An den
     tatsaechlichen Erzeugungszeitpunkt gekoppelt, damit ein manueller Reload
-    den Countdown nicht auf voll zuruecksetzt."""
+    den Countdown nicht auf voll zuruecksetzt.
+
+    Der eigentliche Reload passiert NICHT ueber <meta refresh> (das laedt
+    dieselbe URL und kann von Browser/GitHub-Pages-CDN als zwischengespeicherte
+    Antwort ausgeliefert werden - das Ergebnis: die Seite "haengt" nach Ablauf
+    des Countdowns). Stattdessen navigiert das Skript selbst auf die eigene
+    URL mit einem Cache-Buster-Query-Parameter, das erzwingt einen echten
+    frischen Abruf.
+    """
     return f"""<script>
 (function() {{
   var generatedAtMs = new Date("{now.isoformat()}").getTime();
@@ -577,7 +585,10 @@ def refresh_countdown_script(now):
     var remaining = Math.max(refreshS - elapsedS, 0);
     var m = Math.floor(remaining / 60), s = remaining % 60;
     el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
-    if (remaining <= 0) return;
+    if (remaining <= 0) {{
+      window.location.href = window.location.pathname + '?_=' + Date.now();
+      return;
+    }}
     setTimeout(tick, 1000);
   }}
   tick();
@@ -621,7 +632,6 @@ def render_html(**c):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="{REPORT_REFRESH_S}">
 <title>WAN-Volumen {c['device']}</title>
 <style>
 {BASE_CSS}
@@ -758,7 +768,6 @@ def render_overview_html(consoles, start, end, now):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="{REPORT_REFRESH_S}">
 <title>WAN-Volumen Uebersicht</title>
 <style>
 {BASE_CSS}
