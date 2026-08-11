@@ -810,7 +810,7 @@ def render_overview_html(consoles, start, end, now):
 <title>WAN-Volumen Übersicht</title>
 <style>
 {BASE_CSS}
-  .wrap {{ max-width: 1500px; }}
+  .wrap {{ max-width: 1840px; }}
   header {{ margin-bottom: 16px; padding-bottom: 12px; }}
   .totals {{ margin-top: 4px; }}
   .totals b {{ color: #fff; font-weight: 600; }}
