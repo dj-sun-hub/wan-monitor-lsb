@@ -343,6 +343,10 @@ ALERT_THRESHOLD_BYTES = 4.8 * GIB
 # lag im Ernstfall bei KNZ im einstelligen kbps-Bereich, der echte LTE-Failover-
 # Ausschlag bei 400-877 kbps.
 FAILOVER_THRESHOLD_KBPS = 500.0
+# LSB zeigt eine noch ungeklaerte, dauerhaft erhoehte Grundlast (wird gerade
+# untersucht) - bis das geklaert ist, hier keine Failover-Erkennung, um keine
+# Fehlalarme zu erzeugen.
+FAILOVER_EXCLUDED_DEVICES = {"LSB--UDM-1"}
 
 
 def total_alert_class(total_bytes):
@@ -376,7 +380,7 @@ def compute_stats(rows, start, end, site_filter=None):
     # auseinanderliegen - fuer ein Live-Board waere das sonst zu traege.
     is_failover = False
     last_rate_kbps = 0.0
-    if window:
+    if window and site_filter not in FAILOVER_EXCLUDED_DEVICES:
         last_row = max(window, key=lambda r: r["ts"])
         if last_row["interval_s"]:
             last_rate_kbps = ((last_row["down_bytes"] + last_row["up_bytes"])
