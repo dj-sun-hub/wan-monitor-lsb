@@ -1,0 +1,59 @@
+name: WAN-Volumen LSB--UDM-1
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: wan-monitor
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Messpunkte holen und Bericht bauen
+        env:
+          UI_API_KEY: ${{ secrets.UI_API_KEY }}
+          TZ: Europe/Berlin
+        run: |
+          python3 udm_wan_monitor.py --once \
+            --start "${{ vars.MESS_START || '2026-08-11T08:00' }}" \
+            --days "${{ vars.MESS_TAGE || '3' }}" \
+            --site "${{ vars.SITE_FILTER || 'LSB--UDM-1' }}"
+
+      - name: Ergebnis sichern
+        run: |
+          git config user.name "wan-monitor"
+          git config user.email "wan-monitor@users.noreply.github.com"
+          mkdir -p public
+          cp wan_report.html public/index.html
+          git add wan_traffic.csv monitor_state.json public/index.html
+          git diff --staged --quiet || git commit -m "Messpunkte $(date -u +%FT%RZ)"
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  veroeffentlichen:
+    needs: poll
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
