@@ -569,15 +569,20 @@ def refresh_countdown_script(now):
 
     Der eigentliche Reload passiert NICHT ueber <meta refresh> (das laedt
     dieselbe URL und kann von Browser/GitHub-Pages-CDN als zwischengespeicherte
-    Antwort ausgeliefert werden - das Ergebnis: die Seite "haengt" nach Ablauf
-    des Countdowns). Stattdessen navigiert das Skript selbst auf die eigene
-    URL mit einem Cache-Buster-Query-Parameter, das erzwingt einen echten
-    frischen Abruf.
+    Antwort ausgeliefert werden). Stattdessen navigiert das Skript selbst auf
+    die eigene URL mit einem Cache-Buster-Query-Parameter.
+
+    Bremse eingebaut (sessionStorage): Ist der naechste echte Poll noch nicht
+    passiert, hat die frisch geladene Seite denselben alten Erzeugungszeitpunkt
+    und der Countdown ist sofort wieder bei 0 - ohne Bremse laedt das dann in
+    einer engen Schleife (mehrfach pro Sekunde) neu. Deshalb: nach einem
+    Reload-Versuch mindestens 10s warten, bevor der naechste Versuch startet.
     """
     return f"""<script>
 (function() {{
   var generatedAtMs = new Date("{now.isoformat()}").getTime();
   var refreshS = {REPORT_REFRESH_S};
+  var minRetryMs = 10000;
   var el = document.getElementById('refresh-cd');
   if (!el) return;
   function tick() {{
@@ -586,7 +591,14 @@ def refresh_countdown_script(now):
     var m = Math.floor(remaining / 60), s = remaining % 60;
     el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
     if (remaining <= 0) {{
-      window.location.href = window.location.pathname + '?_=' + Date.now();
+      var lastTry = parseInt(sessionStorage.getItem('wanmon_last_reload') || '0', 10);
+      var nowMs = Date.now();
+      if (nowMs - lastTry > minRetryMs) {{
+        sessionStorage.setItem('wanmon_last_reload', String(nowMs));
+        window.location.href = window.location.pathname + '?_=' + nowMs;
+      }} else {{
+        setTimeout(tick, 2000);
+      }}
       return;
     }}
     setTimeout(tick, 1000);
@@ -753,10 +765,7 @@ def render_overview_html(consoles, start, end, now):
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">{human_bytes(c['per_day'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['per_month'])}</div></div>
       </div>
-      <div class="mini-chart-label">Stundenvolumen</div>
       {c['chart']}
-      <div class="mini-chart-label">Traffic-Flow</div>
-      {c['flow_chart']}
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
@@ -776,15 +785,12 @@ def render_overview_html(consoles, start, end, now):
 {BASE_CSS}
   .wrap {{ max-width: 1400px; }}
   .overview-grid {{ display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }}
-  .console-card {{ display: flex; flex-direction: column; gap: 4px; }}
+  .console-card {{ display: flex; flex-direction: column; gap: 10px; }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
-  .card-head h3 {{ margin: 0; font-size: 15px; font-weight: 600; }}
-  .mini-grid {{ display: flex; gap: 16px; margin-bottom: 2px; }}
-  .mlabel {{ color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }}
-  .mvalue {{ font: 600 14.5px/1.25 ui-monospace, monospace; margin-top: 1px; }}
-  .mini-chart-label {{ color: var(--dim); font-size: 9.5px; text-transform: uppercase;
-    letter-spacing: .07em; margin: 2px 0 -2px; }}
-  .console-card .legend {{ margin-top: 2px; }}
+  .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
+  .mini-grid {{ display: flex; gap: 18px; }}
+  .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }}
+  .mvalue {{ font: 600 18px/1.3 ui-monospace, monospace; margin-top: 2px; }}
   .detail-link {{ align-self: flex-start; font-size: 13px; color: var(--down); text-decoration: none; margin-top: 2px; }}
   .detail-link:hover {{ text-decoration: underline; }}
 </style>
