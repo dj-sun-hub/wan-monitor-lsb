@@ -464,7 +464,8 @@ def render_chart(series, peak, start):
             parts.append(f'<text x="{x + 4:.1f}" y="{height - 8}" class="axis">{local.strftime("%d.%m. %H:%M")}</text>')
 
     parts.append(f'<line x1="{left}" y1="{12 + plot_h}" x2="{left + plot_w}" y2="{12 + plot_h}" class="baseline"/>')
-    return f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" aria-label="Stundenvolumen">{"".join(parts)}</svg>'
+    return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart" '
+            f'role="img" aria-label="Stundenvolumen">{"".join(parts)}</svg>')
 
 
 def render_flow_chart(window, start, end):
@@ -520,7 +521,8 @@ def render_flow_chart(window, start, end):
     parts.append(f'<polyline points="{down_pts_str}" class="flow-down-line"/>')
     parts.append(f'<polyline points="{up_pts_str}" class="flow-up-line"/>')
     parts.append(f'<line x1="{left}" y1="{baseline_y:.1f}" x2="{left + plot_w}" y2="{baseline_y:.1f}" class="baseline"/>')
-    return f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" aria-label="Traffic-Flow">{"".join(parts)}</svg>'
+    return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart" '
+            f'role="img" aria-label="Traffic-Flow">{"".join(parts)}</svg>')
 
 
 BASE_CSS = """
