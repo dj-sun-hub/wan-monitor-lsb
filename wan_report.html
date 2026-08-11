@@ -35,6 +35,9 @@
   .chart .axis { fill: var(--dim); font: 10.5px ui-monospace, monospace; }
   .chart .down { fill: var(--down); }
   .chart .up { fill: var(--up); }
+  .chart .flow-down-fill { fill: var(--down); opacity: .16; stroke: none; }
+  .chart .flow-down-line { fill: none; stroke: var(--down); stroke-width: 1.6; }
+  .chart .flow-up-line { fill: none; stroke: var(--up); stroke-width: 1.6; }
   .legend { display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -55,20 +58,20 @@
     <h1>WAN-Volumen LSB--UDM-1</h1>
     <div class="sub">Messung laeuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 71 h 9 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 08:50</div>
+      Restlaufzeit 71 h 6 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 08:53</div>
     <div class="bar"><span></span></div>
   </header>
 
   <div class="grid-cards">
     <div class="card"><div class="label">Bisher gemessen</div>
       <div class="value">61.6 MB</div>
-      <div class="foot">ueber 0.8 Stunden, 1 Stunden mit Daten</div></div>
+      <div class="foot">ueber 0.9 Stunden, 1 Stunden mit Daten</div></div>
     <div class="card"><div class="label">Pro Tag</div>
-      <div class="value">1.7 GB</div>
+      <div class="value">1.6 GB</div>
       <div class="foot">laufender Mittelwert</div></div>
     <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">51.5 GB</div>
+      <div class="value">48.5 GB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
     <div class="card"><div class="label">Verhaeltnis</div>
       <div class="value">6.8 MB</div>
@@ -82,6 +85,16 @@
       <span><span class="dot" style="background:var(--down)"></span>Download</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload</span>
       <span>Spitze 61.6 MB pro Stunde</span>
+    </div>
+  </div>
+
+  <h2>Traffic-Flow (Rate je Messpunkt)</h2>
+  <div class="panel">
+    <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">68 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">135 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">203 kbps</text><polygon points="240.0,172.0 240.0,142.8 656.5,164.1 656.5,172.0" class="flow-down-fill"/><polyline points="240.0,142.8 656.5,164.1" class="flow-down-line"/><polyline points="240.0,12.0 656.5,30.1" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
+      <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
+      <span>2 Messpunkte, Pollintervall ~15 Min</span>
     </div>
   </div>
 

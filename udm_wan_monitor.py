@@ -372,12 +372,17 @@ def build_report(rows, start, end, site_filter=None):
     spikes = [s for s in spikes if (s[1] + s[2]) > 0]
 
     chart = render_chart(series, peak, start)
+    flow_chart = render_flow_chart(window, start, min(now, end))
+    flow_points = len(window)
+    flow_intervals = sorted({r["interval_s"] for r in window if r["interval_s"]})
+    flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
     device = site_filter or (window[0]["site"] if window else (rows[0]["site"] if rows else "unbekannt"))
     return render_html(
         window=window, total=total, total_down=total_down, total_up=total_up,
         elapsed_h=elapsed_h, remaining=remaining, covered_h=covered_h,
         per_day=per_day, per_month=per_month, days=days, spikes=spikes,
         chart=chart, start=start, end=end, now=now, peak=peak, device=device,
+        flow_chart=flow_chart, flow_points=flow_points, flow_interval_min=flow_interval_min,
     )
 
 
@@ -414,6 +419,62 @@ def render_chart(series, peak, start):
 
     parts.append(f'<line x1="{left}" y1="{12 + plot_h}" x2="{left + plot_w}" y2="{12 + plot_h}" class="baseline"/>')
     return f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" aria-label="Stundenvolumen">{"".join(parts)}</svg>'
+
+
+def render_flow_chart(window, start, end):
+    """Feinkoerniger Traffic-Flow-Graph: Rate (kbps) je Poll-Punkt ueber die Zeit,
+    im Gegensatz zum Stundenchart nicht zu Stundensummen aggregiert."""
+    width, height = 960, 200
+    left, bottom = 54, 28
+    plot_w = width - left - 12
+    plot_h = height - bottom - 12
+
+    pts = sorted((r for r in window if r["interval_s"]), key=lambda r: r["ts"])
+    if len(pts) < 2:
+        return '<p class="dim" style="margin:0">Noch nicht genug Messpunkte fuer den Flow-Graphen.</p>'
+
+    span_s = max((end - start).total_seconds(), 1)
+
+    def rate_kbps(bytes_, interval_s):
+        return bytes_ * 8.0 / interval_s / 1000.0
+
+    samples = [(r["ts"],
+                rate_kbps(r["down_bytes"], r["interval_s"]),
+                rate_kbps(r["up_bytes"], r["interval_s"])) for r in pts]
+    peak = max((max(d, u) for _, d, u in samples), default=0.0) or 1.0
+
+    def xy(ts, value):
+        x = left + (ts - start).total_seconds() / span_s * plot_w
+        y = 12 + plot_h - (value / peak) * plot_h
+        return x, y
+
+    baseline_y = 12 + plot_h
+    down_line = [xy(ts, d) for ts, d, u in samples]
+    up_line = [xy(ts, u) for ts, d, u in samples]
+    down_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in down_line)
+    up_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in up_line)
+    down_area = f"{down_line[0][0]:.1f},{baseline_y:.1f} {down_pts_str} {down_line[-1][0]:.1f},{baseline_y:.1f}"
+
+    parts = []
+    for i in range(1, 4):
+        y = 12 + plot_h * (1 - i / 4.0)
+        label = f"{peak * i / 4.0:,.0f} kbps".replace(",", ".")
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" class="grid"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="axis" text-anchor="end">{label}</text>')
+
+    day_cursor = start.astimezone().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    end_local = end.astimezone()
+    while day_cursor < end_local:
+        x, _ = xy(day_cursor.astimezone(timezone.utc), 0)
+        parts.append(f'<line x1="{x:.1f}" y1="12" x2="{x:.1f}" y2="{baseline_y:.1f}" class="daymark"/>')
+        parts.append(f'<text x="{x + 4:.1f}" y="{height - 8}" class="axis">{day_cursor.strftime("%d.%m.")}</text>')
+        day_cursor += timedelta(days=1)
+
+    parts.append(f'<polygon points="{down_area}" class="flow-down-fill"/>')
+    parts.append(f'<polyline points="{down_pts_str}" class="flow-down-line"/>')
+    parts.append(f'<polyline points="{up_pts_str}" class="flow-up-line"/>')
+    parts.append(f'<line x1="{left}" y1="{baseline_y:.1f}" x2="{left + plot_w}" y2="{baseline_y:.1f}" class="baseline"/>')
+    return f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" aria-label="Traffic-Flow">{"".join(parts)}</svg>'
 
 
 def render_html(**c):
@@ -475,6 +536,9 @@ def render_html(**c):
   .chart .axis {{ fill: var(--dim); font: 10.5px ui-monospace, monospace; }}
   .chart .down {{ fill: var(--down); }}
   .chart .up {{ fill: var(--up); }}
+  .chart .flow-down-fill {{ fill: var(--down); opacity: .16; stroke: none; }}
+  .chart .flow-down-line {{ fill: none; stroke: var(--down); stroke-width: 1.6; }}
+  .chart .flow-up-line {{ fill: none; stroke: var(--up); stroke-width: 1.6; }}
   .legend {{ display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; }}
   .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }}
   table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
@@ -522,6 +586,16 @@ def render_html(**c):
       <span><span class="dot" style="background:var(--down)"></span>Download</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload</span>
       <span>Spitze {human_bytes(c['peak'])} pro Stunde</span>
+    </div>
+  </div>
+
+  <h2>Traffic-Flow (Rate je Messpunkt)</h2>
+  <div class="panel">
+    {c['flow_chart']}
+    <div class="legend">
+      <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
+      <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
+      <span>{c['flow_points']} Messpunkte, Pollintervall ~{c['flow_interval_min']} Min</span>
     </div>
   </div>
 
