@@ -31,6 +31,7 @@ Aufrufe
 
 import argparse
 import csv
+import html
 import json
 import os
 import re
@@ -521,8 +522,15 @@ def render_flow_chart(window, start, end):
     parts.append(f'<polyline points="{down_pts_str}" class="flow-down-line"/>')
     parts.append(f'<polyline points="{up_pts_str}" class="flow-up-line"/>')
     parts.append(f'<line x1="{left}" y1="{baseline_y:.1f}" x2="{left + plot_w}" y2="{baseline_y:.1f}" class="baseline"/>')
-    return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart" '
-            f'role="img" aria-label="Traffic-Flow">{"".join(parts)}</svg>')
+
+    # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel + Rate
+    # je Punkt, plus die Plot-Geometrie, damit JS Maus-X auf den naechsten Punkt mappen kann.
+    samples_json = json.dumps([[ts.isoformat(), round(d, 1), round(u, 1)] for ts, d, u in samples])
+    samples_attr = html.escape(samples_json, quote=True)
+    return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart flow-chart" '
+            f'role="img" aria-label="Traffic-Flow" '
+            f'data-samples="{samples_attr}" data-left="{left}" data-plot-w="{plot_w:.2f}">'
+            f'{"".join(parts)}</svg>')
 
 
 BASE_CSS = """
@@ -570,6 +578,12 @@ BASE_CSS = """
   .dim { color: var(--dim); }
   .value-warn { color: var(--warn); }
   .value-alert { color: var(--alert); }
+  .flow-chart { cursor: crosshair; }
+  .flow-tooltip { position: fixed; display: none; z-index: 50; pointer-events: none;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 11px; font-size: 12px; line-height: 1.5; color: var(--text);
+    box-shadow: 0 4px 14px rgba(0,0,0,.45); white-space: nowrap; }
+  .flow-tooltip b { color: #fff; }
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
     border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
@@ -623,6 +637,62 @@ def refresh_countdown_script(now):
   }}
   tick();
 }})();
+</script>"""
+
+
+def flow_tooltip_script():
+    """Hover-Tooltip fuer alle Traffic-Flow-Charts (svg.flow-chart) der Seite.
+    Liest die in data-samples eingebetteten Rohdaten, mappt die Maus-X-Position
+    ueber die SVG-CTM (funktioniert auch mit preserveAspectRatio="none") auf den
+    naechstgelegenen Messpunkt und zeigt Zeit + Down/Up-Rate in einer kleinen,
+    dem Cursor folgenden Box."""
+    return """<script>
+(function() {
+  var tip = document.createElement('div');
+  tip.className = 'flow-tooltip';
+  document.body.appendChild(tip);
+
+  function fmtKbps(v) {
+    if (v >= 1000) return (v / 1000).toFixed(2).replace('.', ',') + ' Mbps';
+    return v.toFixed(1).replace('.', ',') + ' kbps';
+  }
+
+  document.querySelectorAll('svg.flow-chart').forEach(function (svg) {
+    var samples;
+    try { samples = JSON.parse(svg.getAttribute('data-samples')); } catch (e) { return; }
+    if (!samples || !samples.length) return;
+    var left = parseFloat(svg.getAttribute('data-left'));
+    var plotW = parseFloat(svg.getAttribute('data-plot-w'));
+
+    function nearest(svgX) {
+      var frac = Math.min(Math.max((svgX - left) / plotW, 0), 1);
+      var idx = Math.round(frac * (samples.length - 1));
+      return samples[Math.min(Math.max(idx, 0), samples.length - 1)];
+    }
+
+    svg.addEventListener('mousemove', function (ev) {
+      var pt = svg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      var svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+      var s = nearest(svgP.x);
+      var d = new Date(s[0]);
+      var timeStr = d.toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      tip.innerHTML = '<b>' + timeStr + '</b><br>Down: ' + fmtKbps(s[1]) +
+        '<br>Up: ' + fmtKbps(s[2]);
+      var x = ev.clientX + 16, y = ev.clientY + 16;
+      if (x + 170 > window.innerWidth) x = ev.clientX - 186;
+      if (y + 60 > window.innerHeight) y = ev.clientY - 76;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+      tip.style.display = 'block';
+    });
+    svg.addEventListener('mouseleave', function () {
+      tip.style.display = 'none';
+    });
+  });
+})();
 </script>"""
 
 
@@ -751,6 +821,7 @@ def render_html(**c):
     {len(c['window'])} Messpunkte im Fenster. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
 </div>
 {refresh_countdown_script(now)}
+{flow_tooltip_script()}
 </body>
 </html>"""
 
@@ -859,6 +930,7 @@ def render_overview_html(consoles, start, end, now):
     {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
 </div>
 {refresh_countdown_script(now)}
+{flow_tooltip_script()}
 </body>
 </html>"""
 
