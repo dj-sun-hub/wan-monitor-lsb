@@ -753,7 +753,10 @@ def render_overview_html(consoles, start, end, now):
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">{human_bytes(c['per_day'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['per_month'])}</div></div>
       </div>
+      <div class="mini-chart-label">Stundenvolumen</div>
       {c['chart']}
+      <div class="mini-chart-label">Traffic-Flow</div>
+      {c['flow_chart']}
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
@@ -773,12 +776,15 @@ def render_overview_html(consoles, start, end, now):
 {BASE_CSS}
   .wrap {{ max-width: 1400px; }}
   .overview-grid {{ display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }}
-  .console-card {{ display: flex; flex-direction: column; gap: 10px; }}
+  .console-card {{ display: flex; flex-direction: column; gap: 4px; }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
-  .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
-  .mini-grid {{ display: flex; gap: 18px; }}
-  .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }}
-  .mvalue {{ font: 600 18px/1.3 ui-monospace, monospace; margin-top: 2px; }}
+  .card-head h3 {{ margin: 0; font-size: 15px; font-weight: 600; }}
+  .mini-grid {{ display: flex; gap: 16px; margin-bottom: 2px; }}
+  .mlabel {{ color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }}
+  .mvalue {{ font: 600 14.5px/1.25 ui-monospace, monospace; margin-top: 1px; }}
+  .mini-chart-label {{ color: var(--dim); font-size: 9.5px; text-transform: uppercase;
+    letter-spacing: .07em; margin: 2px 0 -2px; }}
+  .console-card .legend {{ margin-top: 2px; }}
   .detail-link {{ align-self: flex-start; font-size: 13px; color: var(--down); text-decoration: none; margin-top: 2px; }}
   .detail-link:hover {{ text-decoration: underline; }}
 </style>
