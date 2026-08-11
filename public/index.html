@@ -58,15 +58,12 @@
 
   .wrap { max-width: 1400px; }
   .overview-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
-  .console-card { display: flex; flex-direction: column; gap: 4px; }
+  .console-card { display: flex; flex-direction: column; gap: 10px; }
   .card-head { display: flex; align-items: center; gap: 8px; }
-  .card-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
-  .mini-grid { display: flex; gap: 16px; margin-bottom: 2px; }
-  .mlabel { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
-  .mvalue { font: 600 14.5px/1.25 ui-monospace, monospace; margin-top: 1px; }
-  .mini-chart-label { color: var(--dim); font-size: 9.5px; text-transform: uppercase;
-    letter-spacing: .07em; margin: 2px 0 -2px; }
-  .console-card .legend { margin-top: 2px; }
+  .card-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .mini-grid { display: flex; gap: 18px; }
+  .mlabel { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .mvalue { font: 600 18px/1.3 ui-monospace, monospace; margin-top: 2px; }
   .detail-link { align-self: flex-start; font-size: 13px; color: var(--down); text-decoration: none; margin-top: 2px; }
   .detail-link:hover { text-decoration: underline; }
 </style>
@@ -77,21 +74,21 @@
     <h1>WAN-Volumen Uebersicht</h1>
     <div class="sub">Messung laeuft &nbsp;&middot;&nbsp; Fenster 11.08.2026 08:00
       bis 14.08.2026 08:00 &nbsp;&middot;&nbsp;
-      Restlaufzeit 68 h 25 min &nbsp;&middot;&nbsp;
-      Stand 11.08.2026 11:34 &nbsp;&middot;&nbsp;
+      Restlaufzeit 68 h 23 min &nbsp;&middot;&nbsp;
+      Stand 11.08.2026 11:36 &nbsp;&middot;&nbsp;
       naechster Refresh in <span id="refresh-cd">2:00</span></div>
     <div class="bar"><span style="width:5.0%"></span></div>
   </header>
 
   <div class="grid-cards">
     <div class="card"><div class="label">Alle Konsolen zusammen</div>
-      <div class="value">862.6 MB</div>
+      <div class="value">865.5 MB</div>
       <div class="foot">bisher gemessen</div></div>
     <div class="card"><div class="label">Pro Tag (Summe)</div>
-      <div class="value">5.7 GB</div>
+      <div class="value">5.6 GB</div>
       <div class="foot">laufender Mittelwert</div></div>
     <div class="card"><div class="label">Hochrechnung 30 Tage (Summe)</div>
-      <div class="value">169.7 GB</div>
+      <div class="value">168.7 GB</div>
       <div class="foot">bei gleichbleibender Grundlast</div></div>
   </div>
 
@@ -101,30 +98,24 @@
       <div class="mini-grid">
         <div><div class="mlabel">Bisher</div><div class="mvalue">2.2 MB</div></div>
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">14.7 MB</div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">440.5 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">442.4 MB</div></div>
       </div>
-      <div class="mini-chart-label">Stundenvolumen</div>
-      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">469.7 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">939.3 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">1.4 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="174.7" width="8.9" height="17.3" class="down"/><rect x="80.6" y="157.4" width="8.9" height="17.3" class="up"/><rect x="93.0" y="96.9" width="8.9" height="95.1" class="down"/><rect x="93.0" y="12.0" width="8.9" height="84.9" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
-      <div class="mini-chart-label">Traffic-Flow</div>
-      <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">13 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">26 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">39 kbps</text><polygon points="710.6,172.0 710.6,167.7 793.2,168.7 890.1,161.3 898.1,159.1 906.0,166.6 914.3,12.0 922.7,168.7 932.5,168.7 939.7,160.1 947.8,168.7 947.8,172.0" class="flow-down-fill"/><polyline points="710.6,167.7 793.2,168.7 890.1,161.3 898.1,159.1 906.0,166.6 914.3,12.0 922.7,168.7 932.5,168.7 939.7,160.1 947.8,168.7" class="flow-down-line"/><polyline points="710.6,167.7 793.2,168.7 890.1,161.3 898.1,159.1 906.0,166.6 914.3,34.6 922.7,168.7 932.5,168.7 939.7,160.1 947.8,168.7" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">477.1 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">954.2 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">1.4 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="175.0" width="8.9" height="17.0" class="down"/><rect x="80.6" y="158.0" width="8.9" height="17.0" class="up"/><rect x="93.0" y="97.0" width="8.9" height="95.0" class="down"/><rect x="93.0" y="12.0" width="8.9" height="85.0" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
-        <span>Spitze 1.8 MB/h</span>
+        <span>Spitze 1.9 MB/h</span>
       </div>
       <a class="detail-link" href="HAN--UDM-1.html">Details &rarr;</a>
     </div>
     <div class="card console-card">
       <div class="card-head"><h3>KLO--UDM-1</h3><span class="live-tag">laeuft</span></div>
       <div class="mini-grid">
-        <div><div class="mlabel">Bisher</div><div class="mvalue">1.8 MB</div></div>
-        <div><div class="mlabel">Pro Tag</div><div class="mvalue">12.2 MB</div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">366.6 MB</div></div>
+        <div><div class="mlabel">Bisher</div><div class="mvalue">1.9 MB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">12.3 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">369.4 MB</div></div>
       </div>
-      <div class="mini-chart-label">Stundenvolumen</div>
-      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">353.7 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">707.5 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">1.0 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="163.5" width="8.9" height="28.5" class="down"/><rect x="80.6" y="134.9" width="8.9" height="28.5" class="up"/><rect x="93.0" y="96.7" width="8.9" height="95.3" class="down"/><rect x="93.0" y="12.0" width="8.9" height="84.7" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
-      <div class="mini-chart-label">Traffic-Flow</div>
-      <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">5 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">9 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">14 kbps</text><polygon points="710.6,172.0 710.6,157.7 793.2,159.6 890.1,143.6 898.1,160.1 906.0,130.1 914.3,163.1 922.7,157.0 932.5,20.7 939.7,143.3 947.8,12.0 947.8,172.0" class="flow-down-fill"/><polyline points="710.6,157.7 793.2,159.6 890.1,143.6 898.1,160.1 906.0,130.1 914.3,163.1 922.7,157.0 932.5,20.7 939.7,143.3 947.8,12.0" class="flow-down-line"/><polyline points="710.6,157.7 793.2,159.6 890.1,143.6 898.1,150.8 906.0,127.0 914.3,163.1 922.7,157.0 932.5,52.7 939.7,143.3 947.8,41.9" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">361.6 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">723.2 KB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">1.1 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="164.1" width="8.9" height="27.9" class="down"/><rect x="80.6" y="136.1" width="8.9" height="27.9" class="up"/><rect x="93.0" y="96.8" width="8.9" height="95.2" class="down"/><rect x="93.0" y="12.0" width="8.9" height="84.8" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
@@ -135,14 +126,11 @@
     <div class="card console-card">
       <div class="card-head"><h3>KNZ--UDM-1</h3><span class="live-tag">laeuft</span></div>
       <div class="mini-grid">
-        <div><div class="mlabel">Bisher</div><div class="mvalue">4.0 MB</div></div>
+        <div><div class="mlabel">Bisher</div><div class="mvalue">4.1 MB</div></div>
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">27.2 MB</div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">815.2 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">815.6 MB</div></div>
       </div>
-      <div class="mini-chart-label">Stundenvolumen</div>
-      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">796.0 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">1.6 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">2.3 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="57.1" width="8.9" height="134.9" class="down"/><rect x="80.6" y="12.0" width="8.9" height="45.1" class="up"/><rect x="93.0" y="155.9" width="8.9" height="36.1" class="down"/><rect x="93.0" y="137.7" width="8.9" height="18.3" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
-      <div class="mini-chart-label">Traffic-Flow</div>
-      <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">7 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">14 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">22 kbps</text><polygon points="710.6,172.0 710.6,150.9 793.2,12.0 890.1,166.0 898.1,152.9 906.0,148.9 914.3,162.6 922.7,158.2 932.5,160.0 939.7,19.2 947.8,166.0 947.8,172.0" class="flow-down-fill"/><polyline points="710.6,150.9 793.2,12.0 890.1,166.0 898.1,152.9 906.0,148.9 914.3,162.6 922.7,158.2 932.5,160.0 939.7,19.2 947.8,166.0" class="flow-down-line"/><polyline points="710.6,150.9 793.2,132.6 890.1,166.0 898.1,152.9 906.0,148.9 914.3,161.9 922.7,166.0 932.5,160.0 939.7,136.3 947.8,161.4" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">796.0 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">1.6 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">2.3 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="57.1" width="8.9" height="134.9" class="down"/><rect x="80.6" y="12.0" width="8.9" height="45.1" class="up"/><rect x="93.0" y="155.0" width="8.9" height="37.0" class="down"/><rect x="93.0" y="135.5" width="8.9" height="19.6" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
@@ -153,14 +141,11 @@
     <div class="card console-card">
       <div class="card-head"><h3>LSB--UDM-1</h3><span class="live-tag">laeuft</span></div>
       <div class="mini-grid">
-        <div><div class="mlabel">Bisher</div><div class="mvalue">580.1 MB</div></div>
+        <div><div class="mlabel">Bisher</div><div class="mvalue">582.4 MB</div></div>
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">3.8 GB</div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">114.1 GB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">113.5 GB</div></div>
       </div>
-      <div class="mini-chart-label">Stundenvolumen</div>
-      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">99.0 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">197.9 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">296.9 MB</text><rect x="55.7" y="186.6" width="8.9" height="5.4" class="down"/><rect x="55.7" y="125.9" width="8.9" height="60.7" class="up"/><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="68.2" y="191.5" width="8.9" height="0.5" class="down"/><rect x="68.2" y="190.2" width="8.9" height="1.4" class="up"/><rect x="80.6" y="183.7" width="8.9" height="8.3" class="down"/><rect x="80.6" y="12.0" width="8.9" height="171.7" class="up"/><rect x="93.0" y="191.2" width="8.9" height="0.8" class="down"/><rect x="93.0" y="176.2" width="8.9" height="15.0" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
-      <div class="mini-chart-label">Traffic-Flow</div>
-      <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">458 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">916 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">1.373 kbps</text><polygon points="100.5,172.0 100.5,167.7 204.6,170.8 266.4,169.7 299.8,166.4 396.5,169.6 597.4,169.3 609.4,169.5 627.2,167.1 656.7,169.1 710.6,169.4 793.2,165.4 890.1,170.9 898.1,171.0 906.0,170.9 914.3,170.4 922.7,170.3 932.5,170.6 939.7,170.7 947.8,170.8 947.8,172.0" class="flow-down-fill"/><polyline points="100.5,167.7 204.6,170.8 266.4,169.7 299.8,166.4 396.5,169.6 597.4,169.3 609.4,169.5 627.2,167.1 656.7,169.1 710.6,169.4 793.2,165.4 890.1,170.9 898.1,171.0 906.0,170.9 914.3,170.4 922.7,170.3 932.5,170.6 939.7,170.7 947.8,170.8" class="flow-down-line"/><polyline points="100.5,148.3 204.6,151.0 266.4,122.9 299.8,127.2 396.5,164.5 597.4,109.7 609.4,113.2 627.2,110.6 656.7,115.1 710.6,110.0 793.2,12.0 890.1,147.9 898.1,147.9 906.0,147.7 914.3,139.5 922.7,147.2 932.5,147.6 939.7,148.4 947.8,147.7" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">99.0 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">197.9 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">296.9 MB</text><rect x="55.7" y="186.6" width="8.9" height="5.4" class="down"/><rect x="55.7" y="125.9" width="8.9" height="60.7" class="up"/><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="68.2" y="191.5" width="8.9" height="0.5" class="down"/><rect x="68.2" y="190.2" width="8.9" height="1.4" class="up"/><rect x="80.6" y="183.7" width="8.9" height="8.3" class="down"/><rect x="80.6" y="12.0" width="8.9" height="171.7" class="up"/><rect x="93.0" y="191.1" width="8.9" height="0.9" class="down"/><rect x="93.0" y="175.1" width="8.9" height="15.9" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
@@ -171,36 +156,30 @@
     <div class="card console-card">
       <div class="card-head"><h3>NID--UDM-1</h3><span class="live-tag">laeuft</span></div>
       <div class="mini-grid">
-        <div><div class="mlabel">Bisher</div><div class="mvalue">3.6 MB</div></div>
-        <div><div class="mlabel">Pro Tag</div><div class="mvalue">24.1 MB</div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">724.3 MB</div></div>
+        <div><div class="mlabel">Bisher</div><div class="mvalue">3.7 MB</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">24.6 MB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">737.4 MB</div></div>
       </div>
-      <div class="mini-chart-label">Stundenvolumen</div>
-      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">692.3 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">1.4 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">2.0 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="163.4" width="8.9" height="28.6" class="down"/><rect x="80.6" y="132.6" width="8.9" height="30.8" class="up"/><rect x="93.0" y="82.2" width="8.9" height="109.8" class="down"/><rect x="93.0" y="12.0" width="8.9" height="70.2" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
-      <div class="mini-chart-label">Traffic-Flow</div>
-      <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">19 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">39 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">58 kbps</text><polygon points="710.6,172.0 710.6,166.7 793.2,164.9 890.1,164.9 898.1,135.9 906.0,165.3 914.3,164.9 922.7,165.3 932.5,169.8 939.7,159.2 947.8,12.0 947.8,172.0" class="flow-down-fill"/><polyline points="710.6,166.7 793.2,164.9 890.1,164.9 898.1,135.9 906.0,165.3 914.3,164.9 922.7,165.3 932.5,169.8 939.7,159.2 947.8,12.0" class="flow-down-line"/><polyline points="710.6,165.7 793.2,164.9 890.1,164.9 898.1,143.7 906.0,165.3 914.3,164.9 922.7,167.6 932.5,169.8 939.7,159.2 947.8,88.1" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">717.4 KB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">1.4 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">2.1 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="164.4" width="8.9" height="27.6" class="down"/><rect x="80.6" y="134.7" width="8.9" height="29.7" class="up"/><rect x="93.0" y="82.9" width="8.9" height="109.1" class="down"/><rect x="93.0" y="12.0" width="8.9" height="70.9" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
-        <span>Spitze 2.7 MB/h</span>
+        <span>Spitze 2.8 MB/h</span>
       </div>
       <a class="detail-link" href="NID--UDM-1.html">Details &rarr;</a>
     </div>
     <div class="card console-card">
       <div class="card-head"><h3>WTB--UDM-1</h3><span class="live-tag">laeuft</span></div>
       <div class="mini-grid">
-        <div><div class="mlabel">Bisher</div><div class="mvalue">270.8 MB</div></div>
+        <div><div class="mlabel">Bisher</div><div class="mvalue">271.2 MB</div></div>
         <div><div class="mlabel">Pro Tag</div><div class="mvalue">1.8 GB</div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">53.3 GB</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">52.9 GB</div></div>
       </div>
-      <div class="mini-chart-label">Stundenvolumen</div>
-      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">67.5 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">135.0 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">202.6 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="191.7" width="8.9" height="0.3" class="down"/><rect x="80.6" y="191.5" width="8.9" height="0.2" class="up"/><rect x="93.0" y="14.7" width="8.9" height="177.3" class="down"/><rect x="93.0" y="12.0" width="8.9" height="2.7" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
-      <div class="mini-chart-label">Traffic-Flow</div>
-      <svg viewBox="0 0 960 200" class="chart" role="img" aria-label="Traffic-Flow"><line x1="54" y1="132.0" x2="948" y2="132.0" class="grid"/><text x="46" y="136.0" class="axis" text-anchor="end">4.212 kbps</text><line x1="54" y1="92.0" x2="948" y2="92.0" class="grid"/><text x="46" y="96.0" class="axis" text-anchor="end">8.424 kbps</text><line x1="54" y1="52.0" x2="948" y2="52.0" class="grid"/><text x="46" y="56.0" class="axis" text-anchor="end">12.635 kbps</text><polygon points="710.6,172.0 710.6,172.0 793.2,172.0 890.1,172.0 898.1,171.9 906.0,171.9 914.3,172.0 922.7,172.0 932.5,12.0 939.7,155.6 947.8,172.0 947.8,172.0" class="flow-down-fill"/><polyline points="710.6,172.0 793.2,172.0 890.1,172.0 898.1,171.9 906.0,171.9 914.3,172.0 922.7,172.0 932.5,12.0 939.7,155.6 947.8,172.0" class="flow-down-line"/><polyline points="710.6,172.0 793.2,172.0 890.1,172.0 898.1,171.9 906.0,171.9 914.3,172.0 922.7,172.0 932.5,171.2 939.7,170.4 947.8,172.0" class="flow-up-line"/><line x1="54" y1="172.0" x2="948" y2="172.0" class="baseline"/></svg>
+      <svg viewBox="0 0 960 220" class="chart" role="img" aria-label="Stundenvolumen"><line x1="54" y1="147.0" x2="948" y2="147.0" class="grid"/><text x="46" y="151.0" class="axis" text-anchor="end">67.6 MB</text><line x1="54" y1="102.0" x2="948" y2="102.0" class="grid"/><text x="46" y="106.0" class="axis" text-anchor="end">135.2 MB</text><line x1="54" y1="57.0" x2="948" y2="57.0" class="grid"/><text x="46" y="61.0" class="axis" text-anchor="end">202.8 MB</text><line x1="55.7" y1="12" x2="55.7" y2="192" class="daymark"/><text x="59.7" y="212" class="axis">11.08. 08:00</text><rect x="80.6" y="191.7" width="8.9" height="0.3" class="down"/><rect x="80.6" y="191.5" width="8.9" height="0.2" class="up"/><rect x="93.0" y="14.8" width="8.9" height="177.2" class="down"/><rect x="93.0" y="12.0" width="8.9" height="2.8" class="up"/><line x1="254.4" y1="12" x2="254.4" y2="192" class="daymark"/><text x="258.4" y="212" class="axis">12.08. 00:00</text><line x1="552.4" y1="12" x2="552.4" y2="192" class="daymark"/><text x="556.4" y="212" class="axis">13.08. 00:00</text><line x1="850.4" y1="12" x2="850.4" y2="192" class="daymark"/><text x="854.4" y="212" class="axis">14.08. 00:00</text><line x1="54" y1="192" x2="948" y2="192" class="baseline"/></svg>
       <div class="legend small">
         <span><span class="dot" style="background:var(--down)"></span>Down</span>
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
-        <span>Spitze 270.1 MB/h</span>
+        <span>Spitze 270.4 MB/h</span>
       </div>
       <a class="detail-link" href="WTB--UDM-1.html">Details &rarr;</a>
     </div>
@@ -211,8 +190,9 @@
 </div>
 <script>
 (function() {
-  var generatedAtMs = new Date("2026-08-11T09:34:29.746916+00:00").getTime();
+  var generatedAtMs = new Date("2026-08-11T09:36:25.423419+00:00").getTime();
   var refreshS = 120;
+  var minRetryMs = 10000;
   var el = document.getElementById('refresh-cd');
   if (!el) return;
   function tick() {
@@ -221,7 +201,14 @@
     var m = Math.floor(remaining / 60), s = remaining % 60;
     el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
     if (remaining <= 0) {
-      window.location.href = window.location.pathname + '?_=' + Date.now();
+      var lastTry = parseInt(sessionStorage.getItem('wanmon_last_reload') || '0', 10);
+      var nowMs = Date.now();
+      if (nowMs - lastTry > minRetryMs) {
+        sessionStorage.setItem('wanmon_last_reload', String(nowMs));
+        window.location.href = window.location.pathname + '?_=' + nowMs;
+      } else {
+        setTimeout(tick, 2000);
+      }
       return;
     }
     setTimeout(tick, 1000);
