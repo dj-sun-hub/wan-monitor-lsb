@@ -45,6 +45,18 @@ API_BASE = "https://api.ui.com/ea"
 CONNECTOR_BASE = "https://api.ui.com/v1/connector/consoles"
 # LSB--UDM-1, Site-Manager hostId. Ueberschreibbar per --host-id.
 DEFAULT_HOST_ID = "6C63F8E29F260000000009410E510000000009C09DF000000000686B4930:173285773"
+
+# Ueberwachte Konsolen (Name, Site-Manager hostId) fuer den Standard-Multi-Konsolen-
+# Betrieb. WSG--UDM-1 ist bewusst nicht dabei. Namen sind direkt hinterlegt (statt
+# per API aufgeloest), damit --report ohne Netzzugriff funktioniert.
+MONITORED_HOSTS = [
+    ("HAN--UDM-1", "6C63F8AA761300000000093BE1DD0000000009BB150D00000000685B037F:1493605141"),
+    ("KLO--UDM-1", "6C63F8E2993E000000000941189A0000000009C0A86600000000686B5BD1:662409267"),
+    ("KNZ--UDM-1", "0CEA14D5BB63000000000899F5C200000000090F78C6000000006763F2E2:1427694241"),
+    ("LSB--UDM-1", "6C63F8E29F260000000009410E510000000009C09DF000000000686B4930:173285773"),
+    ("NID--UDM-1", "6C63F8AB54A900000000093C22300000000009BB5AAA00000000685B7889:144919651"),
+    ("WTB--UDM-1", "0CEA146F1C450000000008887B2B0000000008FCF87300000000674692E9:927254559"),
+]
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(DATA_DIR, "wan_traffic.csv")
 HTML_PATH = os.path.join(DATA_DIR, "wan_report.html")
@@ -323,7 +335,11 @@ def human_bytes(value):
     return f"{value:.1f} TB"
 
 
-def build_report(rows, start, end, site_filter=None):
+def compute_stats(rows, start, end, site_filter=None):
+    """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
+    leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird sowohl fuer
+    Detailseiten (render_html) als auch fuer Karten der Uebersichtsseite
+    (render_overview_html) genutzt."""
     now = datetime.now(timezone.utc)
     window = [r for r in rows if start <= r["ts"] < end]
     if site_filter:
@@ -382,7 +398,7 @@ def build_report(rows, start, end, site_filter=None):
     flow_intervals = sorted({r["interval_s"] for r in window if r["interval_s"]})
     flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
     device = site_filter or (window[0]["site"] if window else (rows[0]["site"] if rows else "unbekannt"))
-    return render_html(
+    return dict(
         window=window, total=total, total_down=total_down, total_up=total_up,
         elapsed_h=elapsed_h, remaining=remaining, covered_h=covered_h,
         per_day=per_day, per_month=per_month, days=days, spikes=spikes,
@@ -390,6 +406,16 @@ def build_report(rows, start, end, site_filter=None):
         flow_chart=flow_chart, flow_points=flow_points, flow_interval_min=flow_interval_min,
         last24=last24,
     )
+
+
+def build_report(rows, start, end, site_filter=None):
+    return render_html(**compute_stats(rows, start, end, site_filter))
+
+
+def build_overview(rows, start, end, console_names):
+    now = datetime.now(timezone.utc)
+    consoles = [compute_stats(rows, start, end, site_filter=name) for name in console_names]
+    return render_overview_html(consoles=consoles, start=start, end=end, now=now)
 
 
 def render_chart(series, peak, start):
@@ -483,6 +509,82 @@ def render_flow_chart(window, start, end):
     return f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" aria-label="Traffic-Flow">{"".join(parts)}</svg>'
 
 
+BASE_CSS = """
+  :root {
+    --ink: #0e1620; --panel: #16212e; --line: #24344a;
+    --text: #dbe6f0; --dim: #7f93a8;
+    --down: #46b3a3; --up: #e0a458; --alert: #d4675b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ink); color: var(--text);
+    font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 64px; }
+  .wrap { max-width: 1020px; margin: 0 auto; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }
+  h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -.01em; font-weight: 600; }
+  .sub { color: var(--dim); font-size: 13.5px; }
+  .bar { height: 5px; background: var(--line); border-radius: 3px; margin-top: 16px; overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--down); }
+  .grid-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 30px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .card .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; }
+  .card .value { font: 600 26px/1.25 ui-monospace, "SFMono-Regular", Consolas, monospace; margin-top: 8px; }
+  .card .foot { color: var(--dim); font-size: 12.5px; margin-top: 4px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
+    margin: 34px 0 12px; font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .chart { width: 100%; height: auto; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart .baseline { stroke: var(--dim); stroke-width: 1; }
+  .chart .daymark { stroke: var(--line); stroke-dasharray: 3 4; }
+  .chart .axis { fill: var(--dim); font: 10.5px ui-monospace, monospace; }
+  .chart .down { fill: var(--down); }
+  .chart .up { fill: var(--up); }
+  .chart .flow-down-fill { fill: var(--down); opacity: .16; stroke: none; }
+  .chart .flow-down-line { fill: none; stroke: var(--down); stroke-width: 1.6; }
+  .chart .flow-up-line { fill: none; stroke: var(--up); stroke-width: 1.6; }
+  .legend { display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; flex-wrap: wrap; }
+  .legend.small { font-size: 11.5px; gap: 12px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .07em; padding: 0 10px 10px; }
+  td { padding: 9px 10px; border-top: 1px solid var(--line); }
+  .num { text-align: right; font-family: ui-monospace, monospace; }
+  .strong { color: #fff; }
+  .dim { color: var(--dim); }
+  .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
+    border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  footer { color: var(--dim); font-size: 12.5px; margin-top: 34px;
+    border-top: 1px solid var(--line); padding-top: 14px; }
+  a { color: inherit; }
+  @media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
+"""
+
+
+def refresh_countdown_script(now):
+    """Gemeinsames Countdown-Skript fuer Detail- und Uebersichtsseite. An den
+    tatsaechlichen Erzeugungszeitpunkt gekoppelt, damit ein manueller Reload
+    den Countdown nicht auf voll zuruecksetzt."""
+    return f"""<script>
+(function() {{
+  var generatedAtMs = new Date("{now.isoformat()}").getTime();
+  var refreshS = {REPORT_REFRESH_S};
+  var el = document.getElementById('refresh-cd');
+  if (!el) return;
+  function tick() {{
+    var elapsedS = Math.floor((Date.now() - generatedAtMs) / 1000);
+    var remaining = Math.max(refreshS - elapsedS, 0);
+    var m = Math.floor(remaining / 60), s = remaining % 60;
+    el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    if (remaining <= 0) return;
+    setTimeout(tick, 1000);
+  }}
+  tick();
+}})();
+</script>"""
+
+
 def render_html(**c):
     start, end, now = c["start"], c["end"], c["now"]
     pct = min(c["elapsed_h"] / max((end - start).total_seconds() / 3600.0, 0.001), 1.0)
@@ -522,65 +624,22 @@ def render_html(**c):
 <meta http-equiv="refresh" content="{REPORT_REFRESH_S}">
 <title>WAN-Volumen {c['device']}</title>
 <style>
-  :root {{
-    --ink: #0e1620; --panel: #16212e; --line: #24344a;
-    --text: #dbe6f0; --dim: #7f93a8;
-    --down: #46b3a3; --up: #e0a458; --alert: #d4675b;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{ margin: 0; background: var(--ink); color: var(--text);
-    font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 64px; }}
-  .wrap {{ max-width: 1020px; margin: 0 auto; }}
-  header {{ border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }}
-  h1 {{ font-size: 25px; margin: 0 0 6px; letter-spacing: -.01em; font-weight: 600; }}
-  .sub {{ color: var(--dim); font-size: 13.5px; }}
-  .bar {{ height: 5px; background: var(--line); border-radius: 3px; margin-top: 16px; overflow: hidden; }}
-  .bar span {{ display: block; height: 100%; width: {pct * 100:.1f}%; background: var(--down); }}
-  .grid-cards {{ display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 30px; }}
-  .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }}
-  .card .label {{ color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; }}
-  .card .value {{ font: 600 26px/1.25 ui-monospace, "SFMono-Regular", Consolas, monospace; margin-top: 8px; }}
-  .card .foot {{ color: var(--dim); font-size: 12.5px; margin-top: 4px; }}
-  h2 {{ font-size: 15px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
-    margin: 34px 0 12px; font-weight: 600; }}
-  .panel {{ background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }}
-  .chart {{ width: 100%; height: auto; }}
-  .chart .grid {{ stroke: var(--line); stroke-width: 1; }}
-  .chart .baseline {{ stroke: var(--dim); stroke-width: 1; }}
-  .chart .daymark {{ stroke: var(--line); stroke-dasharray: 3 4; }}
-  .chart .axis {{ fill: var(--dim); font: 10.5px ui-monospace, monospace; }}
-  .chart .down {{ fill: var(--down); }}
-  .chart .up {{ fill: var(--up); }}
-  .chart .flow-down-fill {{ fill: var(--down); opacity: .16; stroke: none; }}
-  .chart .flow-down-line {{ fill: none; stroke: var(--down); stroke-width: 1.6; }}
-  .chart .flow-up-line {{ fill: none; stroke: var(--up); stroke-width: 1.6; }}
-  .legend {{ display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; }}
-  .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-  th {{ text-align: left; color: var(--dim); font-weight: 500; font-size: 12px;
-    text-transform: uppercase; letter-spacing: .07em; padding: 0 10px 10px; }}
-  td {{ padding: 9px 10px; border-top: 1px solid var(--line); }}
-  .num {{ text-align: right; font-family: ui-monospace, monospace; }}
-  .strong {{ color: #fff; }}
-  .dim {{ color: var(--dim); }}
-  .live-tag {{ display: inline-block; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
-    border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }}
-  footer {{ color: var(--dim); font-size: 12.5px; margin-top: 34px;
-    border-top: 1px solid var(--line); padding-top: 14px; }}
-  @media (prefers-reduced-motion: no-preference) {{ .bar span {{ transition: width .4s ease; }} }}
+{BASE_CSS}
+  .detail-link {{ font-size: 13px; color: var(--down); text-decoration: none; }}
+  .detail-link:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>WAN-Volumen {c['device']}</h1>
-    <div class="sub">{status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
+    <div class="sub"><a class="detail-link" href="index.html">&larr; Uebersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
+      {status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
       bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       naechster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
-    <div class="bar"><span></span></div>
+    <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
   </header>
 
   <div class="grid-cards">
@@ -651,26 +710,102 @@ def render_html(**c):
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
     {len(c['window'])} Messpunkte im Fenster. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
 </div>
-<script>
-(function() {{
-  // Countdown ist an den tatsaechlichen Erzeugungszeitpunkt der Seite gekoppelt
-  // (nicht an den Moment des Ladens) - ein manueller Reload durch den Nutzer
-  // darf den Countdown nicht wieder auf voll zuruecksetzen.
-  var generatedAtMs = new Date("{now.isoformat()}").getTime();
-  var refreshS = {REPORT_REFRESH_S};
-  var el = document.getElementById('refresh-cd');
-  if (!el) return;
-  function tick() {{
-    var elapsedS = Math.floor((Date.now() - generatedAtMs) / 1000);
-    var remaining = Math.max(refreshS - elapsedS, 0);
-    var m = Math.floor(remaining / 60), s = remaining % 60;
-    el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
-    if (remaining <= 0) return;
-    setTimeout(tick, 1000);
-  }}
-  tick();
-}})();
-</script>
+{refresh_countdown_script(now)}
+</body>
+</html>"""
+
+
+def render_overview_html(consoles, start, end, now):
+    """Uebersichtsseite: eine Karte pro Konsole (Kernzahlen + Mini-Chart),
+    Link zur jeweiligen Detailseite. consoles = Liste von compute_stats()-dicts."""
+    remaining = max((end - now).total_seconds(), 0)
+    rem_h = int(remaining // 3600)
+    rem_m = int((remaining % 3600) // 60)
+    pct = min((min(now, end) - start).total_seconds() / max((end - start).total_seconds(), 0.001), 1.0)
+    status = "Messung laeuft" if remaining > 0 else "Messung abgeschlossen"
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+    total_all = sum(c["total"] for c in consoles)
+    per_day_all = sum(c["per_day"] for c in consoles)
+    per_month_all = sum(c["per_month"] for c in consoles)
+
+    cards = []
+    for c in consoles:
+        live_badge = ""
+        has_current_point = any(r["ts"] >= current_hour for r in c["window"])
+        if has_current_point:
+            live_badge = '<span class="live-tag">laeuft</span>'
+        filename = f"{c['device']}.html"
+        cards.append(f"""<div class="card console-card">
+      <div class="card-head"><h3>{c['device']}</h3>{live_badge}</div>
+      <div class="mini-grid">
+        <div><div class="mlabel">Bisher</div><div class="mvalue">{human_bytes(c['total'])}</div></div>
+        <div><div class="mlabel">Pro Tag</div><div class="mvalue">{human_bytes(c['per_day'])}</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['per_month'])}</div></div>
+      </div>
+      {c['chart']}
+      <div class="legend small">
+        <span><span class="dot" style="background:var(--down)"></span>Down</span>
+        <span><span class="dot" style="background:var(--up)"></span>Up</span>
+        <span>Spitze {human_bytes(c['peak'])}/h</span>
+      </div>
+      <a class="detail-link" href="{filename}">Details &rarr;</a>
+    </div>""")
+    cards_html = "\n    ".join(cards) or '<p class="dim">Keine Konsolen konfiguriert.</p>'
+
+    return f"""<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="{REPORT_REFRESH_S}">
+<title>WAN-Volumen Uebersicht</title>
+<style>
+{BASE_CSS}
+  .wrap {{ max-width: 1400px; }}
+  .overview-grid {{ display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }}
+  .console-card {{ display: flex; flex-direction: column; gap: 10px; }}
+  .card-head {{ display: flex; align-items: center; gap: 8px; }}
+  .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
+  .mini-grid {{ display: flex; gap: 18px; }}
+  .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }}
+  .mvalue {{ font: 600 18px/1.3 ui-monospace, monospace; margin-top: 2px; }}
+  .detail-link {{ align-self: flex-start; font-size: 13px; color: var(--down); text-decoration: none; margin-top: 2px; }}
+  .detail-link:hover {{ text-decoration: underline; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>WAN-Volumen Uebersicht</h1>
+    <div class="sub">{status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
+      bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
+      Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
+      Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
+      naechster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
+    <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
+  </header>
+
+  <div class="grid-cards">
+    <div class="card"><div class="label">Alle Konsolen zusammen</div>
+      <div class="value">{human_bytes(total_all)}</div>
+      <div class="foot">bisher gemessen</div></div>
+    <div class="card"><div class="label">Pro Tag (Summe)</div>
+      <div class="value">{human_bytes(per_day_all)}</div>
+      <div class="foot">laufender Mittelwert</div></div>
+    <div class="card"><div class="label">Hochrechnung 30 Tage (Summe)</div>
+      <div class="value">{human_bytes(per_month_all)}</div>
+      <div class="foot">bei gleichbleibender Grundlast</div></div>
+  </div>
+
+  <div class="overview-grid">
+    {cards_html}
+  </div>
+
+  <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
+    {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
+</div>
+{refresh_countdown_script(now)}
 </body>
 </html>"""
 
@@ -682,29 +817,50 @@ def write_report(rows, start, end, site_filter=None):
     return HTML_PATH
 
 
+def write_reports(rows, start, end, console_names):
+    """Schreibt die Uebersichtsseite (wan_report.html) plus eine Detailseite
+    pro Konsole ({Konsolenname}.html)."""
+    overview_html = build_overview(rows, start, end, console_names)
+    with open(HTML_PATH, "w", encoding="utf-8") as handle:
+        handle.write(overview_html)
+    detail_paths = []
+    for name in console_names:
+        detail_html = build_report(rows, start, end, site_filter=name)
+        path = os.path.join(DATA_DIR, f"{name}.html")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(detail_html)
+        detail_paths.append(path)
+    return HTML_PATH, detail_paths
+
+
 # ----------------------------------------------------------------------------
 # Ablauf
 # ----------------------------------------------------------------------------
 
-def poll(rows, host_id, site_id, device_id, interval_s, console_name):
-    """Ein Live-Sample der aktuellen Uplink-Rate, hochgerechnet auf interval_s.
+def poll(rows, targets, interval_s):
+    """Ein Live-Sample der aktuellen Uplink-Rate pro Konsole, hochgerechnet auf
+    interval_s. targets = Liste von (console_name, host_id, site_id, device_id).
+    Alle Konsolen bekommen denselben Zeitstempel (ein Poll-Durchlauf), das haelt
+    sie fuer Vergleiche synchron und braucht nur einen CSV-/Git-Commit pro Lauf.
 
     Hinweis: Die isp-metrics-API lieferte nachweislich falsche Werte (Faktor
     ~5000 gegenueber dem GUI-Traffic-Graphen). Diese Funktion nutzt stattdessen
-    den Site-Manager-Connector-Proxy zur lokalen Network-API der Konsole, der
+    den Site-Manager-Connector-Proxy zur lokalen Network-API jeder Konsole, der
     echte Live-Uplink-Raten liefert (verifiziert gegen den GUI-Graphen).
     """
-    rx_bps, tx_bps = get_uplink_rates(host_id, site_id, device_id)
     now = datetime.now(timezone.utc)
-    point = {
-        "ts": now,
-        "site": console_name,
-        "uplink": "wan",
-        "interval_s": interval_s,
-        "down_bytes": round(rx_bps / 8.0 * interval_s),
-        "up_bytes": round(tx_bps / 8.0 * interval_s),
-    }
-    return merge_rows(rows, [point])
+    points = []
+    for console_name, host_id, site_id, device_id in targets:
+        rx_bps, tx_bps = get_uplink_rates(host_id, site_id, device_id)
+        points.append({
+            "ts": now,
+            "site": console_name,
+            "uplink": "wan",
+            "interval_s": interval_s,
+            "down_bytes": round(rx_bps / 8.0 * interval_s),
+            "up_bytes": round(tx_bps / 8.0 * interval_s),
+        })
+    return merge_rows(rows, points)
 
 
 def discover(host_id=DEFAULT_HOST_ID):
@@ -729,13 +885,14 @@ def discover(host_id=DEFAULT_HOST_ID):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WAN-Volumen der UDM Pro messen")
+    parser = argparse.ArgumentParser(description="WAN-Volumen mehrerer UDM Pro messen")
     parser.add_argument("--start", help="Messbeginn, z.B. 2026-08-07T12:00 (lokale Zeit)")
     parser.add_argument("--days", type=float, default=3.0, help="Messdauer in Tagen")
     parser.add_argument("--interval", type=int, default=900, help="Pollintervall in Sekunden")
-    parser.add_argument("--site", help="Filter auf einen Site- oder Uplink-Namen")
-    parser.add_argument("--host-id", default=DEFAULT_HOST_ID,
-                         help="Site-Manager hostId der Zielkonsole (Default: LSB--UDM-1)")
+    parser.add_argument("--site", help="Bericht auf einen einzelnen Konsolennamen beschraenken")
+    parser.add_argument("--host-id", default=None,
+                         help="Nur diese eine Konsole pollen/berichten (Site-Manager hostId). "
+                              "Ohne Angabe: alle Konsolen aus MONITORED_HOSTS (Uebersicht + Details).")
     parser.add_argument("--discover", action="store_true")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--loop", action="store_true")
@@ -743,7 +900,7 @@ def main():
     args = parser.parse_args()
 
     if args.discover:
-        discover(args.host_id)
+        discover(args.host_id or DEFAULT_HOST_ID)
         return
 
     if args.start:
@@ -758,23 +915,42 @@ def main():
     with open(STATE_PATH, "w", encoding="utf-8") as handle:
         json.dump({"start": start.isoformat(), "days": args.days}, handle)
 
+    if args.host_id:
+        name = args.host_id
+        for host in api_get("/hosts").get("data", []):
+            if host.get("id") == args.host_id:
+                name = host.get("reportedState", {}).get("name", args.host_id)
+                break
+        targets_cfg = [(name, args.host_id)]
+    else:
+        targets_cfg = MONITORED_HOSTS
+    console_names = [name for name, _ in targets_cfg]
+    single = args.site or (len(console_names) == 1 and console_names[0])
+
     if args.report:
         rows = load_rows()
-        print(f"Bericht geschrieben: {write_report(rows, start, end, args.site)}")
+        if single:
+            print(f"Bericht geschrieben: {write_report(rows, start, end, single)}")
+        else:
+            index_path, detail_paths = write_reports(rows, start, end, console_names)
+            print(f"Uebersicht geschrieben: {index_path}")
+            for p in detail_paths:
+                print(f"  Detail: {p}")
         return
 
-    console_name = args.host_id
-    for host in api_get("/hosts").get("data", []):
-        if host.get("id") == args.host_id:
-            console_name = host.get("reportedState", {}).get("name", args.host_id)
-            break
-    site_id, device_id = find_gateway_device(args.host_id)
-    print(f"Ziel: {console_name} (site_id={site_id}, device_id={device_id})")
+    targets = []
+    for name, host_id in targets_cfg:
+        site_id, device_id = find_gateway_device(host_id)
+        targets.append((name, host_id, site_id, device_id))
+        print(f"Ziel: {name} (site_id={site_id}, device_id={device_id})")
 
     rows = load_rows()
     while True:
-        rows, added = poll(rows, args.host_id, site_id, device_id, args.interval, console_name)
-        path = write_report(rows, start, end, args.site)
+        rows, added = poll(rows, targets, args.interval)
+        if single:
+            path = write_report(rows, start, end, single)
+        else:
+            path, _ = write_reports(rows, start, end, console_names)
         stamp = datetime.now().astimezone().strftime("%H:%M:%S")
         print(f"[{stamp}] {added} neue Messpunkte, {len(rows)} gesamt -> {path}")
         if args.once or datetime.now(timezone.utc) >= end:
