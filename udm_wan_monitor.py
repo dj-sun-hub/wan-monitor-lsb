@@ -414,15 +414,27 @@ def compute_stats(rows, start, site_filter=None):
     total_month_down = sum(r["down_bytes"] for r in month_rows)
     total_month_up = sum(r["up_bytes"] for r in month_rows)
     total_month = total_month_down + total_month_up
-    days_elapsed_month = max((now - month_start).total_seconds() / 86400.0, 0.001)
+    # Nenner fuer die Tagesrate ist die Zeit seit Messbeginn INNERHALB des
+    # Monats, nicht seit Kalendermonatsbeginn - sonst wird in einem Monat, der
+    # bei Messbeginn schon laeuft, durch zu viele "Nulltage" (vor Messbeginn)
+    # geteilt und die Hochrechnung faellt kuenstlich viel zu niedrig aus.
+    month_data_start = max(month_start, start)
+    days_elapsed_month = max((now - month_data_start).total_seconds() / 86400.0, 0.001)
     days_in_month = calendar.monthrange(now_local.year, now_local.month)[1]
     per_day_month = total_month / days_elapsed_month
     projected_month = per_day_month * days_in_month
 
-    # Rollierende letzte 30 Tage - echte gemessene Summe, keine Hochrechnung.
+    # Rollierende letzte 30 Tage: sobald wirklich 30 Tage Messhistorie
+    # vorliegen, die echte gemessene Summe. Vorher (erste 30 Tage nach
+    # Messbeginn) waere die "rollierende" Summe nur ein unvollstaendiger
+    # Ausschnitt und faelschlich identisch zum Monatswert - stattdessen wird
+    # anhand der Tagesrate im aktuellen Monat auf 30 Tage hochgerechnet.
     d30_start = now - timedelta(days=30)
-    d30_rows = [r for r in all_rows if r["ts"] >= d30_start]
-    total_30d = sum(r["down_bytes"] + r["up_bytes"] for r in d30_rows)
+    if start > d30_start:
+        total_30d = per_day_month * 30.0
+    else:
+        d30_rows = [r for r in all_rows if r["ts"] >= d30_start]
+        total_30d = sum(r["down_bytes"] + r["up_bytes"] for r in d30_rows)
     per_day_30d = total_30d / 30.0
 
     # Failover-Verdacht: die letzten FAILOVER_CONSECUTIVE Messpunkte IN FOLGE
@@ -981,7 +993,12 @@ def render_overview_html(consoles, start, now):
         if has_current_point:
             live_badge = '<span class="live-tag">läuft</span>'
         failover_badge = '<span class="failover-tag">FAILOVER</span>' if c["is_failover"] else ""
-        card_class = "card console-card" + (" failover" if c["is_failover"] else "")
+        if c["is_failover"]:
+            card_class = "card console-card failover"
+        elif c["last_rate_kbps"] <= 0:
+            card_class = "card console-card idle"
+        else:
+            card_class = "card console-card"
         filename = f"{c['device']}.html"
         cards.append(f"""<div class="{card_class}">
       <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}</div>
@@ -1034,6 +1051,7 @@ def render_overview_html(consoles, start, now):
     0%, 100% {{ border-color: var(--alert); background: #2a1414; }}
     50% {{ border-color: #ff6b6b; background: #3a1414; }}
   }}
+  .console-card.idle {{ opacity: .5; filter: grayscale(85%); }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
   .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
   .mini-grid {{ display: flex; gap: 20px; }}
