@@ -365,6 +365,10 @@ FAILOVER_THRESHOLD_KBPS = 500.0
 # vorher (1 Poll), aber deutlich weniger anfaellig fuer Einzel-Spitzen.
 FAILOVER_CONSECUTIVE = 2
 FAILOVER_EXCLUDED_DEVICES = set()
+# Ab wann eine Konsole als "offline/nicht erreichbar" statt nur "kurz kein
+# Update" gilt (5x der 1-Minuten-Pollintervall Toleranz fuer vereinzelt
+# uebersprungene Laeufe, siehe poll()/find_gateway_device() Fehlerbehandlung).
+OFFLINE_THRESHOLD_S = 300
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
@@ -467,6 +471,16 @@ def compute_stats(rows, start, site_filter=None):
         if len(rates) == FAILOVER_CONSECUTIVE:
             is_failover = all(rate > FAILOVER_THRESHOLD_KBPS for rate in rates)
 
+    # Offline/nicht erreichbar (z.B. von poll() uebersprungen, siehe dortige
+    # Fehlerbehandlung): der letzte BEKANNTE Wert kann veraltet sein und
+    # faelschlich noch "Failover" zeigen. Stattdessen wie 0 kbps behandeln -
+    # dann greift automatisch die graue "idle"-Darstellung der Kachel.
+    last_seen = max((r["ts"] for r in all_rows), default=None)
+    is_offline = last_seen is None or (now - last_seen).total_seconds() > OFFLINE_THRESHOLD_S
+    if is_offline:
+        last_rate_kbps = 0.0
+        is_failover = False
+
     # Stundenchart & Flow-Chart: nur die letzten CHART_WINDOW_DAYS Tage.
     chart_start = max(start, now - timedelta(days=CHART_WINDOW_DAYS))
     chart_rows = [r for r in all_rows if r["ts"] >= chart_start]
@@ -526,7 +540,7 @@ def compute_stats(rows, start, site_filter=None):
         days=days, spikes=spikes,
         chart=chart, start=start, now=now, peak=peak, device=device,
         flow_chart=flow_chart, flow_points=flow_points, flow_interval_min=flow_interval_min,
-        last24=last24, is_failover=is_failover, last_rate_kbps=last_rate_kbps,
+        last24=last24, is_failover=is_failover, last_rate_kbps=last_rate_kbps, is_offline=is_offline,
     )
 
 
@@ -728,6 +742,9 @@ BASE_CSS = """
   .failover-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .06em; color: #fff; background: var(--alert); border: 1px solid var(--alert);
     border-radius: 3px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; font-weight: 600; }
+  .offline-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--dim); border: 1px solid var(--dim);
+    border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   footer { color: var(--dim); font-size: 12.5px; margin-top: 34px;
     border-top: 1px solid var(--line); padding-top: 14px; }
   a { color: inherit; }
@@ -1000,18 +1017,19 @@ def render_overview_html(consoles, start, now):
     for c in consoles:
         live_badge = ""
         has_current_point = any(r["ts"] >= current_hour for r in c["window"])
-        if has_current_point:
+        if has_current_point and not c["is_offline"]:
             live_badge = '<span class="live-tag">läuft</span>'
         failover_badge = '<span class="failover-tag">FAILOVER</span>' if c["is_failover"] else ""
+        offline_badge = '<span class="offline-tag">OFFLINE</span>' if c["is_offline"] else ""
         if c["is_failover"]:
             card_class = "card console-card failover"
-        elif c["last_rate_kbps"] <= 0:
+        elif c["is_offline"] or c["last_rate_kbps"] <= 0:
             card_class = "card console-card idle"
         else:
             card_class = "card console-card"
         filename = f"{c['device']}.html"
         cards.append(f"""<div class="{card_class}">
-      <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}</div>
+      <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}{offline_badge}</div>
       <div class="mini-grid">
         <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
