@@ -414,13 +414,17 @@ def compute_stats(rows, start, site_filter=None):
     total_month_down = sum(r["down_bytes"] for r in month_rows)
     total_month_up = sum(r["up_bytes"] for r in month_rows)
     total_month = total_month_down + total_month_up
-    # Nenner fuer die Tagesrate ist die Zeit seit Messbeginn INNERHALB des
-    # Monats, nicht seit Kalendermonatsbeginn - sonst wird in einem Monat, der
-    # bei Messbeginn schon laeuft, durch zu viele "Nulltage" (vor Messbeginn)
-    # geteilt und die Hochrechnung faellt kuenstlich viel zu niedrig aus.
+    # Fortschrittsbalken/"Tag X von Y" soll den echten Kalendertag zeigen,
+    # unabhaengig davon, ob fuer alle Tage schon Daten vorliegen.
+    days_elapsed_month_calendar = max((now - month_start).total_seconds() / 86400.0, 0.001)
+    days_in_month = calendar.monthrange(now_local.year, now_local.month)[1]
+    # Nenner fuer die Tagesrate (Hochrechnung) ist dagegen die Zeit seit
+    # Messbeginn INNERHALB des Monats, nicht seit Kalendermonatsbeginn - sonst
+    # wird in einem Monat, der bei Messbeginn schon laeuft, durch zu viele
+    # "Nulltage" (vor Messbeginn) geteilt und die Hochrechnung faellt
+    # kuenstlich viel zu niedrig aus.
     month_data_start = max(month_start, start)
     days_elapsed_month = max((now - month_data_start).total_seconds() / 86400.0, 0.001)
-    days_in_month = calendar.monthrange(now_local.year, now_local.month)[1]
     per_day_month = total_month / days_elapsed_month
     projected_month = per_day_month * days_in_month
 
@@ -512,6 +516,7 @@ def compute_stats(rows, start, site_filter=None):
         window=all_rows, total=total, total_down=total_down, total_up=total_up,
         total_month=total_month, per_day_month=per_day_month, projected_month=projected_month,
         days_elapsed_month=days_elapsed_month, days_in_month=days_in_month,
+        days_elapsed_month_calendar=days_elapsed_month_calendar,
         total_30d=total_30d, per_day_30d=per_day_30d,
         days=days, spikes=spikes,
         chart=chart, start=start, now=now, peak=peak, device=device,
@@ -846,7 +851,7 @@ def flow_tooltip_script():
 
 def render_html(**c):
     start, now = c["start"], c["now"]
-    pct = min(c["days_elapsed_month"] / max(c["days_in_month"], 0.001), 1.0)
+    pct = min(c["days_elapsed_month_calendar"] / max(c["days_in_month"], 0.001), 1.0)
     running_days = max((now - start).days, 0)
 
     day_rows = "".join(
@@ -895,7 +900,7 @@ def render_html(**c):
       nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
     <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
-      (Tag {int(c['days_elapsed_month']) + 1} von {c['days_in_month']})</div>
+      (Tag {int(c['days_elapsed_month_calendar']) + 1} von {c['days_in_month']})</div>
   </header>
 
   <div class="grid-cards">
@@ -977,9 +982,9 @@ def render_overview_html(consoles, start, now):
     """Übersichtsseite: eine Karte pro Konsole (Kernzahlen + Mini-Chart),
     Link zur jeweiligen Detailseite. consoles = Liste von compute_stats()-dicts."""
     running_days = max((now - start).days, 0)
-    days_elapsed_month = consoles[0]["days_elapsed_month"] if consoles else 1
+    days_elapsed_month_calendar = consoles[0]["days_elapsed_month_calendar"] if consoles else 1
     days_in_month = consoles[0]["days_in_month"] if consoles else 30
-    pct = min(days_elapsed_month / max(days_in_month, 0.001), 1.0)
+    pct = min(days_elapsed_month_calendar / max(days_in_month, 0.001), 1.0)
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
     total_month_all = sum(c["total_month"] for c in consoles)
@@ -1084,7 +1089,7 @@ def render_overview_html(consoles, start, now):
       <b>{human_bytes(total_all)}</b> gesamt seit Start (nur Failover-Traffic)</div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
     <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
-      (Tag {int(days_elapsed_month) + 1} von {days_in_month})</div>
+      (Tag {int(days_elapsed_month_calendar) + 1} von {days_in_month})</div>
   </header>
 
   <div class="overview-grid">
