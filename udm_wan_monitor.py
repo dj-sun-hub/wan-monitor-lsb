@@ -1027,6 +1027,13 @@ def render_overview_html(consoles, start, now):
   @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
   .console-card {{ display: flex; flex-direction: column; gap: 11px; padding: 21px 23px; }}
   .console-card.failover {{ border-color: var(--alert); background: #2a1414; }}
+  @media (prefers-reduced-motion: no-preference) {{
+    .console-card.failover {{ animation: failover-blink 1.2s ease-in-out infinite; }}
+  }}
+  @keyframes failover-blink {{
+    0%, 100% {{ border-color: var(--alert); background: #2a1414; }}
+    50% {{ border-color: #ff6b6b; background: #3a1414; }}
+  }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
   .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
   .mini-grid {{ display: flex; gap: 20px; }}
