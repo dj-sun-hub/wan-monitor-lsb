@@ -1015,15 +1015,17 @@ def render_overview_html(consoles, start, now):
 
     cards = []
     for c in consoles:
-        live_badge = ""
+        # Graue Kachel (0 kbps, egal ob wirklich offline oder nur gerade
+        # ohne Traffic) zeigt immer OFFLINE statt LAEUFT - LAEUFT gibt es nur,
+        # wenn tatsaechlich Traffic gemessen wird.
+        is_idle = c["is_offline"] or c["last_rate_kbps"] <= 0
         has_current_point = any(r["ts"] >= current_hour for r in c["window"])
-        if has_current_point and not c["is_offline"]:
-            live_badge = '<span class="live-tag">läuft</span>'
+        live_badge = '<span class="live-tag">läuft</span>' if has_current_point and not is_idle else ""
         failover_badge = '<span class="failover-tag">FAILOVER</span>' if c["is_failover"] else ""
-        offline_badge = '<span class="offline-tag">OFFLINE</span>' if c["is_offline"] else ""
+        offline_badge = '<span class="offline-tag">OFFLINE</span>' if is_idle and not c["is_failover"] else ""
         if c["is_failover"]:
             card_class = "card console-card failover"
-        elif c["is_offline"] or c["last_rate_kbps"] <= 0:
+        elif is_idle:
             card_class = "card console-card idle"
         else:
             card_class = "card console-card"
