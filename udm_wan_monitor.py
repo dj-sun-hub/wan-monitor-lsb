@@ -5,8 +5,9 @@ UDM Pro WAN-Traffic-Monitor
 
 Holt WAN-Kennzahlen ueber die UniFi Site Manager API (api.ui.com), schreibt sie
 fortlaufend in eine CSV und erzeugt nach jedem Durchlauf einen aktuellen
-HTML-Bericht. Der Bericht ist sofort nach dem ersten Poll nutzbar und wird mit
-jedem weiteren Durchlauf praeziser.
+HTML-Bericht. Dauerbetrieb ohne festes Messende: Kennzahlen sind aktueller
+Kalendermonat, rollierende letzte 30 Tage, und Gesamt seit dem einmaligen
+Messbeginn.
 
 Nur Standardbibliothek, keine Installation noetig.
 
@@ -19,8 +20,8 @@ Aufrufe
       Zeigt Hosts, Sites und ein Rohdaten-Sample. Einmalig zum Pruefen.
 
   python3 udm_wan_monitor.py --loop
-      Dauerbetrieb: pollt alle 15 Minuten bis zum Messende und schreibt
-      nach jedem Poll den Bericht neu.
+      Dauerbetrieb: pollt endlos alle --interval Sekunden und schreibt nach
+      jedem Poll den Bericht neu (Strg+C zum Beenden).
 
   python3 udm_wan_monitor.py --once
       Ein einzelner Poll plus Bericht. Fuer Cron oder Aufgabenplaner.
@@ -30,6 +31,7 @@ Aufrufe
 """
 
 import argparse
+import calendar
 import csv
 import html
 import json
@@ -348,6 +350,12 @@ FAILOVER_THRESHOLD_KBPS = 500.0
 # Fehlalarme zu erzeugen.
 FAILOVER_EXCLUDED_DEVICES = {"LSB--UDM-1"}
 
+# Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
+# ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
+# unbrauchbar gross. Kennzahlen (Monat/30 Tage/Gesamt) sind davon unabhaengig.
+CHART_WINDOW_DAYS = 7
+TABLE_WINDOW_DAYS = 30
+
 
 def total_alert_class(total_bytes):
     """CSS-Klassen-Zusatz fuer den 'Bisher'-Wert: gelb ab 1 GB, rot ab 4.8 GB."""
@@ -358,21 +366,53 @@ def total_alert_class(total_bytes):
     return ""
 
 
-def compute_stats(rows, start, end, site_filter=None):
+def compute_stats(rows, start, site_filter=None):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
     leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird sowohl fuer
     Detailseiten (render_html) als auch für Karten der Übersichtsseite
-    (render_overview_html) genutzt."""
-    now = datetime.now(timezone.utc)
-    window = [r for r in rows if start <= r["ts"] < end]
-    if site_filter:
-        needle = site_filter.lower()
-        window = [r for r in window
-                  if needle in r["site"].lower() or needle in r["uplink"].lower()]
+    (render_overview_html) genutzt.
 
-    total_down = sum(r["down_bytes"] for r in window)
-    total_up = sum(r["up_bytes"] for r in window)
+    Dauerbetrieb (kein festes Messende mehr): start ist der einmalige
+    Messbeginn, es gibt kein "end". Statt einem einzelnen Gesamtfenster gibt
+    es drei Kennzahlen nebeneinander - aktueller Kalendermonat, rollierende
+    letzte 30 Tage, und Gesamt seit Start. Stundenchart/Flow-Chart/Tageswerte
+    bleiben auf ein kuerzeres, recentes Fenster begrenzt (CHART_WINDOW_DAYS /
+    TABLE_WINDOW_DAYS), sonst wuerden sie nach Wochen/Monaten Laufzeit riesig
+    und unbrauchbar.
+    """
+    now = datetime.now(timezone.utc)
+
+    def in_site(r):
+        if not site_filter:
+            return True
+        needle = site_filter.lower()
+        return needle in r["site"].lower() or needle in r["uplink"].lower()
+
+    all_rows = [r for r in rows if r["ts"] >= start and in_site(r)]
+
+    total_down = sum(r["down_bytes"] for r in all_rows)
+    total_up = sum(r["up_bytes"] for r in all_rows)
     total = total_down + total_up
+
+    # Aktueller Kalendermonat (lokale Zeit, damit "Monat" dem echten
+    # Kalendermonat entspricht, nicht UTC).
+    now_local = now.astimezone()
+    month_start_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = month_start_local.astimezone(timezone.utc)
+    month_rows = [r for r in all_rows if r["ts"] >= month_start]
+    total_month_down = sum(r["down_bytes"] for r in month_rows)
+    total_month_up = sum(r["up_bytes"] for r in month_rows)
+    total_month = total_month_down + total_month_up
+    days_elapsed_month = max((now - month_start).total_seconds() / 86400.0, 0.001)
+    days_in_month = calendar.monthrange(now_local.year, now_local.month)[1]
+    per_day_month = total_month / days_elapsed_month
+    projected_month = per_day_month * days_in_month
+
+    # Rollierende letzte 30 Tage - echte gemessene Summe, keine Hochrechnung.
+    d30_start = now - timedelta(days=30)
+    d30_rows = [r for r in all_rows if r["ts"] >= d30_start]
+    total_30d = sum(r["down_bytes"] + r["up_bytes"] for r in d30_rows)
+    per_day_30d = total_30d / 30.0
 
     # Failover-Verdacht: letzter Messpunkt ueber dem Schwellwert (kbps), der sich
     # live am NAS-Failover-Monitor bewaehrt hat (siehe failover_monitor.py).
@@ -380,47 +420,50 @@ def compute_stats(rows, start, end, site_filter=None):
     # auseinanderliegen - fuer ein Live-Board waere das sonst zu traege.
     is_failover = False
     last_rate_kbps = 0.0
-    if window and site_filter not in FAILOVER_EXCLUDED_DEVICES:
-        last_row = max(window, key=lambda r: r["ts"])
+    if all_rows and site_filter not in FAILOVER_EXCLUDED_DEVICES:
+        last_row = max(all_rows, key=lambda r: r["ts"])
         if last_row["interval_s"]:
             last_rate_kbps = ((last_row["down_bytes"] + last_row["up_bytes"])
                                * 8.0 / last_row["interval_s"] / 1000.0)
             is_failover = last_rate_kbps > FAILOVER_THRESHOLD_KBPS
 
-    elapsed_h = max((min(now, end) - start).total_seconds() / 3600.0, 0.001)
-    remaining = max((end - now).total_seconds(), 0)
-    covered_h = len({r["ts"].replace(minute=0, second=0, microsecond=0) for r in window}) or 0
-    per_day = total / elapsed_h * 24
-    per_month = per_day * 30
+    # Stundenchart & Flow-Chart: nur die letzten CHART_WINDOW_DAYS Tage.
+    chart_start = max(start, now - timedelta(days=CHART_WINDOW_DAYS))
+    chart_rows = [r for r in all_rows if r["ts"] >= chart_start]
 
-    # Stundenraster
     hours = {}
-    for row in window:
+    for row in chart_rows:
         bucket = row["ts"].replace(minute=0, second=0, microsecond=0)
         entry = hours.setdefault(bucket, [0.0, 0.0])
         entry[0] += row["down_bytes"]
         entry[1] += row["up_bytes"]
 
-    total_hours = int((end - start).total_seconds() // 3600)
+    chart_start_hour = chart_start.replace(minute=0, second=0, microsecond=0)
+    total_hours = int((now - chart_start_hour).total_seconds() // 3600) + 1
     series = []
     for i in range(total_hours):
-        bucket = start + timedelta(hours=i)
+        bucket = chart_start_hour + timedelta(hours=i)
         down, up = hours.get(bucket, (0.0, 0.0))
         series.append((bucket, down, up))
 
     peak = max((d + u for _, d, u in series), default=0.0) or 1.0
 
-    # Tagesuebersicht
+    # Tageswerte-Tabelle: eigenes, laengeres Fenster (TABLE_WINDOW_DAYS).
+    table_start = max(start, now - timedelta(days=TABLE_WINDOW_DAYS))
+    table_rows = [r for r in all_rows if r["ts"] >= table_start]
     days = {}
-    for bucket, down, up in series:
-        local_day = bucket.astimezone().strftime("%d.%m.%Y")
+    hours_by_day = {}
+    for row in table_rows:
+        local_day = row["ts"].astimezone().strftime("%d.%m.%Y")
         entry = days.setdefault(local_day, [0.0, 0.0, 0])
-        entry[0] += down
-        entry[1] += up
-        if down or up:
-            entry[2] += 1
+        entry[0] += row["down_bytes"]
+        entry[1] += row["up_bytes"]
+        hours_by_day.setdefault(local_day, set()).add(
+            row["ts"].replace(minute=0, second=0, microsecond=0))
+    for day, hset in hours_by_day.items():
+        days[day][2] = len(hset)
 
-    # Ausreisser
+    # Ausreisser (innerhalb des Chart-Fensters)
     spikes = sorted(series, key=lambda item: item[1] + item[2], reverse=True)[:5]
     spikes = [s for s in spikes if (s[1] + s[2]) > 0]
 
@@ -428,30 +471,32 @@ def compute_stats(rows, start, end, site_filter=None):
     last24_start = now - timedelta(hours=24)
     last24 = [s for s in series if last24_start <= s[0] <= now]
 
-    chart = render_chart(series, peak, start)
-    flow_chart = render_flow_chart(window, start, min(now, end))
-    flow_points = len(window)
-    flow_intervals = sorted({r["interval_s"] for r in window if r["interval_s"]})
+    chart = render_chart(series, peak, chart_start_hour)
+    flow_chart = render_flow_chart(chart_rows, chart_start, now)
+    flow_points = len(chart_rows)
+    flow_intervals = sorted({r["interval_s"] for r in chart_rows if r["interval_s"]})
     flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
-    device = site_filter or (window[0]["site"] if window else (rows[0]["site"] if rows else "unbekannt"))
+    device = site_filter or (all_rows[0]["site"] if all_rows else (rows[0]["site"] if rows else "unbekannt"))
     return dict(
-        window=window, total=total, total_down=total_down, total_up=total_up,
-        elapsed_h=elapsed_h, remaining=remaining, covered_h=covered_h,
-        per_day=per_day, per_month=per_month, days=days, spikes=spikes,
-        chart=chart, start=start, end=end, now=now, peak=peak, device=device,
+        window=all_rows, total=total, total_down=total_down, total_up=total_up,
+        total_month=total_month, per_day_month=per_day_month, projected_month=projected_month,
+        days_elapsed_month=days_elapsed_month, days_in_month=days_in_month,
+        total_30d=total_30d, per_day_30d=per_day_30d,
+        days=days, spikes=spikes,
+        chart=chart, start=start, now=now, peak=peak, device=device,
         flow_chart=flow_chart, flow_points=flow_points, flow_interval_min=flow_interval_min,
         last24=last24, is_failover=is_failover, last_rate_kbps=last_rate_kbps,
     )
 
 
-def build_report(rows, start, end, site_filter=None):
-    return render_html(**compute_stats(rows, start, end, site_filter))
+def build_report(rows, start, site_filter=None):
+    return render_html(**compute_stats(rows, start, site_filter))
 
 
-def build_overview(rows, start, end, console_names):
+def build_overview(rows, start, console_names):
     now = datetime.now(timezone.utc)
-    consoles = [compute_stats(rows, start, end, site_filter=name) for name in console_names]
-    return render_overview_html(consoles=consoles, start=start, end=end, now=now)
+    consoles = [compute_stats(rows, start, site_filter=name) for name in console_names]
+    return render_overview_html(consoles=consoles, start=start, now=now)
 
 
 def render_chart(series, peak, start):
@@ -769,11 +814,9 @@ def flow_tooltip_script():
 
 
 def render_html(**c):
-    start, end, now = c["start"], c["end"], c["now"]
-    pct = min(c["elapsed_h"] / max((end - start).total_seconds() / 3600.0, 0.001), 1.0)
-    rem_h = int(c["remaining"] // 3600)
-    rem_m = int((c["remaining"] % 3600) // 60)
-    status = "Messung läuft" if c["remaining"] > 0 else "Messung abgeschlossen"
+    start, now = c["start"], c["now"]
+    pct = min(c["days_elapsed_month"] / max(c["days_in_month"], 0.001), 1.0)
+    running_days = max((now - start).days, 0)
 
     day_rows = "".join(
         f"<tr><td>{day}</td><td class='num'>{human_bytes(v[0])}</td>"
@@ -816,30 +859,30 @@ def render_html(**c):
   <header>
     <h1>WAN-Volumen {c['device']}{' <span class="failover-tag">FAILOVER VERMUTET</span>' if c['is_failover'] else ''}</h1>
     <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
-      {status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
-      bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-      Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
+      Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
+    <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
+      (Tag {int(c['days_elapsed_month']) + 1} von {c['days_in_month']})</div>
   </header>
 
   <div class="grid-cards">
-    <div class="card"><div class="label">Bisher gemessen</div>
-      <div class="value{total_alert_class(c['total'])}">{human_bytes(c['total'])}</div>
-      <div class="foot">über {c['elapsed_h']:.1f} Stunden, {c['covered_h']} Stunden mit Daten</div></div>
-    <div class="card"><div class="label">Pro Tag</div>
-      <div class="value">{human_bytes(c['per_day'])}</div>
-      <div class="foot">laufender Mittelwert</div></div>
-    <div class="card"><div class="label">Hochrechnung 30 Tage</div>
-      <div class="value">{human_bytes(c['per_month'])}</div>
-      <div class="foot">bei gleichbleibender Grundlast</div></div>
-    <div class="card"><div class="label">Verhältnis</div>
+    <div class="card"><div class="label">Aktueller Monat</div>
+      <div class="value{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div>
+      <div class="foot">Hochrechnung Monatsende: {human_bytes(c['projected_month'])}</div></div>
+    <div class="card"><div class="label">Letzte 30 Tage</div>
+      <div class="value">{human_bytes(c['total_30d'])}</div>
+      <div class="foot">Ø {human_bytes(c['per_day_30d'])}/Tag</div></div>
+    <div class="card"><div class="label">Gesamt seit Start</div>
+      <div class="value">{human_bytes(c['total'])}</div>
+      <div class="foot">seit {start.astimezone().strftime('%d.%m.%Y')}</div></div>
+    <div class="card"><div class="label">Verhältnis (gesamt)</div>
       <div class="value">{human_bytes(c['total_down'])}</div>
       <div class="foot">Download, dazu {human_bytes(c['total_up'])} Upload</div></div>
   </div>
 
-  <h2>Stundenvolumen im Messfenster</h2>
+  <h2>Stundenvolumen (letzte {CHART_WINDOW_DAYS} Tage)</h2>
   <div class="panel">
     {c['chart']}
     <div class="legend">
@@ -860,7 +903,7 @@ def render_html(**c):
     </div>
   </div>
 
-  <h2>Tageswerte</h2>
+  <h2>Tageswerte (letzte {TABLE_WINDOW_DAYS} Tage)</h2>
   <div class="panel">
     <table>
       <thead><tr><th>Tag</th><th class="num">Download</th><th class="num">Upload</th>
@@ -891,7 +934,7 @@ def render_html(**c):
   </div>
 
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
-    {len(c['window'])} Messpunkte im Fenster. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
+    {len(c['window'])} Messpunkte seit Start. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
 </div>
 {refresh_countdown_script(now)}
 {flow_tooltip_script()}
@@ -899,19 +942,18 @@ def render_html(**c):
 </html>"""
 
 
-def render_overview_html(consoles, start, end, now):
+def render_overview_html(consoles, start, now):
     """Übersichtsseite: eine Karte pro Konsole (Kernzahlen + Mini-Chart),
     Link zur jeweiligen Detailseite. consoles = Liste von compute_stats()-dicts."""
-    remaining = max((end - now).total_seconds(), 0)
-    rem_h = int(remaining // 3600)
-    rem_m = int((remaining % 3600) // 60)
-    pct = min((min(now, end) - start).total_seconds() / max((end - start).total_seconds(), 0.001), 1.0)
-    status = "Messung läuft" if remaining > 0 else "Messung abgeschlossen"
+    running_days = max((now - start).days, 0)
+    days_elapsed_month = consoles[0]["days_elapsed_month"] if consoles else 1
+    days_in_month = consoles[0]["days_in_month"] if consoles else 30
+    pct = min(days_elapsed_month / max(days_in_month, 0.001), 1.0)
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
+    total_month_all = sum(c["total_month"] for c in consoles)
+    total_30d_all = sum(c["total_30d"] for c in consoles)
     total_all = sum(c["total"] for c in consoles)
-    per_day_all = sum(c["per_day"] for c in consoles)
-    per_month_all = sum(c["per_month"] for c in consoles)
 
     cards = []
     for c in consoles:
@@ -925,9 +967,9 @@ def render_overview_html(consoles, start, end, now):
         cards.append(f"""<div class="{card_class}">
       <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}</div>
       <div class="mini-grid">
-        <div><div class="mlabel">Bisher</div><div class="mvalue{total_alert_class(c['total'])}">{human_bytes(c['total'])}</div></div>
-        <div><div class="mlabel">Pro Tag</div><div class="mvalue">{human_bytes(c['per_day'])}</div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['per_month'])}</div></div>
+        <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div></div>
+        <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
+        <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}</div></div>
       </div>
       <div class="mini-charts">
         <div class="mini-chart-col">
@@ -987,15 +1029,15 @@ def render_overview_html(consoles, start, end, now):
 <div class="wrap">
   <header>
     <h1>WAN-Volumen Übersicht</h1>
-    <div class="sub">{status} &nbsp;&middot;&nbsp; Fenster {start.astimezone().strftime('%d.%m.%Y %H:%M')}
-      bis {end.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-      Restlaufzeit {rem_h} h {rem_m} min &nbsp;&middot;&nbsp;
+    <div class="sub">Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
-    <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_all)}</b> bisher &nbsp;&middot;&nbsp;
-      <b>{human_bytes(per_day_all)}</b>/Tag &nbsp;&middot;&nbsp;
-      <b>{human_bytes(per_month_all)}</b> Hochrechnung/30 Tage</div>
+    <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_month_all)}</b> diesen Monat &nbsp;&middot;&nbsp;
+      <b>{human_bytes(total_30d_all)}</b> letzte 30 Tage &nbsp;&middot;&nbsp;
+      <b>{human_bytes(total_all)}</b> gesamt seit Start</div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
+    <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
+      (Tag {int(days_elapsed_month) + 1} von {days_in_month})</div>
   </header>
 
   <div class="overview-grid">
@@ -1011,22 +1053,22 @@ def render_overview_html(consoles, start, end, now):
 </html>"""
 
 
-def write_report(rows, start, end, site_filter=None):
-    html = build_report(rows, start, end, site_filter)
+def write_report(rows, start, site_filter=None):
+    html = build_report(rows, start, site_filter)
     with open(HTML_PATH, "w", encoding="utf-8") as handle:
         handle.write(html)
     return HTML_PATH
 
 
-def write_reports(rows, start, end, console_names):
+def write_reports(rows, start, console_names):
     """Schreibt die Übersichtsseite (wan_report.html) plus eine Detailseite
     pro Konsole ({Konsolenname}.html)."""
-    overview_html = build_overview(rows, start, end, console_names)
+    overview_html = build_overview(rows, start, console_names)
     with open(HTML_PATH, "w", encoding="utf-8") as handle:
         handle.write(overview_html)
     detail_paths = []
     for name in console_names:
-        detail_html = build_report(rows, start, end, site_filter=name)
+        detail_html = build_report(rows, start, site_filter=name)
         path = os.path.join(DATA_DIR, f"{name}.html")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(detail_html)
@@ -1086,9 +1128,9 @@ def discover(host_id=DEFAULT_HOST_ID):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WAN-Volumen mehrerer UDM Pro messen")
-    parser.add_argument("--start", help="Messbeginn, z.B. 2026-08-07T12:00 (lokale Zeit)")
-    parser.add_argument("--days", type=float, default=3.0, help="Messdauer in Tagen")
+    parser = argparse.ArgumentParser(description="WAN-Volumen mehrerer UDM Pro messen (Dauerbetrieb)")
+    parser.add_argument("--start", help="Messbeginn, z.B. 2026-08-07T12:00 (lokale Zeit). "
+                                         "Nur beim allerersten Lauf relevant, danach aus monitor_state.json.")
     parser.add_argument("--interval", type=int, default=900, help="Pollintervall in Sekunden")
     parser.add_argument("--site", help="Bericht auf einen einzelnen Konsolennamen beschränken")
     parser.add_argument("--host-id", default=None,
@@ -1112,9 +1154,10 @@ def main():
     else:
         start = datetime.now().astimezone().replace(minute=0, second=0, microsecond=0)
     start = start.astimezone(timezone.utc)
-    end = start + timedelta(days=args.days)
+    # Kein festes Messende mehr (Dauerbetrieb) - start wird nur einmalig gesetzt
+    # und danach immer aus monitor_state.json uebernommen.
     with open(STATE_PATH, "w", encoding="utf-8") as handle:
-        json.dump({"start": start.isoformat(), "days": args.days}, handle)
+        json.dump({"start": start.isoformat()}, handle)
 
     if args.host_id:
         name = args.host_id
@@ -1131,9 +1174,9 @@ def main():
     if args.report:
         rows = load_rows()
         if single:
-            print(f"Bericht geschrieben: {write_report(rows, start, end, single)}")
+            print(f"Bericht geschrieben: {write_report(rows, start, single)}")
         else:
-            index_path, detail_paths = write_reports(rows, start, end, console_names)
+            index_path, detail_paths = write_reports(rows, start, console_names)
             print(f"Übersicht geschrieben: {index_path}")
             for p in detail_paths:
                 print(f"  Detail: {p}")
@@ -1149,12 +1192,12 @@ def main():
     while True:
         rows, added = poll(rows, targets, args.interval)
         if single:
-            path = write_report(rows, start, end, single)
+            path = write_report(rows, start, single)
         else:
-            path, _ = write_reports(rows, start, end, console_names)
+            path, _ = write_reports(rows, start, console_names)
         stamp = datetime.now().astimezone().strftime("%H:%M:%S")
         print(f"[{stamp}] {added} neue Messpunkte, {len(rows)} gesamt -> {path}")
-        if args.once or datetime.now(timezone.utc) >= end:
+        if args.once:
             break
         time.sleep(args.interval)
 
