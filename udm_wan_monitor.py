@@ -977,7 +977,7 @@ def render_overview_html(consoles, start, now):
         <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
         <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}
-          <span class="live-rate">{human_kbps(c['last_rate_kbps'])}</span></div></div>
+          <span class="live-rate">Akt. Bandbreite: {human_kbps(c['last_rate_kbps'])}</span></div></div>
       </div>
       <div class="mini-charts">
         <div class="mini-chart-col">
