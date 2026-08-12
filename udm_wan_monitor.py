@@ -33,6 +33,7 @@ Aufrufe
 import argparse
 import calendar
 import csv
+import heapq
 import html
 import json
 import os
@@ -352,10 +353,13 @@ ALERT_THRESHOLD_BYTES = 4.8 * GIB
 # Live kalibriert: Grundlast lag im Ernstfall bei KNZ im einstelligen
 # kbps-Bereich, der echte LTE-Failover-Ausschlag bei 400-877 kbps.
 FAILOVER_THRESHOLD_KBPS = 500.0
-# LSB zeigt eine noch ungeklaerte, dauerhaft erhoehte Grundlast (wird gerade
-# untersucht) - bis das geklaert ist, hier keine Failover-Erkennung, um keine
-# Fehlalarme zu erzeugen.
-FAILOVER_EXCLUDED_DEVICES = {"LSB--UDM-1"}
+# Einzelne kurze Ausschlaege (Speedtest, Firmware-/Signatur-Download) sollen
+# keinen Fehlalarm ausloesen. Erst wenn die letzten FAILOVER_CONSECUTIVE Polls
+# IN FOLGE ueber dem Schwellwert liegen, gilt Failover als bestaetigt - bei
+# 1-Minuten-Takt sind das 2 Minuten Verzoegerung, kaum spuerbar langsamer als
+# vorher (1 Poll), aber deutlich weniger anfaellig fuer Einzel-Spitzen.
+FAILOVER_CONSECUTIVE = 2
+FAILOVER_EXCLUDED_DEVICES = set()
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
@@ -421,18 +425,26 @@ def compute_stats(rows, start, site_filter=None):
     total_30d = sum(r["down_bytes"] + r["up_bytes"] for r in d30_rows)
     per_day_30d = total_30d / 30.0
 
-    # Failover-Verdacht: letzter Messpunkt ueber dem Schwellwert (kbps), der sich
-    # live am NAS-Failover-Monitor bewaehrt hat (siehe failover_monitor.py).
-    # Hier nur der letzte Punkt statt "3 in Folge", da Polls schon 2 Min
-    # auseinanderliegen - fuer ein Live-Board waere das sonst zu traege.
+    # Failover-Verdacht: die letzten FAILOVER_CONSECUTIVE Messpunkte IN FOLGE
+    # ueber dem Schwellwert (kbps), damit ein einzelner kurzer Ausschlag
+    # (Speedtest, Download) keinen Fehlalarm ausloest. Schwellwert live am
+    # NAS-Failover-Monitor kalibriert, bevor der durchs GitHub-Pages-Board
+    # ersetzt wurde.
     is_failover = False
     last_rate_kbps = 0.0
     if all_rows and site_filter not in FAILOVER_EXCLUDED_DEVICES:
-        last_row = max(all_rows, key=lambda r: r["ts"])
-        if last_row["interval_s"]:
-            last_rate_kbps = ((last_row["down_bytes"] + last_row["up_bytes"])
-                               * 8.0 / last_row["interval_s"] / 1000.0)
-            is_failover = last_rate_kbps > FAILOVER_THRESHOLD_KBPS
+        recent = heapq.nlargest(FAILOVER_CONSECUTIVE, all_rows, key=lambda r: r["ts"])
+        recent.sort(key=lambda r: r["ts"])  # chronologisch, aeltester zuerst
+        rates = []
+        for r in recent:
+            if r["interval_s"]:
+                rates.append((r["down_bytes"] + r["up_bytes"]) * 8.0 / r["interval_s"] / 1000.0)
+            else:
+                rates.append(0.0)
+        if rates:
+            last_rate_kbps = rates[-1]
+        if len(rates) == FAILOVER_CONSECUTIVE:
+            is_failover = all(rate > FAILOVER_THRESHOLD_KBPS for rate in rates)
 
     # Stundenchart & Flow-Chart: nur die letzten CHART_WINDOW_DAYS Tage.
     chart_start = max(start, now - timedelta(days=CHART_WINDOW_DAYS))
