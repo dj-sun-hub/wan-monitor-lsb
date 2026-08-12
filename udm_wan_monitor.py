@@ -67,7 +67,7 @@ RAW_PATH = os.path.join(DATA_DIR, "raw_sample.json")
 STATE_PATH = os.path.join(DATA_DIR, "monitor_state.json")
 
 CSV_FIELDS = ["ts", "site", "uplink", "interval_s", "down_bytes", "up_bytes"]
-REPORT_REFRESH_S = 120  # Seite laedt sich automatisch neu, siehe <meta refresh> und Countdown
+REPORT_REFRESH_S = 60  # Seite laedt sich automatisch neu, siehe <meta refresh> und Countdown
 
 TIME_KEYS = ("metrictime", "timestamp", "time", "periodstart", "starttime", "date")
 
@@ -338,12 +338,19 @@ def human_bytes(value):
     return f"{value:.1f} TB"
 
 
+def human_kbps(value):
+    """Aktuelle Live-Rate (Down+Up kombiniert), kurz formatiert fuer die
+    Kachel-Anzeige neben dem Gesamt-Wert."""
+    if value >= 1000:
+        return f"{value / 1000:.1f}".replace(".", ",") + " Mbps"
+    return f"{value:.0f} kbps"
+
+
 GIB = 1024 ** 3
 WARN_THRESHOLD_BYTES = 1 * GIB
 ALERT_THRESHOLD_BYTES = 4.8 * GIB
-# Live am NAS-Failover-Monitor kalibriert (siehe failover_monitor.py): Grundlast
-# lag im Ernstfall bei KNZ im einstelligen kbps-Bereich, der echte LTE-Failover-
-# Ausschlag bei 400-877 kbps.
+# Live kalibriert: Grundlast lag im Ernstfall bei KNZ im einstelligen
+# kbps-Bereich, der echte LTE-Failover-Ausschlag bei 400-877 kbps.
 FAILOVER_THRESHOLD_KBPS = 500.0
 # LSB zeigt eine noch ungeklaerte, dauerhaft erhoehte Grundlast (wird gerade
 # untersucht) - bis das geklaert ist, hier keine Failover-Erkennung, um keine
@@ -847,7 +854,7 @@ def render_html(**c):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WAN-Volumen {c['device']}</title>
+<title>WAN-Failover {c['device']}</title>
 <style>
 {BASE_CSS}
   .detail-link {{ font-size: 13px; color: var(--down); text-decoration: none; }}
@@ -857,7 +864,7 @@ def render_html(**c):
 <body>
 <div class="wrap">
   <header>
-    <h1>WAN-Volumen {c['device']}{' <span class="failover-tag">FAILOVER VERMUTET</span>' if c['is_failover'] else ''}</h1>
+    <h1>WAN-Failover {c['device']}{' <span class="failover-tag">FAILOVER VERMUTET</span>' if c['is_failover'] else ''}</h1>
     <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
       Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
@@ -934,7 +941,7 @@ def render_html(**c):
   </div>
 
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
-    {len(c['window'])} Messpunkte seit Start. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
+    {len(c['window'])} Messpunkte seit Start. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.</footer>
 </div>
 {refresh_countdown_script(now)}
 {flow_tooltip_script()}
@@ -969,7 +976,8 @@ def render_overview_html(consoles, start, now):
       <div class="mini-grid">
         <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
-        <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}</div></div>
+        <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}
+          <span class="live-rate">{human_kbps(c['last_rate_kbps'])}</span></div></div>
       </div>
       <div class="mini-charts">
         <div class="mini-chart-col">
@@ -995,7 +1003,7 @@ def render_overview_html(consoles, start, now):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WAN-Volumen Übersicht</title>
+<title>WAN-Failover Übersicht</title>
 <style>
 {BASE_CSS}
   .wrap {{ max-width: 1840px; }}
@@ -1012,6 +1020,8 @@ def render_overview_html(consoles, start, now):
   .mini-grid {{ display: flex; gap: 20px; }}
   .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }}
   .mvalue {{ font: 600 18px/1.25 ui-monospace, monospace; margin-top: 2px; }}
+  .live-rate {{ font: 500 11.5px/1.25 ui-monospace, monospace; color: var(--dim);
+    margin-left: 4px; white-space: nowrap; }}
   .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 3px; }}
   .mini-chart-col .chart {{ height: 140px; }}
   .mini-chart-label {{ color: var(--dim); font-size: 10px; text-transform: uppercase;
@@ -1028,7 +1038,7 @@ def render_overview_html(consoles, start, now):
 <body>
 <div class="wrap">
   <header>
-    <h1>WAN-Volumen Übersicht</h1>
+    <h1>WAN-Failover Übersicht</h1>
     <div class="sub">Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
@@ -1045,7 +1055,7 @@ def render_overview_html(consoles, start, now):
   </div>
 
   <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
-    {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minuten selbst.</footer>
+    {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.</footer>
 </div>
 {refresh_countdown_script(now)}
 {flow_tooltip_script()}
