@@ -689,10 +689,6 @@ BASE_CSS = """
     border-radius: 3px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; font-weight: 600; }
   footer { color: var(--dim); font-size: 12.5px; margin-top: 34px;
     border-top: 1px solid var(--line); padding-top: 14px; }
-  .note-box { margin-top: 12px; padding: 10px 14px; background: rgba(232, 193, 78, .07);
-    border: 1px solid rgba(232, 193, 78, .32); border-radius: 8px;
-    color: var(--text); font-size: 12.5px; line-height: 1.5; }
-  .note-box b { color: var(--warn); }
   a { color: inherit; }
   @media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
 """
@@ -866,10 +862,6 @@ def render_html(**c):
       Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
       Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
       nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
-    <div class="note-box"><b>Hinweis:</b> Gemessen wird nur der Traffic über den eigenen
-      WAN-/LTE-Port dieses UDM (die Backup-Leitung). Der reguläre Traffic läuft über die
-      Sophos-Hauptleitung und läuft nicht über diesen Port – die tatsächliche
-      Gesamt-Datenmenge dieses Standorts liegt also deutlich höher als hier gezeigt.</div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
     <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
       (Tag {int(c['days_elapsed_month']) + 1} von {c['days_in_month']})</div>
@@ -882,7 +874,7 @@ def render_html(**c):
     <div class="card"><div class="label">Letzte 30 Tage</div>
       <div class="value">{human_bytes(c['total_30d'])}</div>
       <div class="foot">Ø {human_bytes(c['per_day_30d'])}/Tag</div></div>
-    <div class="card"><div class="label">Gesamt seit Start</div>
+    <div class="card"><div class="label">Gesamt seit Start (nur Failover-Traffic)</div>
       <div class="value">{human_bytes(c['total'])}</div>
       <div class="foot">seit {start.astimezone().strftime('%d.%m.%Y')}</div></div>
     <div class="card"><div class="label">Verhältnis (gesamt)</div>
@@ -1042,11 +1034,7 @@ def render_overview_html(consoles, start, now):
       nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
     <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_month_all)}</b> diesen Monat &nbsp;&middot;&nbsp;
       <b>{human_bytes(total_30d_all)}</b> letzte 30 Tage &nbsp;&middot;&nbsp;
-      <b>{human_bytes(total_all)}</b> gesamt seit Start</div>
-    <div class="note-box"><b>Hinweis:</b> Gemessen wird nur der Traffic über den eigenen
-      WAN-/LTE-Port des UDM (die Backup-Leitung). Der reguläre Traffic läuft über die
-      Sophos-Hauptleitung und läuft nicht über diesen Port – die tatsächliche
-      Gesamt-Datenmenge je Standort liegt also deutlich höher als hier gezeigt.</div>
+      <b>{human_bytes(total_all)}</b> gesamt seit Start (nur Failover-Traffic)</div>
     <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
     <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
       (Tag {int(days_elapsed_month) + 1} von {days_in_month})</div>
