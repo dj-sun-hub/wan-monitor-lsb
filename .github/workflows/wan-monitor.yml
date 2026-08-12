@@ -55,7 +55,28 @@ jobs:
           cp *--UDM-1.html public/ 2>/dev/null || true
           git add wan_traffic.csv monitor_state.json public/*.html *--UDM-1.html
           git diff --staged --quiet || git commit -m "Messpunkte $(date -u +%FT%RZ)"
-          git push
+
+          # Bei ueberlappenden Laeufen kann ein reiner "git push" am Konflikt
+          # scheitern (non-fast-forward). Statt den ganzen Job fehlschlagen zu
+          # lassen: mit frischem Stand rebasen und erneut versuchen.
+          pushed=false
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              pushed=true
+              break
+            fi
+            echo "Push fehlgeschlagen (Versuch $attempt), hole aktuellen Stand und versuche erneut..."
+            git fetch origin master
+            if ! git rebase origin/master; then
+              echo "Rebase-Konflikt, verwerfe diesen Poll-Versuch."
+              git rebase --abort
+              break
+            fi
+            sleep 2
+          done
+          if [ "$pushed" != "true" ]; then
+            echo "::warning::Konnte Messpunkt nicht pushen, dieser Poll geht verloren (naechster Lauf holt es i.d.R. nach)."
+          fi
 
       - uses: actions/upload-pages-artifact@v3
         with:
