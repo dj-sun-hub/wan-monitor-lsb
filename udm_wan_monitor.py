@@ -138,19 +138,24 @@ def connector_get(host_id, path, timeout=30):
                 time.sleep(20 * (attempt + 1))
                 continue
             if exc.code == 401:
+                # Betrifft ALLE Konsolen gleichermassen (kaputter/abgelaufener
+                # Key) - hier bewusst laut abbrechen statt jede Konsole
+                # einzeln "unerreichbar" zu melden.
                 sys.exit("401: API-Key wird abgelehnt (Connector-Proxy).")
             if exc.code == 403:
-                sys.exit(
-                    f"403: Key hat keinen Zugriff auf Konsole {host_id} (Connector-Proxy).\n"
-                    "  Prüfen: API-Key auf unifi.ui.com bearbeiten, alle benötigten\n"
-                    "  Konsolen im Scope freigeben."
+                raise RuntimeError(
+                    f"403: Key hat keinen Zugriff auf Konsole {host_id} (Connector-Proxy)."
                 )
-            sys.exit(f"HTTP {exc.code} beim Connector-Proxy {path}: {body}")
+            # Alles andere (z.B. 404 "device_offline") ist typischerweise ein
+            # Problem EINER einzelnen Konsole - normale Exception werfen,
+            # damit der Aufrufer nur diese Konsole ueberspringen kann, statt
+            # den kompletten Poll-Durchlauf fuer ALLE Konsolen abzubrechen.
+            raise RuntimeError(f"HTTP {exc.code} beim Connector-Proxy {path}: {body}")
         except urllib.error.URLError as exc:
             if attempt < 2:
                 time.sleep(10)
                 continue
-            sys.exit(f"Keine Verbindung zu api.ui.com (Connector-Proxy): {exc.reason}")
+            raise RuntimeError(f"Keine Verbindung zu api.ui.com (Connector-Proxy): {exc.reason}")
     return {}
 
 
@@ -166,7 +171,7 @@ def find_gateway_device(host_id):
         mac = dev.get("macAddress", "").replace(":", "").upper()
         if mac == mac_target:
             return site_id, dev["id"]
-    sys.exit(f"Gateway-Gerät für Host {host_id} nicht in Network-API gefunden.")
+    raise RuntimeError(f"Gateway-Gerät für Host {host_id} nicht in Network-API gefunden.")
 
 
 def get_uplink_rates(host_id, site_id, device_id):
@@ -1146,7 +1151,14 @@ def poll(rows, targets, interval_s):
     now = datetime.now(timezone.utc)
     points = []
     for console_name, host_id, site_id, device_id in targets:
-        rx_bps, tx_bps = get_uplink_rates(host_id, site_id, device_id)
+        # Eine einzelne offline/nicht erreichbare Konsole darf nicht den
+        # kompletten Poll-Durchlauf (und damit die Daten ALLER anderen
+        # Konsolen) zum Absturz bringen - hier nur ueberspringen und weiter.
+        try:
+            rx_bps, tx_bps = get_uplink_rates(host_id, site_id, device_id)
+        except Exception as exc:
+            print(f"  {console_name}: Poll-Fehler, ueberspringe diesen Durchlauf - {exc}")
+            continue
         points.append({
             "ts": now,
             "site": console_name,
@@ -1236,7 +1248,13 @@ def main():
 
     targets = []
     for name, host_id in targets_cfg:
-        site_id, device_id = find_gateway_device(host_id)
+        # Wie in poll(): eine einzelne offline Konsole darf nicht verhindern,
+        # dass die restigen Konsolen ueberhaupt erst Daten bekommen.
+        try:
+            site_id, device_id = find_gateway_device(host_id)
+        except Exception as exc:
+            print(f"Ziel: {name}: uebersprungen, nicht erreichbar - {exc}")
+            continue
         targets.append((name, host_id, site_id, device_id))
         print(f"Ziel: {name} (site_id={site_id}, device_id={device_id})")
 
