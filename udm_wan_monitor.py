@@ -400,9 +400,21 @@ def human_kbps(value):
     return f"{value:.0f} kbps"
 
 
-GIB = 1024 ** 3
-WARN_THRESHOLD_BYTES = 1 * GIB
-ALERT_THRESHOLD_BYTES = 4.8 * GIB
+# Dezimale GB (1000er), passend zu human_bytes() und dem SIM-Zaehler.
+GB = 1000 ** 3
+# Pro Konsole unterschiedliche Rot-Schwelle fuer "Aktueller Monat" - je nach
+# ueblichem/erwartetem Datenvolumen des Standorts. Gelb liegt einheitlich bei
+# 80% der jeweiligen Rot-Schwelle.
+ALERT_THRESHOLD_BYTES_BY_CONSOLE = {
+    "WTB--UDM-1": 24 * GB,
+    "KNZ--UDM-1": 9 * GB,
+    "LSB--UDM-1": 4 * GB,
+    "KLO--UDM-1": 4 * GB,
+    "NID--UDM-1": 4 * GB,
+    "HAN--UDM-1": 4 * GB,
+}
+DEFAULT_ALERT_THRESHOLD_BYTES = 4 * GB  # Fallback fuer nicht gelistete Konsolen
+WARN_THRESHOLD_FACTOR = 0.8
 # Nur die UPLOAD-Rate zaehlt (nicht Down+Up kombiniert) - der KNZ-Vorfall
 # zeigte, dass ein Routing-/Failover-Problem sich vor allem als massiver
 # Upload ueber die LTE-Leitung aeussert.
@@ -426,11 +438,14 @@ CHART_WINDOW_DAYS = 7
 TABLE_WINDOW_DAYS = 30
 
 
-def total_alert_class(total_bytes):
-    """CSS-Klassen-Zusatz fuer den 'Bisher'-Wert: gelb ab 1 GB, rot ab 4.8 GB."""
-    if total_bytes > ALERT_THRESHOLD_BYTES:
+def total_alert_class(total_bytes, console_name=None):
+    """CSS-Klassen-Zusatz fuer den 'Monat'-Wert: pro Konsole eigene Rot-
+    Schwelle (siehe ALERT_THRESHOLD_BYTES_BY_CONSOLE), Gelb bei 80% davon."""
+    alert = ALERT_THRESHOLD_BYTES_BY_CONSOLE.get(console_name, DEFAULT_ALERT_THRESHOLD_BYTES)
+    warn = alert * WARN_THRESHOLD_FACTOR
+    if total_bytes > alert:
         return " value-alert"
-    if total_bytes > WARN_THRESHOLD_BYTES:
+    if total_bytes > warn:
         return " value-warn"
     return ""
 
@@ -1002,7 +1017,7 @@ def render_html(**c):
 
   <div class="grid-cards">
     <div class="card"><div class="label">Aktueller Monat</div>
-      <div class="value{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div>
+      <div class="value{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])}</div>
       <div class="foot">Hochrechnung Monatsende: {human_bytes(c['projected_month'])}</div></div>
     <div class="card"><div class="label">Letzte 30 Tage</div>
       <div class="value">{human_bytes(c['total_30d'])}</div>
@@ -1108,7 +1123,7 @@ def render_overview_html(consoles, start, now):
         cards.append(f"""<div class="{card_class}">
       <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}{offline_badge}</div>
       <div class="mini-grid">
-        <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div></div>
+        <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
         <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}
           <span class="live-rate">Akt. Upload: {human_kbps(c['last_rate_kbps'])}</span></div></div>
