@@ -636,14 +636,6 @@ def build_report(rows, start, site_filter=None, sim_totals=None):
     return render_html(**compute_stats(rows, start, site_filter, sim_totals))
 
 
-def build_overview(rows, start, console_names, sim_totals=None):
-    now = datetime.now(timezone.utc)
-    if sim_totals is None:
-        sim_totals = load_sim_totals()
-    consoles = [compute_stats(rows, start, site_filter=name, sim_totals=sim_totals) for name in console_names]
-    return render_overview_html(consoles=consoles, start=start, now=now)
-
-
 def render_chart(series, peak, start):
     width, height = 960, 220
     left, bottom = 54, 28
@@ -1229,15 +1221,27 @@ def write_report(rows, start, site_filter=None):
 
 def write_reports(rows, start, console_names):
     """Schreibt die Übersichtsseite (wan_report.html) plus eine Detailseite
-    pro Konsole ({Konsolenname}.html)."""
+    pro Konsole ({Konsolenname}.html).
+
+    Performance: compute_stats() ist mit wachsender CSV der teuerste Teil
+    (scannt alle Zeilen je Konsole fuer Monat/30-Tage/Charts). Frueher wurde
+    es PRO KONSOLE zweimal aufgerufen - einmal fuer die Uebersichtskachel
+    (via build_overview), einmal fuer die Detailseite (via build_report).
+    Jetzt: einmal berechnen, Ergebnis fuer beide Seiten wiederverwenden -
+    halbiert die Rechenzeit pro Poll-Durchlauf."""
+    now = datetime.now(timezone.utc)
     sim_totals = load_sim_totals()
-    overview_html = build_overview(rows, start, console_names, sim_totals=sim_totals)
+    consoles = [compute_stats(rows, start, site_filter=name, sim_totals=sim_totals)
+                for name in console_names]
+
+    overview_html = render_overview_html(consoles=consoles, start=start, now=now)
     with open(HTML_PATH, "w", encoding="utf-8") as handle:
         handle.write(overview_html)
+
     detail_paths = []
-    for name in console_names:
-        detail_html = build_report(rows, start, site_filter=name, sim_totals=sim_totals)
-        path = os.path.join(DATA_DIR, f"{name}.html")
+    for c in consoles:
+        detail_html = render_html(**c)
+        path = os.path.join(DATA_DIR, f"{c['device']}.html")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(detail_html)
         detail_paths.append(path)
