@@ -408,7 +408,7 @@ GB = 1000 ** 3
 ALERT_THRESHOLD_BYTES_BY_CONSOLE = {
     "WTB--UDM-1": 24 * GB,
     "KNZ--UDM-1": 9 * GB,
-    "LSB--UDM-1": 4 * GB,
+    "LSB--UDM-1": 9 * GB,
     "KLO--UDM-1": 4 * GB,
     "NID--UDM-1": 4 * GB,
     "HAN--UDM-1": 4 * GB,
