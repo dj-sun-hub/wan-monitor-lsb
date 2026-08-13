@@ -117,12 +117,12 @@ def api_get(path, params=None, timeout=30):
     return {}
 
 
-def connector_get(host_id, path, timeout=30):
-    """Ruft die lokale UniFi-Network-API einer Konsole ueber den Site-Manager-
-    Connector-Proxy auf (kein VPN/lokales Netz noetig). Liefert echte
-    Live-Uplink-Raten, im Gegensatz zur unzuverlaessigen isp-metrics-API."""
-    url = (CONNECTOR_BASE + "/" + urllib.parse.quote(host_id, safe=":")
-           + "/proxy/network/integration/v1" + path)
+def _connector_request(host_id, url_path, timeout=30):
+    """Gemeinsame GET-Ausfuehrung + Fehlerbehandlung/Retry fuer den Site-
+    Manager-Connector-Proxy - genutzt sowohl von der offiziellen Integration-
+    API (connector_get) als auch von der klassischen Controller-API
+    (legacy_get), die beide ueber denselben Proxy-Tunnel laufen."""
+    url = CONNECTOR_BASE + "/" + urllib.parse.quote(host_id, safe=":") + url_path
     req = urllib.request.Request(url, headers={
         "X-API-KEY": api_key(),
         "Accept": "application/json",
@@ -150,7 +150,7 @@ def connector_get(host_id, path, timeout=30):
             # Problem EINER einzelnen Konsole - normale Exception werfen,
             # damit der Aufrufer nur diese Konsole ueberspringen kann, statt
             # den kompletten Poll-Durchlauf fuer ALLE Konsolen abzubrechen.
-            raise RuntimeError(f"HTTP {exc.code} beim Connector-Proxy {path}: {body}")
+            raise RuntimeError(f"HTTP {exc.code} beim Connector-Proxy {url_path}: {body}")
         except urllib.error.URLError as exc:
             if attempt < 2:
                 time.sleep(10)
@@ -159,9 +159,25 @@ def connector_get(host_id, path, timeout=30):
     return {}
 
 
+def connector_get(host_id, path, timeout=30):
+    """Ruft die offizielle, dokumentierte Network-Integration-API (v1) einer
+    Konsole ueber den Site-Manager-Connector-Proxy auf (kein VPN/lokales Netz
+    noetig)."""
+    return _connector_request(host_id, "/proxy/network/integration/v1" + path, timeout)
+
+
+def legacy_get(host_id, path, timeout=30):
+    """Ruft die klassische (undokumentierte) UniFi-Controller-API auf - laeuft
+    ueber denselben Connector-Proxy-Tunnel wie connector_get(), aber ohne den
+    "/integration/v1"-Pfad. Noetig fuer den SIM-Datenzaehler (rx/txbytes) des
+    LTE-Modems, den die offizielle Integration-API nicht exportiert."""
+    return _connector_request(host_id, "/proxy/network" + path, timeout)
+
+
 def find_gateway_device(host_id):
     """Ermittelt lokale Network-API site_id und device_id der Konsole (Gateway)
-    selbst, ueber MAC-Abgleich mit der Site-Manager hostId."""
+    selbst, ueber MAC-Abgleich mit der Site-Manager hostId. Wird nur noch von
+    --discover genutzt, nicht mehr vom eigentlichen Polling (siehe poll())."""
     sites = connector_get(host_id, "/sites")
     site_id = sites["data"][0]["id"]
     devices = connector_get(host_id, f"/sites/{site_id}/devices")
@@ -172,6 +188,34 @@ def find_gateway_device(host_id):
         if mac == mac_target:
             return site_id, dev["id"]
     raise RuntimeError(f"Gateway-Gerät für Host {host_id} nicht in Network-API gefunden.")
+
+
+def find_lte_modem(host_id, site_id):
+    """Findet das LTE-Backup-Modem (U5G Max o.ae.) der Konsole ueber Namens-/
+    Modell-Muster in der Geraeteliste. Liefert dessen MAC-Adresse."""
+    devices = connector_get(host_id, f"/sites/{site_id}/devices")
+    for dev in devices.get("data", []):
+        name = dev.get("name", "").upper()
+        model = dev.get("model", "").upper()
+        if "LTE" in name or "U5G" in model or "U-LTE" in model:
+            return dev["macAddress"]
+    raise RuntimeError(f"Kein LTE-Modem für Host {host_id} in Network-API gefunden.")
+
+
+def get_sim_bytes(host_id, site_name, mac):
+    """Liest den kumulativen SIM-Datenzaehler (rx/tx Bytes seit letztem Reset,
+    von Modem/Provider selbst gezaehlt) des LTE-Modems ueber die klassische
+    Controller-API. Deutlich genauer als eine Rate-Hochrechnung, siehe
+    Chat-Verlauf: Werte gegen das LCM-Display des Geraets verifiziert."""
+    data = legacy_get(host_id, f"/api/s/{site_name}/stat/device/{mac}")
+    entries = data.get("data") or []
+    if not entries:
+        raise RuntimeError(f"Kein Gerät für MAC {mac} in Legacy-API gefunden.")
+    sims = entries[0].get("mbb", {}).get("sim", [])
+    active = next((s for s in sims if s.get("active")), None)
+    if not active:
+        raise RuntimeError(f"Keine aktive SIM im LTE-Modem {mac} gefunden.")
+    return int(active["rxbytes"]), int(active["txbytes"])
 
 
 def get_uplink_rates(host_id, site_id, device_id):
@@ -355,9 +399,10 @@ def human_kbps(value):
 GIB = 1024 ** 3
 WARN_THRESHOLD_BYTES = 1 * GIB
 ALERT_THRESHOLD_BYTES = 4.8 * GIB
-# Live kalibriert: Grundlast lag im Ernstfall bei KNZ im einstelligen
-# kbps-Bereich, der echte LTE-Failover-Ausschlag bei 400-877 kbps.
-FAILOVER_THRESHOLD_KBPS = 500.0
+# Nur die UPLOAD-Rate zaehlt (nicht Down+Up kombiniert) - der KNZ-Vorfall
+# zeigte, dass ein Routing-/Failover-Problem sich vor allem als massiver
+# Upload ueber die LTE-Leitung aeussert.
+FAILOVER_THRESHOLD_KBPS = 1000.0
 # Einzelne kurze Ausschlaege (Speedtest, Firmware-/Signatur-Download) sollen
 # keinen Fehlalarm ausloesen. Erst wenn die letzten FAILOVER_CONSECUTIVE Polls
 # IN FOLGE ueber dem Schwellwert liegen, gilt Failover als bestaetigt - bei
@@ -451,10 +496,8 @@ def compute_stats(rows, start, site_filter=None):
     per_day_30d = total_30d / 30.0
 
     # Failover-Verdacht: die letzten FAILOVER_CONSECUTIVE Messpunkte IN FOLGE
-    # ueber dem Schwellwert (kbps), damit ein einzelner kurzer Ausschlag
-    # (Speedtest, Download) keinen Fehlalarm ausloest. Schwellwert live am
-    # NAS-Failover-Monitor kalibriert, bevor der durchs GitHub-Pages-Board
-    # ersetzt wurde.
+    # ueber dem Schwellwert (kbps UPLOAD, nicht kombiniert - siehe KNZ-
+    # Vorfall), damit ein einzelner kurzer Ausschlag keinen Fehlalarm ausloest.
     is_failover = False
     last_rate_kbps = 0.0
     if all_rows and site_filter not in FAILOVER_EXCLUDED_DEVICES:
@@ -463,7 +506,7 @@ def compute_stats(rows, start, site_filter=None):
         rates = []
         for r in recent:
             if r["interval_s"]:
-                rates.append((r["down_bytes"] + r["up_bytes"]) * 8.0 / r["interval_s"] / 1000.0)
+                rates.append(r["up_bytes"] * 8.0 / r["interval_s"] / 1000.0)
             else:
                 rates.append(0.0)
         if rates:
@@ -991,7 +1034,7 @@ def render_html(**c):
       Management-Grundlast diese Stunden abziehen.</p>
   </div>
 
-  <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
+  <footer>Datenquelle: SIM-Datenzähler des LTE-Modems (via Site-Manager-Connector-Proxy),
     {len(c['window'])} Messpunkte seit Start. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.</footer>
 </div>
 {refresh_countdown_script(now)}
@@ -1036,7 +1079,7 @@ def render_overview_html(consoles, start, now):
         <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'])}">{human_bytes(c['total_month'])}</div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
         <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}
-          <span class="live-rate">Akt. Bandbreite: {human_kbps(c['last_rate_kbps'])}</span></div></div>
+          <span class="live-rate">Akt. Upload: {human_kbps(c['last_rate_kbps'])}</span></div></div>
       </div>
       <div class="mini-charts">
         <div class="mini-chart-col">
@@ -1121,7 +1164,7 @@ def render_overview_html(consoles, start, now):
     {cards_html}
   </div>
 
-  <footer>Datenquelle: UniFi Network API (Live-Uplink-Rate via Site-Manager-Connector-Proxy),
+  <footer>Datenquelle: SIM-Datenzähler des LTE-Modems (via Site-Manager-Connector-Proxy),
     {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.</footer>
 </div>
 {refresh_countdown_script(now)}
@@ -1157,35 +1200,55 @@ def write_reports(rows, start, console_names):
 # Ablauf
 # ----------------------------------------------------------------------------
 
-def poll(rows, targets, interval_s):
-    """Ein Live-Sample der aktuellen Uplink-Rate pro Konsole, hochgerechnet auf
-    interval_s. targets = Liste von (console_name, host_id, site_id, device_id).
-    Alle Konsolen bekommen denselben Zeitstempel (ein Poll-Durchlauf), das haelt
-    sie fuer Vergleiche synchron und braucht nur einen CSV-/Git-Commit pro Lauf.
+def poll(rows, targets, interval_s, sim_baseline):
+    """Ein Live-Sample des kumulativen SIM-Datenzaehlers jeder Konsole.
+    targets = Liste von (console_name, host_id, site_name, lte_mac).
 
-    Hinweis: Die isp-metrics-API lieferte nachweislich falsche Werte (Faktor
-    ~5000 gegenueber dem GUI-Traffic-Graphen). Diese Funktion nutzt stattdessen
-    den Site-Manager-Connector-Proxy zur lokalen Network-API jeder Konsole, der
-    echte Live-Uplink-Raten liefert (verifiziert gegen den GUI-Graphen).
+    Historie: zuerst isp-metrics-API (lieferte nachweislich falsche Werte,
+    Faktor ~5000 gegenueber dem GUI-Traffic-Graphen), dann Live-Uplink-Rate
+    hochgerechnet auf das Poll-Intervall (rate * interval_s - anfaellig fuer
+    Fehler, wenn der tatsaechliche Poll-Abstand vom angenommenen interval_s
+    abweicht). Jetzt: der SIM-eigene Byte-Zaehler des LTE-Modems selbst
+    (rx/txbytes, vom Provider/Modem gezaehlt) - exakt, gegen das LCM-Display
+    des Geraets verifiziert.
+
+    sim_baseline: dict console_name -> {"rx": int, "tx": int, "ts": iso-str},
+    der zuletzt bekannte Zaehlerstand. Wird IN-PLACE aktualisiert; der
+    Aufrufer muss sim_baseline danach in monitor_state.json sichern, sonst
+    geht die Baseline beim naechsten Prozessstart verloren (--once startet ja
+    bei jedem Poll einen neuen Prozess). Ein erkannter Reset (neuer Wert <
+    alter Wert - z.B. Monatswechsel beim Provider oder Modem-Neustart) laesst
+    die Zaehlung fuer diese Konsole einfach wieder bei 0 beginnen.
     """
     now = datetime.now(timezone.utc)
     points = []
-    for console_name, host_id, site_id, device_id in targets:
+    for console_name, host_id, site_name, mac in targets:
         # Eine einzelne offline/nicht erreichbare Konsole darf nicht den
         # kompletten Poll-Durchlauf (und damit die Daten ALLER anderen
         # Konsolen) zum Absturz bringen - hier nur ueberspringen und weiter.
         try:
-            rx_bps, tx_bps = get_uplink_rates(host_id, site_id, device_id)
+            rx, tx = get_sim_bytes(host_id, site_name, mac)
         except Exception as exc:
             print(f"  {console_name}: Poll-Fehler, ueberspringe diesen Durchlauf - {exc}")
             continue
+        base = sim_baseline.get(console_name)
+        if base is None:
+            # Erster Poll fuer diese Konsole: nur Baseline setzen, kein Delta -
+            # wir wissen nicht, seit wann der Zaehler schon laeuft, ein Delta
+            # gegen 0 waere ein riesiger, irrefuehrender erster Messpunkt.
+            down_delta, up_delta, actual_interval = 0, 0, interval_s
+        else:
+            down_delta = rx - base["rx"] if rx >= base["rx"] else rx
+            up_delta = tx - base["tx"] if tx >= base["tx"] else tx
+            actual_interval = max((now - datetime.fromisoformat(base["ts"])).total_seconds(), 1.0)
+        sim_baseline[console_name] = {"rx": rx, "tx": tx, "ts": now.isoformat()}
         points.append({
             "ts": now,
             "site": console_name,
             "uplink": "wan",
-            "interval_s": interval_s,
-            "down_bytes": round(rx_bps / 8.0 * interval_s),
-            "up_bytes": round(tx_bps / 8.0 * interval_s),
+            "interval_s": round(actual_interval),
+            "down_bytes": down_delta,
+            "up_bytes": up_delta,
         })
     return merge_rows(rows, points)
 
@@ -1230,18 +1293,32 @@ def main():
         discover(args.host_id or DEFAULT_HOST_ID)
         return
 
+    if os.path.exists(STATE_PATH):
+        with open(STATE_PATH, encoding="utf-8") as handle:
+            state = json.load(handle)
+    else:
+        state = {}
+
     if args.start:
         start = datetime.fromisoformat(args.start).astimezone()
-    elif os.path.exists(STATE_PATH):
-        with open(STATE_PATH, encoding="utf-8") as handle:
-            start = datetime.fromisoformat(json.load(handle)["start"])
+    elif "start" in state:
+        start = datetime.fromisoformat(state["start"])
     else:
         start = datetime.now().astimezone().replace(minute=0, second=0, microsecond=0)
     start = start.astimezone(timezone.utc)
     # Kein festes Messende mehr (Dauerbetrieb) - start wird nur einmalig gesetzt
-    # und danach immer aus monitor_state.json uebernommen.
-    with open(STATE_PATH, "w", encoding="utf-8") as handle:
-        json.dump({"start": start.isoformat()}, handle)
+    # und danach immer aus monitor_state.json uebernommen. sim_baseline haelt
+    # den letzten bekannten SIM-Zaehlerstand je Konsole (siehe poll()) - muss
+    # ueber Prozessneustarts hinweg erhalten bleiben (--once startet ja bei
+    # jedem Poll einen neuen Prozess).
+    state["start"] = start.isoformat()
+    sim_baseline = state.setdefault("sim_baseline", {})
+
+    def save_state():
+        with open(STATE_PATH, "w", encoding="utf-8") as handle:
+            json.dump(state, handle)
+
+    save_state()
 
     if args.host_id:
         name = args.host_id
@@ -1271,16 +1348,20 @@ def main():
         # Wie in poll(): eine einzelne offline Konsole darf nicht verhindern,
         # dass die restigen Konsolen ueberhaupt erst Daten bekommen.
         try:
-            site_id, device_id = find_gateway_device(host_id)
+            sites = connector_get(host_id, "/sites")
+            site_id = sites["data"][0]["id"]
+            site_name = sites["data"][0]["internalReference"]
+            lte_mac = find_lte_modem(host_id, site_id)
         except Exception as exc:
             print(f"Ziel: {name}: uebersprungen, nicht erreichbar - {exc}")
             continue
-        targets.append((name, host_id, site_id, device_id))
-        print(f"Ziel: {name} (site_id={site_id}, device_id={device_id})")
+        targets.append((name, host_id, site_name, lte_mac))
+        print(f"Ziel: {name} (site={site_name}, lte_mac={lte_mac})")
 
     rows = load_rows()
     while True:
-        rows, added = poll(rows, targets, args.interval)
+        rows, added = poll(rows, targets, args.interval, sim_baseline)
+        save_state()
         if single:
             path = write_report(rows, start, single)
         else:
