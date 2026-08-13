@@ -450,6 +450,13 @@ def total_alert_class(total_bytes, console_name=None):
     return ""
 
 
+def alert_threshold_label(console_name):
+    """Rot-Schwelle der Konsole, kurz formatiert fuer die Anzeige neben dem
+    'Monat'-Wert (z.B. '64.4 GB / 24.0 GB')."""
+    alert = ALERT_THRESHOLD_BYTES_BY_CONSOLE.get(console_name, DEFAULT_ALERT_THRESHOLD_BYTES)
+    return human_bytes(alert)
+
+
 def compute_stats(rows, start, site_filter=None, sim_totals=None):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
     leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird sowohl fuer
@@ -780,6 +787,7 @@ BASE_CSS = """
   .card .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; }
   .card .value { font: 600 26px/1.25 ui-monospace, "SFMono-Regular", Consolas, monospace; margin-top: 8px; }
   .card .foot { color: var(--dim); font-size: 12.5px; margin-top: 4px; }
+  .threshold-ref { font-size: .55em; font-weight: 500; color: var(--dim); }
   h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
     margin: 34px 0 12px; font-weight: 600; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
@@ -1009,7 +1017,7 @@ def render_html(**c):
 
   <div class="grid-cards">
     <div class="card"><div class="label">Aktueller Monat</div>
-      <div class="value{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])}</div>
+      <div class="value{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])} <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div>
       <div class="foot">Hochrechnung Monatsende: {human_bytes(c['projected_month'])}</div></div>
     <div class="card"><div class="label">Letzte 30 Tage</div>
       <div class="value">{human_bytes(c['total_30d'])}</div>
@@ -1115,7 +1123,7 @@ def render_overview_html(consoles, start, now):
         cards.append(f"""<div class="{card_class}">
       <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}{offline_badge}</div>
       <div class="mini-grid">
-        <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])}</div></div>
+        <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])} <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
         <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
         <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}
           <span class="live-rate">Akt. Upload: {human_kbps(c['last_rate_kbps'])}</span></div></div>
