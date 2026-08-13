@@ -549,7 +549,13 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
             else:
                 rates.append(0.0)
         if rates:
-            last_rate_kbps = rates[-1]
+            # Durchschnitt statt nur des letzten einzelnen Polls: bei WTB
+            # springt die Rate teils innerhalb von Sekunden zwischen 0 und
+            # mehreren Mbps (bursty Traffic waehrend eines echten Ausfalls) -
+            # der reine Einzelwert wirkt dadurch irrefuehrend "aus", obwohl
+            # gerade Failover aktiv ist. Die Failover-ERKENNUNG selbst bleibt
+            # unveraendert auf Einzelwerten (robuster gegen Fehlalarme).
+            last_rate_kbps = sum(rates) / len(rates)
         if len(rates) == FAILOVER_CONSECUTIVE:
             is_failover = all(rate > FAILOVER_THRESHOLD_KBPS for rate in rates)
 
