@@ -1058,17 +1058,17 @@ def render_overview_html(consoles, start, now):
 
     cards = []
     for c in consoles:
-        # Graue Kachel (0 kbps, egal ob wirklich offline oder nur gerade
-        # ohne Traffic) zeigt immer OFFLINE statt LAEUFT - LAEUFT gibt es nur,
-        # wenn tatsaechlich Traffic gemessen wird.
-        is_idle = c["is_offline"] or c["last_rate_kbps"] <= 0
+        # Graue Kachel/OFFLINE haengt NUR noch an echter Daten-Staere (kein
+        # neuer SIM-Zaehlerstand seit OFFLINE_THRESHOLD_S), NICHT mehr an
+        # 0 kbps: manche Konsolen (z.B. LSB) haben legitim oft 0 kbps Upload,
+        # ohne offline zu sein - das fuehrte zu Fehlalarmen.
         has_current_point = any(r["ts"] >= current_hour for r in c["window"])
-        live_badge = '<span class="live-tag">läuft</span>' if has_current_point and not is_idle else ""
+        live_badge = '<span class="live-tag">läuft</span>' if has_current_point and not c["is_offline"] else ""
         failover_badge = '<span class="failover-tag">FAILOVER</span>' if c["is_failover"] else ""
-        offline_badge = '<span class="offline-tag">OFFLINE</span>' if is_idle and not c["is_failover"] else ""
+        offline_badge = '<span class="offline-tag">OFFLINE</span>' if c["is_offline"] and not c["is_failover"] else ""
         if c["is_failover"]:
             card_class = "card console-card failover"
-        elif is_idle:
+        elif c["is_offline"]:
             card_class = "card console-card idle"
         else:
             card_class = "card console-card"
