@@ -380,7 +380,11 @@ def merge_rows(existing, new_points):
 # ----------------------------------------------------------------------------
 
 def human_bytes(value):
-    step = 1024.0
+    # Dezimal (1000er-Schritte), nicht binaer (1024er) - damit die Zahlen
+    # exakt zur Telekom-/LCM-Anzeige des LTE-Modems passen (siehe SIM-
+    # Zaehler-Umstellung im Chat-Verlauf: 1024er waere "GB" beschriftet,
+    # aber tatsaechlich GiB und damit ~7% niedriger als der Provider-Wert).
+    step = 1000.0
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if abs(value) < step or unit == "TB":
             return f"{value:,.1f} {unit}".replace(",", ".")
