@@ -431,7 +431,7 @@ def total_alert_class(total_bytes):
     return ""
 
 
-def compute_stats(rows, start, site_filter=None):
+def compute_stats(rows, start, site_filter=None, sim_totals=None):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
     leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird sowohl fuer
     Detailseiten (render_html) als auch für Karten der Übersichtsseite
@@ -444,6 +444,14 @@ def compute_stats(rows, start, site_filter=None):
     bleiben auf ein kuerzeres, recentes Fenster begrenzt (CHART_WINDOW_DAYS /
     TABLE_WINDOW_DAYS), sonst wuerden sie nach Wochen/Monaten Laufzeit riesig
     und unbrauchbar.
+
+    sim_totals: optionales dict console_name -> (rx_bytes, tx_bytes), der
+    zuletzt bekannte ABSOLUTE SIM-Zaehlerstand (siehe load_sim_totals()). Der
+    Provider setzt diesen Zaehler nachweislich monatlich zurueck - deshalb
+    wird er, wenn vorhanden, DIREKT als "Aktueller Monat" verwendet, statt
+    selbst ueber den Kalendermonat zu summieren (das wuerde alte, Rate-
+    geschaetzte und neue, SIM-exakte Messpunkte vermischen und nie den echten
+    Modem-Zaehlerstand erreichen).
     """
     now = datetime.now(timezone.utc)
 
@@ -464,21 +472,26 @@ def compute_stats(rows, start, site_filter=None):
     now_local = now.astimezone()
     month_start_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     month_start = month_start_local.astimezone(timezone.utc)
-    month_rows = [r for r in all_rows if r["ts"] >= month_start]
-    total_month_down = sum(r["down_bytes"] for r in month_rows)
-    total_month_up = sum(r["up_bytes"] for r in month_rows)
-    total_month = total_month_down + total_month_up
     # Fortschrittsbalken/"Tag X von Y" soll den echten Kalendertag zeigen,
     # unabhaengig davon, ob fuer alle Tage schon Daten vorliegen.
     days_elapsed_month_calendar = max((now - month_start).total_seconds() / 86400.0, 0.001)
     days_in_month = calendar.monthrange(now_local.year, now_local.month)[1]
-    # Nenner fuer die Tagesrate (Hochrechnung) ist dagegen die Zeit seit
-    # Messbeginn INNERHALB des Monats, nicht seit Kalendermonatsbeginn - sonst
-    # wird in einem Monat, der bei Messbeginn schon laeuft, durch zu viele
-    # "Nulltage" (vor Messbeginn) geteilt und die Hochrechnung faellt
-    # kuenstlich viel zu niedrig aus.
-    month_data_start = max(month_start, start)
-    days_elapsed_month = max((now - month_data_start).total_seconds() / 86400.0, 0.001)
+
+    sim_total = None
+    if sim_totals and site_filter and site_filter in sim_totals:
+        rx, tx = sim_totals[site_filter]
+        sim_total = rx + tx
+
+    if sim_total is not None:
+        total_month = sim_total
+        days_elapsed_month = days_elapsed_month_calendar
+    else:
+        # Fallback (z.B. noch kein Poll seit dem Umstieg auf SIM-Zaehler
+        # gelaufen): alte Kalendermonat-Summe aus den CSV-Deltas.
+        month_rows = [r for r in all_rows if r["ts"] >= month_start]
+        total_month = sum(r["down_bytes"] + r["up_bytes"] for r in month_rows)
+        month_data_start = max(month_start, start)
+        days_elapsed_month = max((now - month_data_start).total_seconds() / 86400.0, 0.001)
     per_day_month = total_month / days_elapsed_month
     projected_month = per_day_month * days_in_month
 
@@ -587,13 +600,28 @@ def compute_stats(rows, start, site_filter=None):
     )
 
 
-def build_report(rows, start, site_filter=None):
-    return render_html(**compute_stats(rows, start, site_filter))
+def load_sim_totals():
+    """Liest die zuletzt bekannten ABSOLUTEN SIM-Zaehlerstaende (rx,tx) je
+    Konsole aus monitor_state.json - siehe compute_stats()/sim_totals."""
+    if not os.path.exists(STATE_PATH):
+        return {}
+    with open(STATE_PATH, encoding="utf-8") as handle:
+        state = json.load(handle)
+    baseline = state.get("sim_baseline", {})
+    return {name: (b["rx"], b["tx"]) for name, b in baseline.items()}
 
 
-def build_overview(rows, start, console_names):
+def build_report(rows, start, site_filter=None, sim_totals=None):
+    if sim_totals is None:
+        sim_totals = load_sim_totals()
+    return render_html(**compute_stats(rows, start, site_filter, sim_totals))
+
+
+def build_overview(rows, start, console_names, sim_totals=None):
     now = datetime.now(timezone.utc)
-    consoles = [compute_stats(rows, start, site_filter=name) for name in console_names]
+    if sim_totals is None:
+        sim_totals = load_sim_totals()
+    consoles = [compute_stats(rows, start, site_filter=name, sim_totals=sim_totals) for name in console_names]
     return render_overview_html(consoles=consoles, start=start, now=now)
 
 
@@ -1183,12 +1211,13 @@ def write_report(rows, start, site_filter=None):
 def write_reports(rows, start, console_names):
     """Schreibt die Übersichtsseite (wan_report.html) plus eine Detailseite
     pro Konsole ({Konsolenname}.html)."""
-    overview_html = build_overview(rows, start, console_names)
+    sim_totals = load_sim_totals()
+    overview_html = build_overview(rows, start, console_names, sim_totals=sim_totals)
     with open(HTML_PATH, "w", encoding="utf-8") as handle:
         handle.write(overview_html)
     detail_paths = []
     for name in console_names:
-        detail_html = build_report(rows, start, site_filter=name)
+        detail_html = build_report(rows, start, site_filter=name, sim_totals=sim_totals)
         path = os.path.join(DATA_DIR, f"{name}.html")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(detail_html)
