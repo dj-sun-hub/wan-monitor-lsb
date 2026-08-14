@@ -434,7 +434,7 @@ OFFLINE_THRESHOLD_S = 300
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
 # unbrauchbar gross. Kennzahlen (Monat/30 Tage/Gesamt) sind davon unabhaengig.
-CHART_WINDOW_DAYS = 7
+CHART_WINDOW_DAYS = 1  # Stunden-/Flow-Chart (Detail + Uebersichtskacheln): 24 Stunden
 TABLE_WINDOW_DAYS = 30
 
 
@@ -1036,7 +1036,7 @@ def render_html(**c):
       <div class="foot">Download, dazu {human_bytes(c['total_up'])} Upload</div></div>
   </div>
 
-  <h2>Stundenvolumen (letzte {CHART_WINDOW_DAYS} Tage)</h2>
+  <h2>Stundenvolumen (letzte {int(CHART_WINDOW_DAYS * 24)} Stunden)</h2>
   <div class="panel">
     {c['chart']}
     <div class="legend">
