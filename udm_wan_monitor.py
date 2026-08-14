@@ -645,9 +645,18 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
         total_30d = sum(r["down_bytes"] + r["up_bytes"] for r in d30_rows)
     per_day_30d = total_30d / 30.0
 
-    # Failover-Verdacht: die letzten FAILOVER_CONSECUTIVE Messpunkte IN FOLGE
-    # ueber dem Schwellwert (kbps UPLOAD, nicht kombiniert - siehe KNZ-
-    # Vorfall), damit ein einzelner kurzer Ausschlag keinen Fehlalarm ausloest.
+    # Failover-Verdacht: der Durchschnitt der letzten FAILOVER_CONSECUTIVE
+    # Messpunkte ueber dem Schwellwert (kbps UPLOAD, nicht kombiniert - siehe
+    # KNZ-Vorfall). Bewusst der DURCHSCHNITT, nicht "jeder Einzelwert fuer
+    # sich" (wie frueher): bei WTB springt die Rate teils innerhalb von
+    # Sekunden zwischen 0 und mehreren Mbps (bursty Traffic waehrend eines
+    # echten Ausfalls) - eine "alle Einzelwerte muessen ueber der Schwelle
+    # liegen"-Regel kippte dadurch bei einem einzelnen Null-Poll faelschlich
+    # auf "kein Failover", obwohl der (identisch angezeigte) Durchschnitt
+    # klar drueber lag - fuer den Nutzer ein sichtbarer Widerspruch zwischen
+    # angezeigtem Wert und Badge. Ein einzelner kurzer Ausschlag OHNE echten
+    # Ausfall bleibt trotzdem unwahrscheinlich, da er beide Poll-Werte des
+    # Fensters ueberdurchschnittlich anheben muesste.
     is_failover = False
     last_rate_kbps = 0.0
     if all_rows and site_filter not in FAILOVER_EXCLUDED_DEVICES:
@@ -660,15 +669,9 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
             else:
                 rates.append(0.0)
         if rates:
-            # Durchschnitt statt nur des letzten einzelnen Polls: bei WTB
-            # springt die Rate teils innerhalb von Sekunden zwischen 0 und
-            # mehreren Mbps (bursty Traffic waehrend eines echten Ausfalls) -
-            # der reine Einzelwert wirkt dadurch irrefuehrend "aus", obwohl
-            # gerade Failover aktiv ist. Die Failover-ERKENNUNG selbst bleibt
-            # unveraendert auf Einzelwerten (robuster gegen Fehlalarme).
             last_rate_kbps = sum(rates) / len(rates)
         if len(rates) == FAILOVER_CONSECUTIVE:
-            is_failover = all(rate > FAILOVER_THRESHOLD_KBPS for rate in rates)
+            is_failover = last_rate_kbps > FAILOVER_THRESHOLD_KBPS
 
     # Offline/nicht erreichbar (z.B. von poll() uebersprungen, siehe dortige
     # Fehlerbehandlung): der letzte BEKANNTE Wert kann veraltet sein und
