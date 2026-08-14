@@ -177,8 +177,10 @@ def legacy_get(host_id, path, timeout=30):
 
 def find_gateway_device(host_id):
     """Ermittelt lokale Network-API site_id und device_id der Konsole (Gateway)
-    selbst, ueber MAC-Abgleich mit der Site-Manager hostId. Wird nur noch von
-    --discover genutzt, nicht mehr vom eigentlichen Polling (siehe poll())."""
+    selbst, ueber MAC-Abgleich mit der Site-Manager hostId. Historisch: wurde
+    vom alten Live-Rate-Pfad genutzt (siehe get_uplink_rates()), inzwischen
+    weder vom Polling (poll()) noch von --discover (discover()) mehr
+    aufgerufen - vollstaendig unbenutzt, nur als Referenz belassen."""
     sites = connector_get(host_id, "/sites")
     site_id = sites["data"][0]["id"]
     devices = connector_get(host_id, f"/sites/{site_id}/devices")
@@ -332,23 +334,44 @@ def collect_points(payload, interval_s):
 # CSV
 # ----------------------------------------------------------------------------
 
+def _atomic_write(path, write_fn, newline=None):
+    """Schreibt ueber eine temporaere Datei im selben Verzeichnis + os.replace()
+    (atomarer Rename) statt direkt in die Zieldatei. GitHub Actions'
+    concurrency.cancel-in-progress:true kann den Prozess jederzeit mitten im
+    Schreiben abbrechen - ein direktes open(path, "w") wuerde dann eine
+    abgeschnittene/kaputte Datei hinterlassen, die der naechste Lauf nicht
+    mehr lesen kann. os.replace() ersetzt die Zieldatei immer nur als Ganzes,
+    nie mit einem Teilzustand."""
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", newline=newline, encoding="utf-8") as handle:
+        write_fn(handle)
+    os.replace(tmp_path, path)
+
+
 def load_rows():
     if not os.path.exists(CSV_PATH):
         return []
     rows = []
     with open(CSV_PATH, newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
-            ts = parse_ts(row["ts"])
-            if not ts:
+            try:
+                ts = parse_ts(row["ts"])
+                if not ts:
+                    continue
+                rows.append({
+                    "ts": ts,
+                    "site": row["site"],
+                    "uplink": row["uplink"],
+                    "interval_s": int(float(row["interval_s"])),
+                    "down_bytes": float(row["down_bytes"]),
+                    "up_bytes": float(row["up_bytes"]),
+                })
+            except (KeyError, ValueError, TypeError):
+                # Einzelne kaputte/unvollstaendige Zeile (z.B. Rest eines durch
+                # cancel-in-progress abgebrochenen Schreibvorgangs aus einer
+                # frueheren, nicht-atomaren Version) soll nicht die komplette
+                # Historie unlesbar machen - nur diese Zeile ueberspringen.
                 continue
-            rows.append({
-                "ts": ts,
-                "site": row["site"],
-                "uplink": row["uplink"],
-                "interval_s": int(float(row["interval_s"])),
-                "down_bytes": float(row["down_bytes"]),
-                "up_bytes": float(row["up_bytes"]),
-            })
     return rows
 
 
@@ -361,7 +384,8 @@ def merge_rows(existing, new_points):
             added += 1
         index[key] = point
     merged = sorted(index.values(), key=lambda r: (r["ts"], r["site"], r["uplink"]))
-    with open(CSV_PATH, "w", newline="", encoding="utf-8") as handle:
+
+    def write(handle):
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()
         for row in merged:
@@ -373,6 +397,8 @@ def merge_rows(existing, new_points):
                 "down_bytes": int(row["down_bytes"]),
                 "up_bytes": int(row["up_bytes"]),
             })
+
+    _atomic_write(CSV_PATH, write, newline="")
     return merged, added
 
 
@@ -429,7 +455,7 @@ FAILOVER_CONSECUTIVE = 2
 FAILOVER_EXCLUDED_DEVICES = set()
 # Ab wann eine Konsole als "offline/nicht erreichbar" statt nur "kurz kein
 # Update" gilt (5x der 1-Minuten-Pollintervall Toleranz fuer vereinzelt
-# uebersprungene Laeufe, siehe poll()/find_gateway_device() Fehlerbehandlung).
+# uebersprungene Laeufe, siehe poll() Fehlerbehandlung).
 OFFLINE_THRESHOLD_S = 300
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
@@ -440,10 +466,24 @@ TABLE_WINDOW_DAYS = 30
 ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Flow-Chart
 
 
+def _console_alert_threshold(console_name):
+    """Loest die Rot-Schwelle einer Konsole auf - per Substring-Match wie
+    sim_totals in compute_stats(), nicht per exaktem dict-Key-Vergleich, damit
+    z.B. '--site lsb' (Kleinschreibung/Kurzform) dieselbe Schwelle bekommt wie
+    die kanonische Konsole 'LSB--UDM-1', statt still auf den generischen
+    Default zurueckzufallen."""
+    if console_name:
+        needle = console_name.lower()
+        for name, threshold in ALERT_THRESHOLD_BYTES_BY_CONSOLE.items():
+            if needle in name.lower():
+                return threshold
+    return DEFAULT_ALERT_THRESHOLD_BYTES
+
+
 def total_alert_class(total_bytes, console_name=None):
     """CSS-Klassen-Zusatz fuer den 'Monat'-Wert: pro Konsole eigene Rot-
     Schwelle (siehe ALERT_THRESHOLD_BYTES_BY_CONSOLE), Gelb bei 80% davon."""
-    alert = ALERT_THRESHOLD_BYTES_BY_CONSOLE.get(console_name, DEFAULT_ALERT_THRESHOLD_BYTES)
+    alert = _console_alert_threshold(console_name)
     warn = alert * WARN_THRESHOLD_FACTOR
     if total_bytes > alert:
         return " value-alert"
@@ -455,8 +495,7 @@ def total_alert_class(total_bytes, console_name=None):
 def alert_threshold_label(console_name):
     """Rot-Schwelle der Konsole, kurz formatiert fuer die Anzeige neben dem
     'Monat'-Wert (z.B. '64.4 GB / 24.0 GB')."""
-    alert = ALERT_THRESHOLD_BYTES_BY_CONSOLE.get(console_name, DEFAULT_ALERT_THRESHOLD_BYTES)
-    return human_bytes(alert)
+    return human_bytes(_console_alert_threshold(console_name))
 
 
 def compute_stats(rows, start, site_filter=None, sim_totals=None):
@@ -505,10 +544,24 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
     days_elapsed_month_calendar = max((now - month_start).total_seconds() / 86400.0, 0.001)
     days_in_month = calendar.monthrange(now_local.year, now_local.month)[1]
 
+    # sim_totals-Key mit derselben Substring-Logik wie in_site() aufloesen,
+    # nicht per exaktem dict-Key-Vergleich - sonst faellt z.B. "--site lsb"
+    # (Kleinschreibung/Kurzform, wie in_site() es eigentlich unterstuetzt)
+    # faelschlich auf die weniger genaue CSV-Delta-Berechnung zurueck, obwohl
+    # der SIM-Zaehlerstand vorhanden waere.
     sim_total = None
-    if sim_totals and site_filter and site_filter in sim_totals:
-        rx, tx = sim_totals[site_filter]
-        sim_total = rx + tx
+    if sim_totals and site_filter:
+        needle = site_filter.lower()
+        sim_entry = next((v for k, v in sim_totals.items() if needle in k.lower()), None)
+        if sim_entry is not None:
+            rx, tx, baseline_ts_str = sim_entry
+            baseline_ts = parse_ts(baseline_ts_str) if baseline_ts_str else None
+            # Nur vertrauen, wenn die Baseline aus dem AKTUELLEN Kalendermonat
+            # stammt - sonst wuerde eine seit letztem Monat offline Konsole
+            # weiterhin den eingefrorenen alten Monatswert zeigen, obwohl im
+            # neuen Monat noch gar keine Daten vorliegen.
+            if baseline_ts is not None and baseline_ts >= month_start:
+                sim_total = rx + tx
 
     if sim_total is not None:
         total_month = sim_total
@@ -635,14 +688,22 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
 
 
 def load_sim_totals():
-    """Liest die zuletzt bekannten ABSOLUTEN SIM-Zaehlerstaende (rx,tx) je
-    Konsole aus monitor_state.json - siehe compute_stats()/sim_totals."""
+    """Liest die zuletzt bekannten ABSOLUTEN SIM-Zaehlerstaende (rx,tx,ts) je
+    Konsole aus monitor_state.json - siehe compute_stats()/sim_totals. ts wird
+    mitgeliefert, damit compute_stats() erkennen kann, ob die Baseline noch
+    aus dem aktuellen Kalendermonat stammt."""
     if not os.path.exists(STATE_PATH):
         return {}
-    with open(STATE_PATH, encoding="utf-8") as handle:
-        state = json.load(handle)
+    try:
+        with open(STATE_PATH, encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        # Kaputte/unvollstaendige State-Datei - lieber ohne SIM-Totals
+        # weitermachen (compute_stats faellt dann auf die CSV-Delta-Summe
+        # zurueck) als den Bericht komplett scheitern zu lassen.
+        return {}
     baseline = state.get("sim_baseline", {})
-    return {name: (b["rx"], b["tx"]) for name, b in baseline.items()}
+    return {name: (b["rx"], b["tx"], b.get("ts")) for name, b in baseline.items()}
 
 
 def build_report(rows, start, site_filter=None, sim_totals=None):
@@ -1276,9 +1337,24 @@ def render_overview_html(consoles, start, now):
 
 def write_report(rows, start, site_filter=None):
     html = build_report(rows, start, site_filter)
-    with open(HTML_PATH, "w", encoding="utf-8") as handle:
-        handle.write(html)
+    _atomic_write(HTML_PATH, lambda handle: handle.write(html))
     return HTML_PATH
+
+
+def _group_by_console(rows, console_names):
+    """Teilt rows EINMAL in einem einzigen Durchlauf in Buckets pro Konsole
+    auf (dieselbe Substring-Logik wie compute_stats()' in_site()), statt
+    compute_stats() die komplette, mit wachsender CSV immer laenger werdende
+    Liste PRO Konsole (6x) unabhaengig voneinander scannen zu lassen."""
+    needles = [(name, name.lower()) for name in console_names]
+    buckets = {name: [] for name in console_names}
+    for r in rows:
+        site_l = r["site"].lower()
+        uplink_l = r["uplink"].lower()
+        for name, needle in needles:
+            if needle in site_l or needle in uplink_l:
+                buckets[name].append(r)
+    return buckets
 
 
 def write_reports(rows, start, console_names):
@@ -1286,26 +1362,26 @@ def write_reports(rows, start, console_names):
     pro Konsole ({Konsolenname}.html).
 
     Performance: compute_stats() ist mit wachsender CSV der teuerste Teil
-    (scannt alle Zeilen je Konsole fuer Monat/30-Tage/Charts). Frueher wurde
-    es PRO KONSOLE zweimal aufgerufen - einmal fuer die Uebersichtskachel
-    (via build_overview), einmal fuer die Detailseite (via build_report).
-    Jetzt: einmal berechnen, Ergebnis fuer beide Seiten wiederverwenden -
-    halbiert die Rechenzeit pro Poll-Durchlauf."""
+    (scannt Zeilen je Konsole fuer Monat/30-Tage/Charts). Frueher wurde es
+    PRO KONSOLE zweimal aufgerufen - einmal fuer die Uebersichtskachel (via
+    build_overview), einmal fuer die Detailseite (via build_report). Jetzt:
+    einmal berechnen, Ergebnis fuer beide Seiten wiederverwenden. Zusaetzlich
+    wird rows VORAB einmal per _group_by_console() aufgeteilt, statt dass
+    jeder der 6 compute_stats()-Aufrufe die komplette Liste erneut scannt."""
     now = datetime.now(timezone.utc)
     sim_totals = load_sim_totals()
-    consoles = [compute_stats(rows, start, site_filter=name, sim_totals=sim_totals)
+    buckets = _group_by_console(rows, console_names)
+    consoles = [compute_stats(buckets[name], start, site_filter=name, sim_totals=sim_totals)
                 for name in console_names]
 
     overview_html = render_overview_html(consoles=consoles, start=start, now=now)
-    with open(HTML_PATH, "w", encoding="utf-8") as handle:
-        handle.write(overview_html)
+    _atomic_write(HTML_PATH, lambda handle: handle.write(overview_html))
 
     detail_paths = []
     for c in consoles:
         detail_html = render_html(**c)
         path = os.path.join(DATA_DIR, f"{c['device']}.html")
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(detail_html)
+        _atomic_write(path, lambda handle: handle.write(detail_html))
         detail_paths.append(path)
     return HTML_PATH, detail_paths
 
@@ -1313,6 +1389,27 @@ def write_reports(rows, start, console_names):
 # ----------------------------------------------------------------------------
 # Ablauf
 # ----------------------------------------------------------------------------
+
+# Ein neuer SIM-Zaehlerstand unter dem letzten bekannten gilt nur dann als
+# ECHTER Reset (Monatswechsel beim Provider oder Modem-Neustart), wenn er
+# deutlich (auf <= RESET_SANITY_FACTOR des alten Stands) abgefallen ist. Ein
+# kleiner Ruecksprung ist plausibler eine kurzzeitig veraltete/zwischen-
+# gespeicherte Antwort des Connector-Proxys als ein echter Reset - wuerde
+# sonst faelschlich als riesiger Delta-Sprung verbucht (der komplette neue
+# Zaehlerstand auf einmal, statt der paar tatsaechlich seit dem letzten Poll
+# uebertragenen Bytes).
+RESET_SANITY_FACTOR = 0.5
+
+
+def _sim_delta(new_value, old_value):
+    """Liefert (delta, ok). ok=False heisst: unplausibler Ruecksprung, dieser
+    Poll sollte uebersprungen und die Baseline NICHT aktualisiert werden."""
+    if new_value >= old_value:
+        return new_value - old_value, True
+    if old_value == 0 or new_value <= old_value * RESET_SANITY_FACTOR:
+        return new_value, True  # echter Reset: neuer Stand IST die Menge seit Reset
+    return None, False
+
 
 def poll(rows, targets, interval_s, sim_baseline):
     """Ein Live-Sample des kumulativen SIM-Datenzaehlers jeder Konsole.
@@ -1330,69 +1427,81 @@ def poll(rows, targets, interval_s, sim_baseline):
     der zuletzt bekannte Zaehlerstand. Wird IN-PLACE aktualisiert; der
     Aufrufer muss sim_baseline danach in monitor_state.json sichern, sonst
     geht die Baseline beim naechsten Prozessstart verloren (--once startet ja
-    bei jedem Poll einen neuen Prozess). Ein erkannter Reset (neuer Wert <
-    alter Wert - z.B. Monatswechsel beim Provider oder Modem-Neustart) laesst
-    die Zaehlung fuer diese Konsole einfach wieder bei 0 beginnen.
+    bei jedem Poll einen neuen Prozess). Ein erkannter Reset (siehe
+    _sim_delta) laesst die Zaehlung fuer diese Konsole einfach wieder bei 0
+    beginnen.
     """
     now = datetime.now(timezone.utc)
     points = []
     for console_name, host_id, site_name, mac in targets:
-        # Eine einzelne offline/nicht erreichbare Konsole darf nicht den
+        # Der GESAMTE Block fuer eine Konsole (nicht nur der Netzwerk-Aufruf)
+        # steht bewusst im try/except: eine einzelne offline/nicht erreichbare
+        # Konsole ODER eine unerwartet fehlerhafte Baseline darf nicht den
         # kompletten Poll-Durchlauf (und damit die Daten ALLER anderen
-        # Konsolen) zum Absturz bringen - hier nur ueberspringen und weiter.
+        # Konsolen) zum Absturz bringen - hier nur diese Konsole ueberspringen.
         try:
             rx, tx = get_sim_bytes(host_id, site_name, mac)
+            base = sim_baseline.get(console_name)
+            if base is None:
+                # Erster Poll fuer diese Konsole: nur Baseline setzen, kein
+                # Delta - wir wissen nicht, seit wann der Zaehler schon laeuft,
+                # ein Delta gegen 0 waere ein riesiger, irrefuehrender erster
+                # Messpunkt.
+                down_delta, up_delta, actual_interval = 0, 0, interval_s
+                sim_baseline[console_name] = {"rx": rx, "tx": tx, "ts": now.isoformat()}
+            else:
+                down_delta, down_ok = _sim_delta(rx, base["rx"])
+                up_delta, up_ok = _sim_delta(tx, base["tx"])
+                if not (down_ok and up_ok):
+                    print(f"  {console_name}: unplausibler SIM-Zaehlerstand "
+                          f"(rx {base['rx']}->{rx}, tx {base['tx']}->{tx}), "
+                          f"Poll uebersprungen, Baseline beibehalten")
+                    continue
+                actual_interval = max((now - datetime.fromisoformat(base["ts"])).total_seconds(), 1.0)
+                sim_baseline[console_name] = {"rx": rx, "tx": tx, "ts": now.isoformat()}
+            points.append({
+                "ts": now,
+                "site": console_name,
+                "uplink": "wan",
+                "interval_s": round(actual_interval),
+                "down_bytes": down_delta,
+                "up_bytes": up_delta,
+            })
         except Exception as exc:
             print(f"  {console_name}: Poll-Fehler, ueberspringe diesen Durchlauf - {exc}")
             continue
-        base = sim_baseline.get(console_name)
-        if base is None:
-            # Erster Poll fuer diese Konsole: nur Baseline setzen, kein Delta -
-            # wir wissen nicht, seit wann der Zaehler schon laeuft, ein Delta
-            # gegen 0 waere ein riesiger, irrefuehrender erster Messpunkt.
-            down_delta, up_delta, actual_interval = 0, 0, interval_s
-        else:
-            down_delta = rx - base["rx"] if rx >= base["rx"] else rx
-            up_delta = tx - base["tx"] if tx >= base["tx"] else tx
-            actual_interval = max((now - datetime.fromisoformat(base["ts"])).total_seconds(), 1.0)
-        sim_baseline[console_name] = {"rx": rx, "tx": tx, "ts": now.isoformat()}
-        points.append({
-            "ts": now,
-            "site": console_name,
-            "uplink": "wan",
-            "interval_s": round(actual_interval),
-            "down_bytes": down_delta,
-            "up_bytes": up_delta,
-        })
     return merge_rows(rows, points)
 
 
 def discover(host_id=DEFAULT_HOST_ID):
+    """Prueft, ob eine Konsole bereit fuer MONITORED_HOSTS ist - ueber GENAU
+    den Pfad, den poll() im Produktivbetrieb nutzt (find_lte_modem +
+    get_sim_bytes), nicht den alten, abgeloesten Live-Rate-Pfad. Ein Erfolg
+    hier heisst also wirklich, dass das eigentliche Polling funktionieren
+    wird."""
     for name, path in (("Hosts", "/hosts"), ("Sites", "/sites")):
         data = api_get(path)
         print(f"\n=== {name} ===")
         print(json.dumps(data, indent=2)[:3000])
 
-    print(f"\n=== Connector-Proxy Live-Stats fuer hostId {host_id} ===")
-    site_id, device_id = find_gateway_device(host_id)
-    print(f"lokale site_id: {site_id}, device_id: {device_id}")
-    stats = connector_get(host_id, f"/sites/{site_id}/devices/{device_id}/statistics/latest")
-    with open(RAW_PATH, "w", encoding="utf-8") as handle:
-        json.dump(stats, handle, indent=2)
-    print(json.dumps(stats, indent=2))
-    rx_bps, tx_bps = get_uplink_rates(host_id, site_id, device_id)
-    print(f"\nAktuelle Rate: down={rx_bps/1000:.1f} kbps, up={tx_bps/1000:.1f} kbps")
-    print(f"Vollständige Rohdaten in {RAW_PATH}")
-    print("Hinweis: isp-metrics wird nicht mehr genutzt (lieferte falsche Werte, "
-          "siehe Support-Ticket). Diese Live-Rate via Connector-Proxy ist die "
-          "verifizierte Datenquelle.")
+    print(f"\n=== SIM-Zaehler-Pfad (Produktivbetrieb) fuer hostId {host_id} ===")
+    sites = connector_get(host_id, "/sites")
+    site_id = sites["data"][0]["id"]
+    site_name = sites["data"][0]["internalReference"]
+    print(f"lokale site_id: {site_id}, site_name: {site_name}")
+    lte_mac = find_lte_modem(host_id, site_id)
+    print(f"LTE-Modem gefunden: MAC {lte_mac}")
+    rx, tx = get_sim_bytes(host_id, site_name, lte_mac)
+    print(f"SIM-Zaehlerstand: rx={rx} Bytes ({human_bytes(rx)}), tx={tx} Bytes ({human_bytes(tx)})")
+    print("\nErfolg - dies ist derselbe Pfad, den poll() im Dauerbetrieb verwendet. "
+          "Konsole kann zu MONITORED_HOSTS hinzugefuegt werden.")
 
 
 def main():
     parser = argparse.ArgumentParser(description="WAN-Volumen mehrerer UDM Pro messen (Dauerbetrieb)")
     parser.add_argument("--start", help="Messbeginn, z.B. 2026-08-07T12:00 (lokale Zeit). "
                                          "Nur beim allerersten Lauf relevant, danach aus monitor_state.json.")
-    parser.add_argument("--interval", type=int, default=900, help="Pollintervall in Sekunden")
+    parser.add_argument("--interval", type=int, default=60, help="Pollintervall in Sekunden")
     parser.add_argument("--site", help="Bericht auf einen einzelnen Konsolennamen beschränken")
     parser.add_argument("--host-id", default=None,
                          help="Nur diese eine Konsole pollen/berichten (Site-Manager hostId). "
@@ -1408,8 +1517,17 @@ def main():
         return
 
     if os.path.exists(STATE_PATH):
-        with open(STATE_PATH, encoding="utf-8") as handle:
-            state = json.load(handle)
+        try:
+            with open(STATE_PATH, encoding="utf-8") as handle:
+                state = json.load(handle)
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+            # Kaputte/abgeschnittene State-Datei (z.B. Rest eines durch
+            # cancel-in-progress abgebrochenen Laufs) soll nicht jeden
+            # weiteren Lauf dauerhaft blockieren - lieber mit leerem State neu
+            # anfangen (verliert im schlimmsten Fall nur die SIM-Baseline
+            # eines Polls, die naechste Messung setzt sie automatisch neu).
+            print(f"Warnung: monitor_state.json konnte nicht gelesen werden ({exc}), starte mit leerem State neu.")
+            state = {}
     else:
         state = {}
 
@@ -1429,8 +1547,7 @@ def main():
     sim_baseline = state.setdefault("sim_baseline", {})
 
     def save_state():
-        with open(STATE_PATH, "w", encoding="utf-8") as handle:
-            json.dump(state, handle)
+        _atomic_write(STATE_PATH, lambda handle: json.dump(state, handle))
 
     save_state()
 
@@ -1444,6 +1561,14 @@ def main():
     else:
         targets_cfg = MONITORED_HOSTS
     console_names = [name for name, _ in targets_cfg]
+    # Stiller Fallback auf DEFAULT_ALERT_THRESHOLD_BYTES fuer nicht gelistete
+    # Konsolen ist beabsichtigt, aber soll nicht UNBEMERKT bleiben - hier
+    # einmalig als Hinweis geloggt (ALERT_THRESHOLD_BYTES_BY_CONSOLE wird
+    # unabhaengig von MONITORED_HOSTS gepflegt).
+    for name in console_names:
+        if name not in ALERT_THRESHOLD_BYTES_BY_CONSOLE:
+            print(f"Hinweis: {name} hat keine eigene Schwelle in ALERT_THRESHOLD_BYTES_BY_CONSOLE, "
+                  f"nutzt Standard ({human_bytes(DEFAULT_ALERT_THRESHOLD_BYTES)}).")
     single = args.site or (len(console_names) == 1 and console_names[0])
 
     if args.report:
