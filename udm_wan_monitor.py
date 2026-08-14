@@ -418,7 +418,7 @@ WARN_THRESHOLD_FACTOR = 0.8
 # Nur die UPLOAD-Rate zaehlt (nicht Down+Up kombiniert) - der KNZ-Vorfall
 # zeigte, dass ein Routing-/Failover-Problem sich vor allem als massiver
 # Upload ueber die LTE-Leitung aeussert.
-FAILOVER_THRESHOLD_KBPS = 1000.0
+FAILOVER_THRESHOLD_KBPS = 150.0
 # Einzelne kurze Ausschlaege (Speedtest, Firmware-/Signatur-Download) sollen
 # keinen Fehlalarm ausloesen. Erst wenn die letzten FAILOVER_CONSECUTIVE Polls
 # IN FOLGE ueber dem Schwellwert liegen, gilt Failover als bestaetigt - bei
