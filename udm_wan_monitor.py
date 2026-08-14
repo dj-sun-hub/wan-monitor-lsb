@@ -33,6 +33,7 @@ Aufrufe
 import argparse
 import calendar
 import csv
+from collections import deque
 import heapq
 import html
 import json
@@ -436,6 +437,7 @@ OFFLINE_THRESHOLD_S = 300
 # unbrauchbar gross. Kennzahlen (Monat/30 Tage/Gesamt) sind davon unabhaengig.
 CHART_WINDOW_DAYS = 1  # Stunden-/Flow-Chart (Detail + Uebersichtskacheln): 24 Stunden
 TABLE_WINDOW_DAYS = 30
+ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Flow-Chart
 
 
 def total_alert_class(total_bytes, console_name=None):
@@ -728,15 +730,25 @@ def render_flow_chart(window, start, end):
     up_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in up_line)
     down_area = f"{down_line[0][0]:.1f},{baseline_y:.1f} {down_pts_str} {down_line[-1][0]:.1f},{baseline_y:.1f}"
 
-    # Laufender Durchschnitt (kumulativer Mittelwert bis zu jedem Punkt) - passt
-    # sich mit fortschreitender Zeit an, statt eine starre Gesamt-Durchschnittslinie
-    # zu sein. Werte werden auch fuer den Hover-Tooltip mitgefuehrt.
+    # Gleitender Durchschnitt ueber die letzten ROLLING_AVG_MINUTES Minuten -
+    # NICHT der kumulative Mittelwert seit Fensterbeginn (der wurde bei
+    # laengeren Fenstern mit vielen Messpunkten praktisch unbeweglich, weil
+    # ein einzelner neuer Punkt gegen hunderte alte kaum noch ins Gewicht
+    # faellt - die Linie "fror" ein statt dem Trend zu folgen). Zeitbasiertes
+    # Fenster statt Punktezahl, robust gegen wechselnde Poll-Intervalle.
     avg_down_line, avg_up_line, avgs = [], [], []
+    window = deque()  # (ts, d, u) der Punkte im aktuellen Rolling-Fenster
     sum_d = sum_u = 0.0
-    for i, (ts, d, u) in enumerate(samples):
+    window_span = timedelta(minutes=ROLLING_AVG_MINUTES)
+    for ts, d, u in samples:
+        window.append((ts, d, u))
         sum_d += d
         sum_u += u
-        avg_d, avg_u = sum_d / (i + 1), sum_u / (i + 1)
+        while window and (ts - window[0][0]) > window_span:
+            _, old_d, old_u = window.popleft()
+            sum_d -= old_d
+            sum_u -= old_u
+        avg_d, avg_u = sum_d / len(window), sum_u / len(window)
         avg_down_line.append(xy(ts, avg_d))
         avg_up_line.append(xy(ts, avg_u))
         avgs.append((avg_d, avg_u))
@@ -1088,7 +1100,7 @@ def render_html(**c):
     <div class="legend">
       <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
-      <span class="dim">- - - laufender Durchschnitt</span>
+      <span class="dim">- - - Ø letzte {ROLLING_AVG_MINUTES} Min</span>
       <span>{c['flow_points']} Messpunkte, Pollintervall ~{c['flow_interval_min']} Min</span>
     </div>
   </div>
