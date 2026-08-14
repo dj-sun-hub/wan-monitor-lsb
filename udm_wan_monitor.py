@@ -665,8 +665,10 @@ def render_chart(series, peak, start):
         parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" class="grid"/>')
         parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="axis" text-anchor="end">{label}</text>')
 
+    bars_data = []
     for i, (bucket, down, up) in enumerate(series):
         x = left + i * slot + (slot - bar_w) / 2
+        x_center = x + bar_w / 2
         h_down = plot_h * (down / peak)
         h_up = plot_h * (up / peak)
         y_down = 12 + plot_h - h_down
@@ -679,10 +681,17 @@ def render_chart(series, peak, start):
         if local.hour == 0 or i == 0:
             parts.append(f'<line x1="{x:.1f}" y1="12" x2="{x:.1f}" y2="{12 + plot_h}" class="daymark"/>')
             parts.append(f'<text x="{x + 4:.1f}" y="{height - 8}" class="axis">{local.strftime("%d.%m. %H:%M")}</text>')
+        # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel
+        # der Stunde, Down/Up in Bytes, exakte x-Pixel-Position des Balkens.
+        bars_data.append([bucket.isoformat(), round(down), round(up), round(x_center, 1)])
 
     parts.append(f'<line x1="{left}" y1="{12 + plot_h}" x2="{left + plot_w}" y2="{12 + plot_h}" class="baseline"/>')
-    return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart" '
-            f'role="img" aria-label="Stundenvolumen">{"".join(parts)}</svg>')
+    # Hover-Linie: unsichtbar per Default, wird von flow_tooltip_script beim Hovern
+    # an die x-Position des naechstgelegenen Balkens verschoben und eingeblendet.
+    parts.append(f'<line class="hover-line" x1="0" y1="12" x2="0" y2="{12 + plot_h}"/>')
+    bars_attr = html.escape(json.dumps(bars_data), quote=True)
+    return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart hour-chart" '
+            f'role="img" aria-label="Stundenvolumen" data-bars="{bars_attr}">{"".join(parts)}</svg>')
 
 
 def render_flow_chart(window, start, end):
@@ -823,7 +832,7 @@ BASE_CSS = """
   .dim { color: var(--dim); }
   .value-warn { color: var(--warn); }
   .value-alert { color: var(--alert); }
-  .flow-chart .hover-line { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3;
+  .flow-chart .hover-line, .hour-chart .hover-line { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3;
     opacity: 0; pointer-events: none; }
   .flow-tooltip { position: fixed; display: none; z-index: 50; pointer-events: none;
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
@@ -895,11 +904,12 @@ def refresh_countdown_script(now):
 
 
 def flow_tooltip_script():
-    """Hover-Tooltip fuer alle Traffic-Flow-Charts (svg.flow-chart) der Seite.
-    Liest die in data-samples eingebetteten Rohdaten, mappt die Maus-X-Position
-    ueber die SVG-CTM (funktioniert auch mit preserveAspectRatio="none") auf den
-    naechstgelegenen Messpunkt und zeigt Zeit + Down/Up-Rate in einer kleinen,
-    dem Cursor folgenden Box."""
+    """Hover-Tooltip fuer alle Traffic-Flow-Charts (svg.flow-chart) UND
+    Stundencharts (svg.hour-chart) der Seite. Liest die in data-samples bzw.
+    data-bars eingebetteten Rohdaten, mappt die Maus-X-Position ueber die
+    SVG-CTM (funktioniert auch mit preserveAspectRatio="none") auf den
+    naechstgelegenen Punkt/Balken und zeigt eine kleine, dem Cursor folgende
+    Box mit den Werten."""
     return """<script>
 (function() {
   var tip = document.createElement('div');
@@ -910,42 +920,37 @@ def flow_tooltip_script():
     if (v >= 1000) return (v / 1000).toFixed(2).replace('.', ',') + ' Mbps';
     return v.toFixed(1).replace('.', ',') + ' kbps';
   }
+  function fmtBytes(v) {
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = 0;
+    while (Math.abs(v) >= 1000 && i < units.length - 1) { v /= 1000; i++; }
+    return v.toFixed(1).replace('.', ',') + ' ' + units[i];
+  }
 
-  document.querySelectorAll('svg.flow-chart').forEach(function (svg) {
-    var samples;
-    try { samples = JSON.parse(svg.getAttribute('data-samples')); } catch (e) { return; }
-    if (!samples || !samples.length) return;
+  // Gemeinsame Hover-Logik fuer beide Chart-Typen: samples/bars ist eine nach
+  // x aufsteigend sortierte Liste, xIndex das Feld mit der Pixel-Position
+  // (NICHT der Index selbst - die Punkte/Balken liegen wegen wechselnder
+  // Poll-Intervalle bzw. variabler Bucket-Breite nicht gleichmaessig auf der
+  // x-Achse). Binaersuche zum naechstgelegenen Eintrag.
+  function attachHover(svg, entries, xIndex, buildHtml) {
     var hoverLine = svg.querySelector('.hover-line');
-
-    // Suche ueber die tatsaechliche Pixel-Position jedes Punkts (samples[i][3]),
-    // NICHT ueber den Index - die Messpunkte liegen wegen wechselnder Poll-
-    // Intervalle in der Historie nicht gleichmaessig verteilt auf der x-Achse.
-    // Binaersuche, da samples nach x aufsteigend sortiert sind.
     function nearest(svgX) {
-      var lo = 0, hi = samples.length - 1;
+      var lo = 0, hi = entries.length - 1;
       while (lo < hi) {
         var mid = (lo + hi) >> 1;
-        if (samples[mid][3] < svgX) lo = mid + 1; else hi = mid;
+        if (entries[mid][xIndex] < svgX) lo = mid + 1; else hi = mid;
       }
-      if (lo > 0 && Math.abs(samples[lo - 1][3] - svgX) < Math.abs(samples[lo][3] - svgX)) {
+      if (lo > 0 && Math.abs(entries[lo - 1][xIndex] - svgX) < Math.abs(entries[lo][xIndex] - svgX)) {
         lo -= 1;
       }
-      return samples[lo];
+      return entries[lo];
     }
-
     svg.addEventListener('mousemove', function (ev) {
       var pt = svg.createSVGPoint();
       pt.x = ev.clientX; pt.y = ev.clientY;
       var svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
       var s = nearest(svgP.x);
-      var d = new Date(s[0]);
-      var timeStr = d.toLocaleString('de-DE', {
-        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-      });
-      tip.innerHTML = '<b>' + timeStr + '</b><br>Down: ' + fmtKbps(s[1]) +
-        '<br>Up: ' + fmtKbps(s[2]) +
-        '<br><span class="flow-tooltip-avg">Ø Down: ' + fmtKbps(s[4]) +
-        '<br>Ø Up: ' + fmtKbps(s[5]) + '</span>';
+      tip.innerHTML = buildHtml(s);
       var x = ev.clientX + 16, y = ev.clientY + 16;
       if (x + 170 > window.innerWidth) x = ev.clientX - 186;
       if (y + 92 > window.innerHeight) y = ev.clientY - 108;
@@ -953,14 +958,45 @@ def flow_tooltip_script():
       tip.style.top = y + 'px';
       tip.style.display = 'block';
       if (hoverLine) {
-        hoverLine.setAttribute('x1', s[3]);
-        hoverLine.setAttribute('x2', s[3]);
+        hoverLine.setAttribute('x1', s[xIndex]);
+        hoverLine.setAttribute('x2', s[xIndex]);
         hoverLine.style.opacity = '1';
       }
     });
     svg.addEventListener('mouseleave', function () {
       tip.style.display = 'none';
       if (hoverLine) hoverLine.style.opacity = '0';
+    });
+  }
+
+  document.querySelectorAll('svg.flow-chart').forEach(function (svg) {
+    var samples;
+    try { samples = JSON.parse(svg.getAttribute('data-samples')); } catch (e) { return; }
+    if (!samples || !samples.length) return;
+    attachHover(svg, samples, 3, function (s) {
+      var d = new Date(s[0]);
+      var timeStr = d.toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      return '<b>' + timeStr + '</b><br>Down: ' + fmtKbps(s[1]) +
+        '<br>Up: ' + fmtKbps(s[2]) +
+        '<br><span class="flow-tooltip-avg">Ø Down: ' + fmtKbps(s[4]) +
+        '<br>Ø Up: ' + fmtKbps(s[5]) + '</span>';
+    });
+  });
+
+  document.querySelectorAll('svg.hour-chart').forEach(function (svg) {
+    var bars;
+    try { bars = JSON.parse(svg.getAttribute('data-bars')); } catch (e) { return; }
+    if (!bars || !bars.length) return;
+    attachHover(svg, bars, 3, function (s) {
+      var d = new Date(s[0]);
+      var timeStr = d.toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      return '<b>' + timeStr + ' Uhr</b><br>Down: ' + fmtBytes(s[1]) +
+        '<br>Up: ' + fmtBytes(s[2]) +
+        '<br><span class="flow-tooltip-avg">Gesamt: ' + fmtBytes(s[1] + s[2]) + '</span>';
     });
   });
 })();
