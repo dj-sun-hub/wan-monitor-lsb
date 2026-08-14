@@ -445,7 +445,7 @@ WARN_THRESHOLD_FACTOR = 0.8
 # Nur die UPLOAD-Rate zaehlt (nicht Down+Up kombiniert) - der KNZ-Vorfall
 # zeigte, dass ein Routing-/Failover-Problem sich vor allem als massiver
 # Upload ueber die LTE-Leitung aeussert.
-FAILOVER_THRESHOLD_KBPS = 150.0
+FAILOVER_THRESHOLD_KBPS = 120.0
 # Einzelne kurze Ausschlaege (Speedtest, Firmware-/Signatur-Download) sollen
 # keinen Fehlalarm ausloesen. Erst wenn die letzten FAILOVER_CONSECUTIVE Polls
 # IN FOLGE ueber dem Schwellwert liegen, gilt Failover als bestaetigt - bei
@@ -868,6 +868,7 @@ BASE_CSS = """
   header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }
   h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -.01em; font-weight: 600; }
   .sub { color: var(--dim); font-size: 13.5px; }
+  #refresh-cd { color: var(--warn); font-weight: 600; font-family: ui-monospace, monospace; }
   .bar { height: 5px; background: var(--line); border-radius: 3px; margin-top: 16px; overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--down); }
   .grid-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 30px; }
