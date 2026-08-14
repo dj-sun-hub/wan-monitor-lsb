@@ -375,7 +375,54 @@ def load_rows():
     return rows
 
 
+def _rollup_old_rows(rows, now):
+    """Fasst Zeilen aelter als ROLLUP_AFTER_DAYS zu einer Zeile pro
+    (Kalendertag, Konsole, Uplink) zusammen (Summe down_bytes/up_bytes), statt
+    sie einzeln pro Poll fuer immer mitzuschleppen. Haelt wan_traffic.csv
+    langfristig beschraenkt statt unbegrenzt zu wachsen.
+
+    Verfaelscht keine Kennzahl: Stundenchart/Flow-Chart (CHART_WINDOW_DAYS),
+    Tageswerte-Tabelle (TABLE_WINDOW_DAYS) und die Failover-Erkennung
+    schauen alle nur auf die letzten paar Tage/Minuten - mit dem
+    Sicherheitsabstand von ROLLUP_AFTER_DAYS gegenueber TABLE_WINDOW_DAYS
+    treffen sie nie auf bereits aggregierte Zeilen. 'Aktueller Monat'/
+    '30 Tage'/'Gesamt seit Start' bleiben korrekt, da sie nur die SUMME
+    brauchen, keine Einzelzeilen - die Aggregation ist reine Summenbildung.
+
+    Idempotent: laeuft bei jedem Poll erneut ueber alle 'alten' Zeilen
+    (auch bereits aggregierte Tageszeilen aus frueheren Laeufen) - eine
+    einzelne Tageszeile mit sich selbst zusammengefasst ergibt wieder
+    dieselbe Zeile, kein Doppelzaehlen.
+
+    interval_s der aggregierten Zeile ist ein reiner Platzhalter (86400,
+    "ein Tag") und wird nie fuer eine Raten-Berechnung ausgewertet, da
+    diese Zeilen ausserhalb aller Zeitfenster liegen, die interval_s
+    dafuer nutzen (chart_rows, die juengsten Failover-Messpunkte)."""
+    cutoff = now - timedelta(days=ROLLUP_AFTER_DAYS)
+    recent, old = [], []
+    for r in rows:
+        (recent if r["ts"] >= cutoff else old).append(r)
+    if not old:
+        return recent
+
+    daily = {}
+    for r in old:
+        # Lokaler Kalendertag (wie die Tageswerte-Tabelle es auch tut), fester
+        # Zeitpunkt (12:00 lokal) je Tag, damit alle Zeilen desselben Tages
+        # zuverlaessig auf denselben Aggregations-Key fallen.
+        day = r["ts"].astimezone().replace(hour=12, minute=0, second=0, microsecond=0)
+        key = (day, r["site"], r["uplink"])
+        entry = daily.setdefault(key, {
+            "ts": day, "site": r["site"], "uplink": r["uplink"],
+            "interval_s": 86400, "down_bytes": 0.0, "up_bytes": 0.0,
+        })
+        entry["down_bytes"] += r["down_bytes"]
+        entry["up_bytes"] += r["up_bytes"]
+    return recent + list(daily.values())
+
+
 def merge_rows(existing, new_points):
+    existing = _rollup_old_rows(existing, datetime.now(timezone.utc))
     index = {(r["ts"], r["site"], r["uplink"]): r for r in existing}
     added = 0
     for point in new_points:
@@ -464,6 +511,15 @@ OFFLINE_THRESHOLD_S = 300
 CHART_WINDOW_DAYS = 1  # Stunden-/Flow-Chart (Detail + Uebersichtskacheln): 24 Stunden
 TABLE_WINDOW_DAYS = 30
 ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Flow-Chart
+
+# Ohne Rotation waechst wan_traffic.csv unbegrenzt (bereits ~21.000 Zeilen/
+# 1.2 MB nach 3 Tagen) und merge_rows() schreibt bei JEDEM Poll die komplette
+# Datei neu - das wird mit der Zeit zum dominanten Kostenfaktor. Zeilen
+# aelter als ROLLUP_AFTER_DAYS werden deshalb zu einer Zeile pro Kalendertag/
+# Konsole/Uplink zusammengefasst (siehe _rollup_old_rows()). Deutlicher
+# Sicherheitsabstand zu TABLE_WINDOW_DAYS, damit die Tageswerte-Tabelle nie
+# auf bereits aggregierte Zeilen trifft.
+ROLLUP_AFTER_DAYS = 35
 
 
 def _console_alert_threshold(console_name):
