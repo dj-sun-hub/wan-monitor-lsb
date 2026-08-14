@@ -65,10 +65,17 @@ jobs:
               break
             fi
             echo "Push fehlgeschlagen (Versuch $attempt), hole aktuellen Stand und versuche erneut..."
-            git fetch origin master
+            if ! git fetch origin master; then
+              echo "Fetch fehlgeschlagen, verwerfe diesen Poll-Versuch."
+              break
+            fi
             if ! git rebase origin/master; then
               echo "Rebase-Konflikt, verwerfe diesen Poll-Versuch."
-              git rebase --abort
+              # Ungesichert wuerde ein fehlgeschlagener 'git rebase --abort'
+              # (z.B. wenn wegen eines Race gar kein Rebase mehr aktiv ist)
+              # selbst mit exit 128 den ganzen Schritt scheitern lassen - das
+              # sollte hier aber nur eine Warnung sein, kein harter Fehlschlag.
+              git rebase --abort || true
               break
             fi
             sleep 2
