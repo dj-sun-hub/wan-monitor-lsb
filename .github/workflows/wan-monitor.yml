@@ -99,6 +99,16 @@ jobs:
   veroeffentlichen:
     needs: poll
     runs-on: ubuntu-latest
+    # Ohne jede concurrency hier konnten mehrere veroeffentlichen-Laeufe
+    # gleichzeitig starten (da der poll-Job sie jetzt nicht mehr serialisiert
+    # abbricht) und kollidierten an der GitHub-Pages-API: "Failed to create
+    # deployment (status: 400) ... due to in progress deployment". Deshalb
+    # hier eine EIGENE Gruppe mit cancel-in-progress:false - ein neuer Deploy
+    # WARTET auf den laufenden statt ihn abzubrechen (anders als beim
+    # poll-Job) oder parallel zu kollidieren.
+    concurrency:
+      group: wan-monitor-deploy
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
