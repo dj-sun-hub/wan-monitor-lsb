@@ -14,16 +14,24 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: wan-monitor
-  # Lieber den aktuellsten Trigger gewinnen lassen und einen veralteten,
-  # noch laufenden Poll abbrechen, als dass sich Trigger in der Warteschlange
-  # stauen (das fuehrte zu kaskadierenden "cancelled"-Laeufen und Datenluecken).
-  cancel-in-progress: true
-
 jobs:
   poll:
     runs-on: ubuntu-latest
+    # Nur den poll-Job serialisieren (nicht den ganzen Workflow inkl. Deploy -
+    # das stand frueher hier auf Workflow-Ebene und brach dadurch auch einen
+    # bereits laufenden 'veroeffentlichen'-Deploy ab, sobald der naechste
+    # Poll-Trigger (alle ~1 Minute) eintraf. Bei einer Laufzeit von poll+
+    # veroeffentlichen zusammen ueber ~1 Minute wurde dadurch praktisch JEDER
+    # Deploy vom naechsten abgebrochen, bevor er fertig war - die Live-Seite
+    # blieb dauerhaft auf einem alten Stand haengen, obwohl staendig neue
+    # Commits gepusht wurden. Lieber den aktuellsten Poll-Trigger gewinnen
+    # lassen und einen veralteten, noch laufenden Poll abbrechen (das war der
+    # urspruengliche Zweck), aber den Deploy einmal gestartet durchlaufen
+    # lassen - GitHub Pages serialisiert Deployments zum selben Environment
+    # ohnehin selbst.
+    concurrency:
+      group: wan-monitor-poll
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
         with:
