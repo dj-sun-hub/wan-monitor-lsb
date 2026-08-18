@@ -1042,10 +1042,10 @@ BASE_CSS = _root_css_vars(COLOR_THEME) + """
   body { margin: 0; background: var(--ink); color: var(--text);
     font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 64px; }
   .wrap { max-width: 1020px; margin: 0 auto; }
-  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
-    border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }
+  .header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
   .header-info { flex: 1 1 auto; min-width: 0; }
-  .brand-logo { flex: 0 0 auto; height: 42px; width: auto; }
+  .brand-logo { flex: 0 0 auto; height: 31px; width: auto; }
   h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -.01em; font-weight: 600; }
   .sub { color: var(--dim); font-size: 13.5px; }
   #refresh-cd { color: var(--warn); font-weight: 600; font-family: ui-monospace, monospace; }
@@ -1303,17 +1303,19 @@ def render_html(**c):
 <body>
 <div class="wrap">
   <header>
-    <div class="header-info">
-      <h1>WAN-Failover {c['device']}{' <span class="failover-tag">FAILOVER VERMUTET</span>' if c['is_failover'] else ''}</h1>
-      <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
-        Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
-        Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-        nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
-      <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
-      <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
-        (Tag {int(c['days_elapsed_month_calendar']) + 1} von {c['days_in_month']})</div>
+    <div class="header-top">
+      <div class="header-info">
+        <h1>WAN-Failover {c['device']}{' <span class="failover-tag">FAILOVER VERMUTET</span>' if c['is_failover'] else ''}</h1>
+        <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
+          Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
+          Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
+          nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
+      </div>
+      {_logo_html()}
     </div>
-    {_logo_html()}
+    <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
+    <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
+      (Tag {int(c['days_elapsed_month_calendar']) + 1} von {c['days_in_month']})</div>
   </header>
 
   <div class="grid-cards">
@@ -1498,19 +1500,21 @@ def render_overview_html(consoles, start, now):
 <body>
 <div class="wrap">
   <header>
-    <div class="header-info">
-      <h1>WAN-Failover Übersicht</h1>
-      <div class="sub">Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
-        Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-        nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
-      <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_month_all)}</b> diesen Monat &nbsp;&middot;&nbsp;
-        <b>{human_bytes(total_30d_all)}</b> letzte 30 Tage &nbsp;&middot;&nbsp;
-        <b>{human_bytes(total_all)}</b> gesamt seit Start (nur Failover-Traffic)</div>
-      <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
-      <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
-        (Tag {int(days_elapsed_month_calendar) + 1} von {days_in_month})</div>
+    <div class="header-top">
+      <div class="header-info">
+        <h1>WAN-Failover Übersicht</h1>
+        <div class="sub">Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
+          Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
+          nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
+        <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_month_all)}</b> diesen Monat &nbsp;&middot;&nbsp;
+          <b>{human_bytes(total_30d_all)}</b> letzte 30 Tage &nbsp;&middot;&nbsp;
+          <b>{human_bytes(total_all)}</b> gesamt seit Start (nur Failover-Traffic)</div>
+      </div>
+      {_logo_html()}
     </div>
-    {_logo_html()}
+    <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
+    <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
+      (Tag {int(days_elapsed_month_calendar) + 1} von {days_in_month})</div>
   </header>
 
   <div class="overview-grid">
