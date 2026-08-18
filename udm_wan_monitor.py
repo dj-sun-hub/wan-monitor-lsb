@@ -1040,12 +1040,13 @@ def _root_css_vars(theme):
 BASE_CSS = _root_css_vars(COLOR_THEME) + """
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ink); color: var(--text);
-    font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 64px; }
+    font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 64px;
+    overflow-x: hidden; }
   .wrap { max-width: 1020px; margin: 0 auto; }
   header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }
-  .header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+  .header-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 24px; }
   .header-info { flex: 1 1 auto; min-width: 0; }
-  .brand-logo { flex: 0 0 auto; height: 31px; width: auto; }
+  .brand-logo { flex: 0 0 auto; height: 42px; width: auto; }
   h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -.01em; font-weight: 600; }
   .sub { color: var(--dim); font-size: 13.5px; }
   #refresh-cd { color: var(--warn); font-weight: 600; font-family: ui-monospace, monospace; }
