@@ -938,12 +938,46 @@ def render_flow_chart(window, start, end):
             f'{"".join(parts)}</svg>')
 
 
-BASE_CSS = """
-  :root {
-    --ink: #0e1620; --panel: #16212e; --line: #24344a;
-    --text: #dbe6f0; --dim: #7f93a8;
-    --down: #46b3a3; --up: #e0a458; --alert: #d4675b; --warn: #e8c14c;
-  }
+# Zwei komplette Farbpaletten, ueber COLOR_THEME unten umschaltbar. "default"
+# ist das bisherige dunkle Layout - bleibt vollstaendig im Code erhalten als
+# Fallback, falls die Weisgerber-Testfarben nicht gefallen (einfach
+# COLOR_THEME wieder auf "default" setzen und pushen, kein Code-Loeschen
+# noetig). "weisgerber" ist testweise aus den tatsaechlich auf
+# weisgerber-umweltservice.de verwendeten Farben abgeleitet (Markengruen
+# #008351, Akzent-Orange #e26e0e, Header/Text schwarz, Seite weiss) - Alert-/
+# Warn-Rot/Gelb wurden dabei bewusst NICHT von dort uebernommen (die Seite
+# hat keine), sondern separat auf ausreichenden Kontrast zu Weiss geprueft.
+COLOR_THEMES = {
+    "default": {
+        "ink": "#0e1620", "panel": "#16212e", "line": "#24344a",
+        "text": "#dbe6f0", "dim": "#7f93a8", "strong": "#ffffff",
+        "down": "#46b3a3", "up": "#e0a458", "alert": "#d4675b", "warn": "#e8c14c",
+        "failover_bg": "#2a1414", "failover_bg_strong": "#3a1414", "failover_border_strong": "#ff6b6b",
+    },
+    "weisgerber": {
+        "ink": "#ffffff", "panel": "#f4f6f5", "line": "#d9dde0",
+        "text": "#1d1d1d", "dim": "#545454", "strong": "#000000",
+        "down": "#008351", "up": "#e26e0e", "alert": "#c0392b", "warn": "#b8860b",
+        "failover_bg": "#fdecea", "failover_bg_strong": "#fbdad6", "failover_border_strong": "#e0483a",
+    },
+}
+COLOR_THEME = "weisgerber"  # testweise - Fallback: "default"
+
+
+def _root_css_vars(theme):
+    t = COLOR_THEMES[theme]
+    return (
+        "  :root {\n"
+        f"    --ink: {t['ink']}; --panel: {t['panel']}; --line: {t['line']};\n"
+        f"    --text: {t['text']}; --dim: {t['dim']}; --strong: {t['strong']};\n"
+        f"    --down: {t['down']}; --up: {t['up']}; --alert: {t['alert']}; --warn: {t['warn']};\n"
+        f"    --failover-bg: {t['failover_bg']}; --failover-bg-strong: {t['failover_bg_strong']};\n"
+        f"    --failover-border-strong: {t['failover_border_strong']};\n"
+        "  }\n"
+    )
+
+
+BASE_CSS = _root_css_vars(COLOR_THEME) + """
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ink); color: var(--text);
     font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 64px; }
@@ -985,7 +1019,7 @@ BASE_CSS = """
     text-transform: uppercase; letter-spacing: .07em; padding: 0 10px 10px; }
   td { padding: 9px 10px; border-top: 1px solid var(--line); }
   .num { text-align: right; font-family: ui-monospace, monospace; }
-  .strong { color: #fff; }
+  .strong { color: var(--strong); }
   .dim { color: var(--dim); }
   .value-warn { color: var(--warn); }
   .value-alert { color: var(--alert); }
@@ -995,7 +1029,7 @@ BASE_CSS = """
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 7px 11px; font-size: 12px; line-height: 1.5; color: var(--text);
     box-shadow: 0 4px 14px rgba(0,0,0,.45); white-space: nowrap; }
-  .flow-tooltip b { color: #fff; }
+  .flow-tooltip b { color: var(--strong); }
   .flow-tooltip-avg { color: var(--dim); display: inline-block; margin-top: 3px;
     padding-top: 3px; border-top: 1px dashed var(--line); }
   .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
@@ -1359,18 +1393,18 @@ def render_overview_html(consoles, start, now):
   .wrap {{ max-width: 1840px; }}
   header {{ margin-bottom: 16px; padding-bottom: 12px; }}
   .totals {{ margin-top: 4px; }}
-  .totals b {{ color: #fff; font-weight: 600; }}
+  .totals b {{ color: var(--strong); font-weight: 600; }}
   .overview-grid {{ display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); }}
   @media (max-width: 900px) {{ .overview-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
   @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
   .console-card {{ display: flex; flex-direction: column; gap: 11px; padding: 21px 23px; }}
-  .console-card.failover {{ border-color: var(--alert); background: #2a1414; }}
+  .console-card.failover {{ border-color: var(--alert); background: var(--failover-bg); }}
   @media (prefers-reduced-motion: no-preference) {{
     .console-card.failover {{ animation: failover-blink 1.2s ease-in-out infinite; }}
   }}
   @keyframes failover-blink {{
-    0%, 100% {{ border-color: var(--alert); background: #2a1414; }}
-    50% {{ border-color: #ff6b6b; background: #3a1414; }}
+    0%, 100% {{ border-color: var(--alert); background: var(--failover-bg); }}
+    50% {{ border-color: var(--failover-border-strong); background: var(--failover-bg-strong); }}
   }}
   .console-card.idle {{ opacity: .5; filter: grayscale(85%); }}
   .card-head {{ display: flex; align-items: center; gap: 8px; }}
