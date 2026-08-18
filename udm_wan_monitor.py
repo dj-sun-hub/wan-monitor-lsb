@@ -1040,7 +1040,7 @@ def _root_css_vars(theme):
 BASE_CSS = _root_css_vars(COLOR_THEME) + """
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ink); color: var(--text);
-    font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 53px;
+    font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; padding: 32px 24px 42px;
     overflow-x: hidden; }
   .wrap { max-width: 1020px; margin: 0 auto; }
   header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }
