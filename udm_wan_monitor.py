@@ -37,6 +37,7 @@ from collections import deque
 import heapq
 import html
 import json
+import math
 import os
 import re
 import sys
@@ -780,10 +781,21 @@ def render_chart(series, peak, start):
     slot = plot_w / n
     bar_w = max(slot * 0.72, 1.2)
 
+    # Logarithmische Hoehen-Skalierung (log1p) statt linear: bei Konsolen mit
+    # wenig Grundlast (z.B. LSB) und nur seltenen, dafuer hohen Ausschlaegen
+    # (Failover) verschluckt eine lineare Skala die Grundlast komplett - sie
+    # bleibt bei ein paar Pixeln Hoehe unsichtbar, waehrend der seltene
+    # Ausschlag den gesamten Balken fuellt. log1p(0) = 0 (Nullwerte bleiben
+    # exakt auf der Grundlinie), waechst aber anfangs viel steiler als linear,
+    # sodass auch kleine Werte sichtbare Balkenhoehe bekommen. Gilt fuer alle
+    # Konsolen gleichermassen (dieselbe Render-Funktion).
+    peak_scaled = math.log1p(peak) or 1.0
+
     parts = []
     for i in range(1, 4):
         y = 12 + plot_h * (1 - i / 4.0)
-        label = human_bytes(peak * i / 4.0)
+        label_value = math.expm1((i / 4.0) * peak_scaled)
+        label = human_bytes(label_value)
         parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" class="grid"/>')
         parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="axis" text-anchor="end">{label}</text>')
 
@@ -791,8 +803,14 @@ def render_chart(series, peak, start):
     for i, (bucket, down, up) in enumerate(series):
         x = left + i * slot + (slot - bar_w) / 2
         x_center = x + bar_w / 2
-        h_down = plot_h * (down / peak)
-        h_up = plot_h * (up / peak)
+        total = down + up
+        # Gesamthoehe des Balkens folgt der Log-Skala; die Aufteilung in
+        # Down-/Up-Anteil bleibt linear-proportional zum tatsaechlichen
+        # Verhaeltnis (sonst waere log(down)+log(up) != log(down+up) und die
+        # Stapelhoehe wuerde nicht mehr zur Achsenbeschriftung passen).
+        total_h = plot_h * (math.log1p(total) / peak_scaled) if total > 0 else 0.0
+        h_down = total_h * (down / total) if total > 0 else 0.0
+        h_up = total_h * (up / total) if total > 0 else 0.0
         y_down = 12 + plot_h - h_down
         y_up = y_down - h_up
         if down:
@@ -837,10 +855,15 @@ def render_flow_chart(window, start, end):
                 rate_kbps(r["down_bytes"], r["interval_s"]),
                 rate_kbps(r["up_bytes"], r["interval_s"])) for r in pts]
     peak = max((max(d, u) for _, d, u in samples), default=0.0) or 1.0
+    # Logarithmische Hoehen-Skalierung (log1p), siehe render_chart() fuer die
+    # Begruendung: sonst verschwindet die Grundlast ruhiger Konsolen (LSB,
+    # HAN, KLO, NID) neben seltenen hohen Failover-Ausschlaegen komplett.
+    peak_scaled = math.log1p(peak) or 1.0
 
     def xy(ts, value):
         x = left + (ts - start).total_seconds() / span_s * plot_w
-        y = 12 + plot_h - (value / peak) * plot_h
+        scaled = math.log1p(max(value, 0.0)) / peak_scaled if peak_scaled else 0.0
+        y = 12 + plot_h - scaled * plot_h
         return x, y
 
     baseline_y = 12 + plot_h
@@ -878,7 +901,8 @@ def render_flow_chart(window, start, end):
     parts = []
     for i in range(1, 4):
         y = 12 + plot_h * (1 - i / 4.0)
-        label = f"{peak * i / 4.0:,.0f} kbps".replace(",", ".")
+        label_value = math.expm1((i / 4.0) * peak_scaled)
+        label = f"{label_value:,.0f} kbps".replace(",", ".")
         parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" class="grid"/>')
         parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="axis" text-anchor="end">{label}</text>')
 
@@ -1212,6 +1236,7 @@ def render_html(**c):
       <span><span class="dot" style="background:var(--down)"></span>Download</span>
       <span><span class="dot" style="background:var(--up)"></span>Upload</span>
       <span>Spitze {human_bytes(c['peak'])} pro Stunde</span>
+      <span class="dim">Achse logarithmisch (Grundlast bleibt neben Ausschlägen sichtbar)</span>
     </div>
   </div>
 
@@ -1223,6 +1248,7 @@ def render_html(**c):
       <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
       <span class="dim">- - - Ø letzte {ROLLING_AVG_MINUTES} Min</span>
       <span>{c['flow_points']} Messpunkte, Pollintervall ~{c['flow_interval_min']} Min</span>
+      <span class="dim">Achse logarithmisch</span>
     </div>
   </div>
 
