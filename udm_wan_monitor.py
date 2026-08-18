@@ -953,12 +953,26 @@ COLOR_THEMES = {
         "text": "#dbe6f0", "dim": "#7f93a8", "strong": "#ffffff",
         "down": "#46b3a3", "up": "#e0a458", "alert": "#d4675b", "warn": "#e8c14c",
         "failover_bg": "#2a1414", "failover_bg_strong": "#3a1414", "failover_border_strong": "#ff6b6b",
+        "h2_bg": "transparent", "h2_color": "var(--dim)", "h2_padding": "0", "h2_radius": "0",
     },
+    # Aus dem offiziellen Corporate-Design-Handbuch (Stand Februar 2026), NICHT
+    # mehr von der Live-Website: Primaerfarben sind Tieforange RAL 2011
+    # (#e26e0e), Reinweiss und Schwarz - Schwarz dabei AUSDRUECKLICH nur als
+    # Typografiefarbe, nie als Hintergrund/Flaechenfarbe. Das fruehere
+    # Gruen von der Website gehoert zu einem im Handbuch explizit
+    # durchgestrichenen, nicht mehr verwendeten Sekundaerfarbschema - daher
+    # hier NICHT uebernommen. Down/Up im Chart nutzen stattdessen die vom
+    # Handbuch selbst fuer Diagramme vorgesehenen Tieforange-Aufhellungen
+    # (100% / ~85%), da das Handbuch keine zweite Akzentfarbe mehr vorsieht -
+    # dadurch etwas subtiler unterscheidbar als vorher, siehe Chat-Hinweis.
+    # Alert-Rot/Warn-Gelb sind vom Handbuch nicht abgedeckt (reine Failover-
+    # Statusfarben) und bewusst beibehalten fuer eindeutige Lesbarkeit.
     "weisgerber": {
-        "ink": "#ffffff", "panel": "#f4f6f5", "line": "#d9dde0",
-        "text": "#1d1d1d", "dim": "#545454", "strong": "#000000",
-        "down": "#008351", "up": "#e26e0e", "alert": "#c0392b", "warn": "#b8860b",
+        "ink": "#ffffff", "panel": "#ffffff", "line": "#e2e2e2",
+        "text": "#000000", "dim": "#6b6b6b", "strong": "#000000",
+        "down": "#e26e0e", "up": "#e68432", "alert": "#c0392b", "warn": "#b8860b",
         "failover_bg": "#fdecea", "failover_bg_strong": "#fbdad6", "failover_border_strong": "#e0483a",
+        "h2_bg": "var(--down)", "h2_color": "#ffffff", "h2_padding": "5px 14px", "h2_radius": "8px",
     },
 }
 COLOR_THEME = "weisgerber"  # testweise - Fallback: "default"
@@ -973,6 +987,8 @@ def _root_css_vars(theme):
         f"    --down: {t['down']}; --up: {t['up']}; --alert: {t['alert']}; --warn: {t['warn']};\n"
         f"    --failover-bg: {t['failover_bg']}; --failover-bg-strong: {t['failover_bg_strong']};\n"
         f"    --failover-border-strong: {t['failover_border_strong']};\n"
+        f"    --h2-bg: {t['h2_bg']}; --h2-color: {t['h2_color']};\n"
+        f"    --h2-padding: {t['h2_padding']}; --h2-radius: {t['h2_radius']};\n"
         "  }\n"
     )
 
@@ -994,7 +1010,9 @@ BASE_CSS = _root_css_vars(COLOR_THEME) + """
   .card .value { font: 600 26px/1.25 ui-monospace, "SFMono-Regular", Consolas, monospace; margin-top: 8px; }
   .card .foot { color: var(--dim); font-size: 12.5px; margin-top: 4px; }
   .threshold-ref { font-size: .55em; font-weight: 500; color: var(--dim); }
-  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
+  h2 { display: inline-block; background: var(--h2-bg); color: var(--h2-color);
+    padding: var(--h2-padding); border-radius: var(--h2-radius);
+    font-size: 15px; text-transform: uppercase; letter-spacing: .1em;
     margin: 34px 0 12px; font-weight: 600; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
   .chart { width: 100%; height: auto; }
