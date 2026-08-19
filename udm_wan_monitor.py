@@ -730,6 +730,12 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
 
     chart = render_chart(series, peak, chart_start_hour)
     flow_chart = render_flow_chart(chart_rows, chart_start, now)
+    # Leichtgewichtige Variante fuer die Mini-Vorschau auf der Uebersichtsseite
+    # (siehe render_flow_chart()-Docstring) - ohne Hover-Rohdaten und mit
+    # gedeckelter Punktzahl, damit wan_report.html (bettet alle 6 Konsolen
+    # gleichzeitig ein) nicht mehr der Haupttreiber fuer immer laengere
+    # poll-Laufzeiten ist.
+    flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, include_samples=False, max_points=200)
     flow_points = len(chart_rows)
     flow_intervals = sorted({r["interval_s"] for r in chart_rows if r["interval_s"]})
     flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
@@ -742,7 +748,8 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
         total_30d=total_30d, per_day_30d=per_day_30d,
         days=days, spikes=spikes,
         chart=chart, start=start, now=now, peak=peak, device=device,
-        flow_chart=flow_chart, flow_points=flow_points, flow_interval_min=flow_interval_min,
+        flow_chart=flow_chart, flow_chart_mini=flow_chart_mini,
+        flow_points=flow_points, flow_interval_min=flow_interval_min,
         last24=last24, is_failover=is_failover, last_rate_kbps=last_rate_kbps, is_offline=is_offline,
     )
 
@@ -834,9 +841,22 @@ def render_chart(series, peak, start):
             f'role="img" aria-label="Stundenvolumen" data-bars="{bars_attr}">{"".join(parts)}</svg>')
 
 
-def render_flow_chart(window, start, end):
+def render_flow_chart(window, start, end, include_samples=True, max_points=None):
     """Feinkoerniger Traffic-Flow-Graph: Rate (kbps) je Poll-Punkt ueber die Zeit,
-    im Gegensatz zum Stundenchart nicht zu Stundensummen aggregiert."""
+    im Gegensatz zum Stundenchart nicht zu Stundensummen aggregiert.
+
+    include_samples/max_points: fuer die Mini-Vorschau auf der Uebersichtsseite
+    (siehe compute_stats()) bewusst abschaltbar/reduzierbar. Bei
+    CHART_WINDOW_DAYS=1 und 1-Minuten-Poll-Takt sind das bis zu ~1440 Punkte
+    PRO Konsole - eingebettet als Hover-Tooltip-JSON (data-samples) UND als
+    SVG-Pfadkoordinaten (5 Polylines/Polygon). Bislang wurde dieselbe volle
+    Version auf der Detailseite UND (redundant, fuer alle 6 Konsolen
+    gleichzeitig) auf der Uebersichtsseite eingebettet - das war ein
+    Haupttreiber dafuer, dass wan_report.html auf ueber 1 MB wuchs und der
+    poll-Job dadurch beim Committen/Pushen zunehmend laenger brauchte (bis an
+    den Rand des 1-Minuten-Poll-Takts). Die Detailseite bekommt weiterhin die
+    volle, interaktive Version; die Mini-Vorschau eine leichtgewichtige ohne
+    Hover-Daten und mit deutlich weniger Punkten."""
     width, height = 960, 200
     left, bottom = 54, 28
     plot_w = width - left - 12
@@ -845,6 +865,9 @@ def render_flow_chart(window, start, end):
     pts = sorted((r for r in window if r["interval_s"]), key=lambda r: r["ts"])
     if len(pts) < 2:
         return '<p class="dim" style="margin:0">Noch nicht genug Messpunkte fuer den Flow-Graphen.</p>'
+    if max_points and len(pts) > max_points:
+        step = len(pts) / max_points
+        pts = [pts[int(i * step)] for i in range(max_points)]
 
     span_s = max((end - start).total_seconds(), 1)
 
@@ -926,15 +949,20 @@ def render_flow_chart(window, start, end):
 
     # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel, Rate,
     # laufender Durchschnitt und die exakte x-Pixel-Position je Punkt (fuer die
-    # Hover-Linie).
-    samples_json = json.dumps([
-        [ts.isoformat(), round(d, 1), round(u, 1), round(x, 1), round(avg_d, 1), round(avg_u, 1)]
-        for (ts, d, u), (x, _y), (avg_d, avg_u) in zip(samples, down_line, avgs)
-    ])
-    samples_attr = html.escape(samples_json, quote=True)
+    # Hover-Linie). Nur eingebettet, wenn include_samples=True - die Mini-
+    # Vorschau (siehe Docstring) verzichtet bewusst darauf.
+    if include_samples:
+        samples_json = json.dumps([
+            [ts.isoformat(), round(d, 1), round(u, 1), round(x, 1), round(avg_d, 1), round(avg_u, 1)]
+            for (ts, d, u), (x, _y), (avg_d, avg_u) in zip(samples, down_line, avgs)
+        ])
+        samples_attr = html.escape(samples_json, quote=True)
+        data_samples_part = f'data-samples="{samples_attr}" '
+    else:
+        data_samples_part = ""
     return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart flow-chart" '
             f'role="img" aria-label="Traffic-Flow" '
-            f'data-samples="{samples_attr}" data-left="{left}" data-plot-w="{plot_w:.2f}">'
+            f'{data_samples_part}data-left="{left}" data-plot-w="{plot_w:.2f}">'
             f'{"".join(parts)}</svg>')
 
 
@@ -1441,7 +1469,7 @@ def render_overview_html(consoles, start, now):
         </div>
         <div class="mini-chart-col">
           <div class="mini-chart-label">Flow</div>
-          {c['flow_chart']}
+          {c['flow_chart_mini']}
         </div>
       </div>
       <div class="legend small">
