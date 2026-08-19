@@ -32,6 +32,7 @@ Aufrufe
 
 import argparse
 import calendar
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 from collections import deque
 import heapq
@@ -1663,15 +1664,46 @@ def poll(rows, targets, interval_s, sim_baseline):
     beginnen.
     """
     now = datetime.now(timezone.utc)
+
+    # Die Netzwerk-Abfrage (get_sim_bytes) ist der Flaschenhals - laut
+    # Laufzeit-Diagnose im Workflow ~30-45s bei 6 Konsolen NACHEINANDER
+    # abgefragt, waehrend Checkout/Setup/Git-Operationen zusammen unter 2s
+    # liegen. Deshalb parallel per Thread-Pool statt sequenziell: waehrend
+    # ein Thread auf die HTTP-Antwort wartet, gibt Python das GIL frei, ein
+    # simpler Thread-Pool reicht also (kein echtes CPU-paralleles
+    # Multiprocessing noetig). Die Gesamtlaufzeit naehert sich dadurch der
+    # langsamsten Einzelabfrage an statt der Summe aller sechs.
+    def fetch(target):
+        console_name, host_id, site_name, mac = target
+        try:
+            return console_name, get_sim_bytes(host_id, site_name, mac), None
+        except Exception as exc:
+            return console_name, None, exc
+
+    fetched = {}
+    with ThreadPoolExecutor(max_workers=len(targets) or 1) as executor:
+        futures = [executor.submit(fetch, t) for t in targets]
+        for future in as_completed(futures):
+            console_name, rxtx, exc = future.result()
+            fetched[console_name] = (rxtx, exc)
+
     points = []
+    # Verarbeitung (Delta-Berechnung, Baseline-Update) bleibt bewusst
+    # sequenziell UND in der urspruenglichen targets-Reihenfolge
+    # (deterministische Log-Ausgabe) - reine CPU-Arbeit, dauert nur
+    # Millisekunden, eine Parallelisierung wuerde hier nichts bringen, aber
+    # das gemeinsam genutzte sim_baseline-Dict unnoetig verkomplizieren.
     for console_name, host_id, site_name, mac in targets:
-        # Der GESAMTE Block fuer eine Konsole (nicht nur der Netzwerk-Aufruf)
-        # steht bewusst im try/except: eine einzelne offline/nicht erreichbare
-        # Konsole ODER eine unerwartet fehlerhafte Baseline darf nicht den
+        rxtx, fetch_exc = fetched[console_name]
+        if fetch_exc is not None:
+            print(f"  {console_name}: Poll-Fehler, ueberspringe diesen Durchlauf - {fetch_exc}")
+            continue
+        rx, tx = rxtx
+        # Der GESAMTE restliche Block fuer eine Konsole steht bewusst im
+        # try/except: eine unerwartet fehlerhafte Baseline darf nicht den
         # kompletten Poll-Durchlauf (und damit die Daten ALLER anderen
         # Konsolen) zum Absturz bringen - hier nur diese Konsole ueberspringen.
         try:
-            rx, tx = get_sim_bytes(host_id, site_name, mac)
             base = sim_baseline.get(console_name)
             if base is None:
                 # Erster Poll fuer diese Konsole: nur Baseline setzen, kein
