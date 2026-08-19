@@ -120,11 +120,26 @@ def api_get(path, params=None, timeout=30):
     return {}
 
 
-def _connector_request(host_id, url_path, timeout=30):
+def _connector_request(host_id, url_path, timeout=12):
     """Gemeinsame GET-Ausfuehrung + Fehlerbehandlung/Retry fuer den Site-
     Manager-Connector-Proxy - genutzt sowohl von der offiziellen Integration-
     API (connector_get) als auch von der klassischen Controller-API
-    (legacy_get), die beide ueber denselben Proxy-Tunnel laufen."""
+    (legacy_get), die beide ueber denselben Proxy-Tunnel laufen.
+
+    Laeuft seit der Parallelisierung von poll() (ThreadPoolExecutor) in
+    einem Worker-Thread, nicht mehr im Hauptthread - sys.exit() unten
+    funktioniert trotzdem wie beabsichtigt: concurrent.futures faengt
+    BaseException (SystemExit ist keine Exception-Unterklasse) im Worker ab
+    und wirft sie beim naechsten future.result()-Aufruf im Hauptthread erneut
+    - dort bricht sie den Prozess dann wie vorgesehen komplett ab. Per
+    gemocktem Test verifiziert.
+
+    timeout/Retry-Wartezeiten bewusst knapper als frueher (30s/10s): bei
+    parallelen Abfragen bestimmt die LANGSAMSTE Konsole die Gesamtlaufzeit
+    des gesamten Batches - eine haengende/nicht erreichbare Konsole soll den
+    Batch nicht unnoetig lange blockieren. Der 429-Backoff (Rate-Limit vom
+    Server selbst signalisiert) bleibt bewusst grosszuegiger, um nicht noch
+    mehr 429s zu provozieren."""
     url = CONNECTOR_BASE + "/" + urllib.parse.quote(host_id, safe=":") + url_path
     req = urllib.request.Request(url, headers={
         "X-API-KEY": api_key(),
@@ -156,20 +171,20 @@ def _connector_request(host_id, url_path, timeout=30):
             raise RuntimeError(f"HTTP {exc.code} beim Connector-Proxy {url_path}: {body}")
         except urllib.error.URLError as exc:
             if attempt < 2:
-                time.sleep(10)
+                time.sleep(4)
                 continue
             raise RuntimeError(f"Keine Verbindung zu api.ui.com (Connector-Proxy): {exc.reason}")
     return {}
 
 
-def connector_get(host_id, path, timeout=30):
+def connector_get(host_id, path, timeout=12):
     """Ruft die offizielle, dokumentierte Network-Integration-API (v1) einer
     Konsole ueber den Site-Manager-Connector-Proxy auf (kein VPN/lokales Netz
     noetig)."""
     return _connector_request(host_id, "/proxy/network/integration/v1" + path, timeout)
 
 
-def legacy_get(host_id, path, timeout=30):
+def legacy_get(host_id, path, timeout=12):
     """Ruft die klassische (undokumentierte) UniFi-Controller-API auf - laeuft
     ueber denselben Connector-Proxy-Tunnel wie connector_get(), aber ohne den
     "/integration/v1"-Pfad. Noetig fuer den SIM-Datenzaehler (rx/txbytes) des
