@@ -555,15 +555,18 @@ def alert_threshold_label(console_name):
     return human_bytes(_console_alert_threshold(console_name))
 
 
-def compute_stats(rows, start, site_filter=None, sim_totals=None, include_full_flow_chart=False):
+def compute_stats(rows, start, site_filter=None, sim_totals=None, include_hover_data=False):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
     leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird fuer Karten
     der Übersichtsseite (render_overview_html) genutzt, und optional (siehe
-    include_full_flow_chart) fuer die manuelle Einzelkonsolen-Diagnose
-    (--site, render_html) - eigene Detailseiten werden im Dauerbetrieb nicht
-    mehr veroeffentlicht (Nutzerwunsch: reine Uebersichtskacheln reichen,
-    spart die 6 vollen Detailseiten-HTMLs samt teurem Flow-Chart-Hoverdaten
-    pro Poll).
+    include_hover_data) fuer die manuelle Einzelkonsolen-Diagnose (--site,
+    render_html) - eigene Detailseiten werden im Dauerbetrieb nicht mehr
+    veroeffentlicht (Nutzerwunsch: reine Uebersichtskacheln reichen). Die
+    Uebersichtskacheln (Stunden- UND Flow-Mini-Chart) verzichten bewusst auf
+    Hover-Tooltips UND die dafuer noetigen eingebetteten Rohdaten (Nutzer-
+    wunsch: weder gebraucht noch gewuenscht) - spart neben den 6 vollen
+    Detailseiten-HTMLs auch nochmal Groesse/Rechenzeit auf der
+    Uebersichtsseite selbst, die bei jedem Poll neu committet/gepusht wird.
 
     Dauerbetrieb (kein festes Messende mehr): start ist der einmalige
     Messbeginn, es gibt kein "end". Statt einem einzelnen Gesamtfenster gibt
@@ -732,18 +735,16 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None, include_full_f
     last24_start = now - timedelta(hours=24)
     last24 = [s for s in series if last24_start <= s[0] <= now]
 
-    chart = render_chart(series, peak, chart_start_hour)
-    # Leichtgewichtige Variante fuer die Uebersichtskacheln (siehe
-    # render_flow_chart()-Docstring) - ohne Hover-Rohdaten und mit gedeckelter
-    # Punktzahl, damit wan_report.html (bettet alle 6 Konsolen gleichzeitig
-    # ein) nicht mehr der Haupttreiber fuer immer laengere poll-Laufzeiten
-    # ist. Das ist jetzt die einzige Variante im Dauerbetrieb, seit es keine
-    # eigenen Detailseiten mehr gibt.
+    # Uebersichtskacheln (Dauerbetrieb) verzichten bewusst auf Hover-Tooltips
+    # UND die dafuer noetigen eingebetteten Rohdaten (Nutzerwunsch) - sowohl
+    # beim Stunden- als auch beim Flow-Chart. Volle, interaktive Varianten nur
+    # noch fuer die manuelle Einzelkonsolen-Diagnose (--site) berechnet, nicht
+    # mehr im Dauerbetrieb (write_reports) - seit es dort keine eigenen
+    # Detailseiten mehr gibt (spart Groesse/Rechenzeit bei jedem Poll).
+    chart = render_chart(series, peak, chart_start_hour, include_bars=include_hover_data)
     flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, include_samples=False, max_points=200)
-    # Volle, interaktive Variante nur noch fuer die manuelle Einzelkonsolen-
-    # Diagnose (--site) berechnet, nicht mehr im Dauerbetrieb (write_reports).
     flow_chart = (render_flow_chart(chart_rows, chart_start, now)
-                  if include_full_flow_chart else flow_chart_mini)
+                  if include_hover_data else flow_chart_mini)
     flow_points = len(chart_rows)
     flow_intervals = sorted({r["interval_s"] for r in chart_rows if r["interval_s"]})
     flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
@@ -783,15 +784,18 @@ def load_sim_totals():
 
 def build_report(rows, start, site_filter=None, sim_totals=None):
     """Nur noch fuer die manuelle Einzelkonsolen-Diagnose (--site), nicht mehr
-    im Dauerbetrieb aufgerufen - deshalb hier bewusst die volle,
-    interaktive Flow-Chart-Variante anfordern."""
+    im Dauerbetrieb aufgerufen - deshalb hier bewusst die vollen,
+    interaktiven Chart-Varianten (mit Hover-Tooltips) anfordern."""
     if sim_totals is None:
         sim_totals = load_sim_totals()
-    stats = compute_stats(rows, start, site_filter, sim_totals, include_full_flow_chart=True)
+    stats = compute_stats(rows, start, site_filter, sim_totals, include_hover_data=True)
     return render_html(**stats)
 
 
-def render_chart(series, peak, start):
+def render_chart(series, peak, start, include_bars=True):
+    """include_bars=False laesst die Hover-Tooltip-Rohdaten (data-bars) weg -
+    fuer die Uebersichtskacheln (siehe compute_stats()), die bewusst ohne
+    Hover-Interaktivitaet auskommen (Nutzerwunsch)."""
     width, height = 960, 220
     left, bottom = 54, 28
     plot_w = width - left - 12
@@ -840,17 +844,23 @@ def render_chart(series, peak, start):
         if local.hour == 0 or i == 0:
             parts.append(f'<line x1="{x:.1f}" y1="12" x2="{x:.1f}" y2="{12 + plot_h}" class="daymark"/>')
             parts.append(f'<text x="{x + 4:.1f}" y="{height - 8}" class="axis">{local.strftime("%d.%m. %H:%M")}</text>')
-        # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel
-        # der Stunde, Down/Up in Bytes, exakte x-Pixel-Position des Balkens.
-        bars_data.append([bucket.isoformat(), round(down), round(up), round(x_center, 1)])
+        if include_bars:
+            # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel
+            # der Stunde, Down/Up in Bytes, exakte x-Pixel-Position des Balkens.
+            bars_data.append([bucket.isoformat(), round(down), round(up), round(x_center, 1)])
 
     parts.append(f'<line x1="{left}" y1="{12 + plot_h}" x2="{left + plot_w}" y2="{12 + plot_h}" class="baseline"/>')
-    # Hover-Linie: unsichtbar per Default, wird von flow_tooltip_script beim Hovern
-    # an die x-Position des naechstgelegenen Balkens verschoben und eingeblendet.
-    parts.append(f'<line class="hover-line" x1="0" y1="12" x2="0" y2="{12 + plot_h}"/>')
-    bars_attr = html.escape(json.dumps(bars_data), quote=True)
+    if include_bars:
+        # Hover-Linie: unsichtbar per Default, wird von flow_tooltip_script beim
+        # Hovern an die x-Position des naechstgelegenen Balkens verschoben und
+        # eingeblendet.
+        parts.append(f'<line class="hover-line" x1="0" y1="12" x2="0" y2="{12 + plot_h}"/>')
+        bars_attr = html.escape(json.dumps(bars_data), quote=True)
+        data_bars_part = f'data-bars="{bars_attr}" '
+    else:
+        data_bars_part = ""
     return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart hour-chart" '
-            f'role="img" aria-label="Stundenvolumen" data-bars="{bars_attr}">{"".join(parts)}</svg>')
+            f'role="img" aria-label="Stundenvolumen" {data_bars_part}>{"".join(parts)}</svg>')
 
 
 def render_flow_chart(window, start, end, include_samples=True, max_points=None):
