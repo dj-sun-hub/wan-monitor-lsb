@@ -100,15 +100,23 @@ jobs:
     needs: poll
     runs-on: ubuntu-latest
     # Ohne jede concurrency hier konnten mehrere veroeffentlichen-Laeufe
-    # gleichzeitig starten (da der poll-Job sie jetzt nicht mehr serialisiert
-    # abbricht) und kollidierten an der GitHub-Pages-API: "Failed to create
-    # deployment (status: 400) ... due to in progress deployment". Deshalb
-    # hier eine EIGENE Gruppe mit cancel-in-progress:false - ein neuer Deploy
-    # WARTET auf den laufenden statt ihn abzubrechen (anders als beim
-    # poll-Job) oder parallel zu kollidieren.
+    # gleichzeitig starten und kollidierten an der GitHub-Pages-API: "Failed
+    # to create deployment (status: 400) ... due to in progress deployment".
+    # cancel-in-progress:false (Warteschlange statt Abbruch) war KEINE gute
+    # Loesung: bei einem Trigger alle ~1 Minute wuchs die Warteschlange
+    # schneller, als sie abgearbeitet werden konnte (ein Deploy brauchte am
+    # Ende teils 5 Minuten Wartezeit) - das belegte Runner-Kapazitaet ueber
+    # lange Zeit und verdraengte dadurch sogar neue poll-Laeufe, die dann
+    # selbst wegen Zeitueberschreitung abgebrochen wurden. Fuer dieses
+    # Dashboard zaehlt ohnehin nur der JEWEILS AKTUELLSTE Stand - ein
+    # ueberholter, noch wartender Deploy bringt keinen Mehrwert, sobald ein
+    # neuerer Poll bereits vorliegt. Deshalb wie beim poll-Job:
+    # cancel-in-progress:true - ein neuer Deploy bricht den alten sauber auf
+    # Actions-Ebene ab, statt ihn entweder warten zu lassen (Rueckstau) oder
+    # ihn parallel kollidieren zu lassen (400-Fehler).
     concurrency:
       group: wan-monitor-deploy
-      cancel-in-progress: false
+      cancel-in-progress: true
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
