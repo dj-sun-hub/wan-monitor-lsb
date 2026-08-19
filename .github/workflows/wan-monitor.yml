@@ -33,6 +33,9 @@ jobs:
       group: wan-monitor-poll
       cancel-in-progress: true
     steps:
+      - name: Zeitmessung start
+        run: echo "T_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
         with:
           # Volle Git-Historie (waechst mit jedem Lauf) macht den Checkout mit
@@ -40,9 +43,15 @@ jobs:
           # Klon reicht, wir brauchen keine Historie, nur den aktuellen Stand.
           fetch-depth: 1
 
+      - name: Zeitmessung nach Checkout
+        run: echo "T_AFTER_CHECKOUT=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Zeitmessung nach Setup-Python
+        run: echo "T_AFTER_SETUP=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Messpunkte holen und Bericht bauen
         env:
@@ -52,6 +61,7 @@ jobs:
           python3 udm_wan_monitor.py --once \
             --start "${{ vars.MESS_START || '2026-08-11T08:00' }}" \
             --interval "${{ vars.POLL_INTERVAL || '60' }}"
+          echo "T_AFTER_PYTHON=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Ergebnis sichern
         run: |
@@ -59,15 +69,25 @@ jobs:
           git config user.email "wan-monitor@users.noreply.github.com"
           mkdir -p public
           cp wan_report.html public/index.html
-          cp *--UDM-1.html public/ 2>/dev/null || true
-          git add wan_traffic.csv monitor_state.json public/*.html *--UDM-1.html
+
+          T_ADD_START=$(date +%s)
+          git add wan_traffic.csv monitor_state.json public/index.html
+          # Keine eigenen Detailseiten pro Konsole mehr (Nutzerwunsch: reine
+          # Uebersichtskacheln reichen) - alte, jetzt verwaiste *--UDM-1.html
+          # aus einem frueheren Lauf mit entfernen (Index UND Arbeitsverzeichnis),
+          # statt sie fuer immer als toten, eingefrorenen Stand stehen zu lassen.
+          git rm --ignore-unmatch -q '*--UDM-1.html' 'public/*--UDM-1.html'
+          T_ADD_END=$(date +%s)
           git diff --staged --quiet || git commit -m "Messpunkte $(date -u +%FT%RZ)"
+          T_COMMIT_END=$(date +%s)
 
           # Bei ueberlappenden Laeufen kann ein reiner "git push" am Konflikt
           # scheitern (non-fast-forward). Statt den ganzen Job fehlschlagen zu
           # lassen: mit frischem Stand rebasen und erneut versuchen.
           pushed=false
+          push_attempts=0
           for attempt in 1 2 3 4 5; do
+            push_attempts=$attempt
             if git push; then
               pushed=true
               break
@@ -88,9 +108,16 @@ jobs:
             fi
             sleep 2
           done
+          T_PUSH_END=$(date +%s)
           if [ "$pushed" != "true" ]; then
             echo "::warning::Konnte Messpunkt nicht pushen, dieser Poll geht verloren (naechster Lauf holt es i.d.R. nach)."
           fi
+
+          # Laufzeit-Diagnose je Phase als Annotation - auch OHNE GitHub-Login
+          # auf der Actions-Lauf-Seite sichtbar (im Gegensatz zu den vollen
+          # Step-Logs), um den tatsaechlichen Flaschenhals zu finden statt
+          # weiter zu raten.
+          echo "::notice title=Laufzeit-Diagnose::checkout=$((T_AFTER_CHECKOUT - T_JOB_START))s setup_python=$((T_AFTER_SETUP - T_AFTER_CHECKOUT))s api_poll=$((T_AFTER_PYTHON - T_AFTER_SETUP))s git_add=$((T_ADD_END - T_ADD_START))s git_commit=$((T_COMMIT_END - T_ADD_END))s git_push=$((T_PUSH_END - T_COMMIT_END))s push_attempts=${push_attempts} pushed=${pushed} total=$(($(date +%s) - T_JOB_START))s"
 
       - uses: actions/upload-pages-artifact@v3
         with:

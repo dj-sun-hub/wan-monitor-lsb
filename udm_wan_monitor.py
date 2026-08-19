@@ -555,11 +555,15 @@ def alert_threshold_label(console_name):
     return human_bytes(_console_alert_threshold(console_name))
 
 
-def compute_stats(rows, start, site_filter=None, sim_totals=None):
+def compute_stats(rows, start, site_filter=None, sim_totals=None, include_full_flow_chart=False):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
-    leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird sowohl fuer
-    Detailseiten (render_html) als auch für Karten der Übersichtsseite
-    (render_overview_html) genutzt.
+    leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird fuer Karten
+    der Übersichtsseite (render_overview_html) genutzt, und optional (siehe
+    include_full_flow_chart) fuer die manuelle Einzelkonsolen-Diagnose
+    (--site, render_html) - eigene Detailseiten werden im Dauerbetrieb nicht
+    mehr veroeffentlicht (Nutzerwunsch: reine Uebersichtskacheln reichen,
+    spart die 6 vollen Detailseiten-HTMLs samt teurem Flow-Chart-Hoverdaten
+    pro Poll).
 
     Dauerbetrieb (kein festes Messende mehr): start ist der einmalige
     Messbeginn, es gibt kein "end". Statt einem einzelnen Gesamtfenster gibt
@@ -729,13 +733,17 @@ def compute_stats(rows, start, site_filter=None, sim_totals=None):
     last24 = [s for s in series if last24_start <= s[0] <= now]
 
     chart = render_chart(series, peak, chart_start_hour)
-    flow_chart = render_flow_chart(chart_rows, chart_start, now)
-    # Leichtgewichtige Variante fuer die Mini-Vorschau auf der Uebersichtsseite
-    # (siehe render_flow_chart()-Docstring) - ohne Hover-Rohdaten und mit
-    # gedeckelter Punktzahl, damit wan_report.html (bettet alle 6 Konsolen
-    # gleichzeitig ein) nicht mehr der Haupttreiber fuer immer laengere
-    # poll-Laufzeiten ist.
+    # Leichtgewichtige Variante fuer die Uebersichtskacheln (siehe
+    # render_flow_chart()-Docstring) - ohne Hover-Rohdaten und mit gedeckelter
+    # Punktzahl, damit wan_report.html (bettet alle 6 Konsolen gleichzeitig
+    # ein) nicht mehr der Haupttreiber fuer immer laengere poll-Laufzeiten
+    # ist. Das ist jetzt die einzige Variante im Dauerbetrieb, seit es keine
+    # eigenen Detailseiten mehr gibt.
     flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, include_samples=False, max_points=200)
+    # Volle, interaktive Variante nur noch fuer die manuelle Einzelkonsolen-
+    # Diagnose (--site) berechnet, nicht mehr im Dauerbetrieb (write_reports).
+    flow_chart = (render_flow_chart(chart_rows, chart_start, now)
+                  if include_full_flow_chart else flow_chart_mini)
     flow_points = len(chart_rows)
     flow_intervals = sorted({r["interval_s"] for r in chart_rows if r["interval_s"]})
     flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
@@ -774,9 +782,13 @@ def load_sim_totals():
 
 
 def build_report(rows, start, site_filter=None, sim_totals=None):
+    """Nur noch fuer die manuelle Einzelkonsolen-Diagnose (--site), nicht mehr
+    im Dauerbetrieb aufgerufen - deshalb hier bewusst die volle,
+    interaktive Flow-Chart-Variante anfordern."""
     if sim_totals is None:
         sim_totals = load_sim_totals()
-    return render_html(**compute_stats(rows, start, site_filter, sim_totals))
+    stats = compute_stats(rows, start, site_filter, sim_totals, include_full_flow_chart=True)
+    return render_html(**stats)
 
 
 def render_chart(series, peak, start):
@@ -1453,7 +1465,6 @@ def render_overview_html(consoles, start, now):
             card_class = "card console-card idle"
         else:
             card_class = "card console-card"
-        filename = f"{c['device']}.html"
         cards.append(f"""<div class="{card_class}">
       <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}{offline_badge}</div>
       <div class="mini-grid">
@@ -1477,7 +1488,6 @@ def render_overview_html(consoles, start, now):
         <span><span class="dot" style="background:var(--up)"></span>Up</span>
         <span>Spitze {human_bytes(c['peak'])}/h</span>
       </div>
-      <a class="detail-link" href="{filename}">Details &rarr;</a>
     </div>""")
     cards_html = "\n    ".join(cards) or '<p class="dim">Keine Konsolen konfiguriert.</p>'
 
@@ -1517,13 +1527,7 @@ def render_overview_html(consoles, start, now):
   .mini-chart-col .chart {{ height: 140px; }}
   .mini-chart-label {{ color: var(--dim); font-size: 10px; text-transform: uppercase;
     letter-spacing: .07em; margin-bottom: 2px; }}
-  .console-card .legend {{ font-size: 12px; margin-top: 2px; }}
-  .console-card .detail-link {{ font-size: 12.5px; margin-top: 2px; }}
-  .console-card .legend {{ font-size: 13px; margin-top: 6px; }}
-  .console-card .detail-link {{ font-size: 14px; margin-top: 6px; }}
   .console-card .legend {{ margin-top: 0; }}
-  .detail-link {{ align-self: flex-start; font-size: 12.5px; color: var(--down); text-decoration: none; margin-top: 1px; }}
-  .detail-link:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>
@@ -1582,16 +1586,16 @@ def _group_by_console(rows, console_names):
 
 
 def write_reports(rows, start, console_names):
-    """Schreibt die Übersichtsseite (wan_report.html) plus eine Detailseite
-    pro Konsole ({Konsolenname}.html).
+    """Schreibt die Übersichtsseite (wan_report.html) - reine Übersichtskacheln,
+    keine eigenen Detailseiten mehr (Nutzerwunsch: spart pro Poll 6 volle
+    HTML-Seiten samt teurem Flow-Chart-Hoverdaten, war ein Haupttreiber fuer
+    immer laengere poll-Laufzeiten). Fuer Einzelkonsolen-Diagnose weiterhin
+    per --site moeglich (siehe write_report()/build_report()).
 
     Performance: compute_stats() ist mit wachsender CSV der teuerste Teil
-    (scannt Zeilen je Konsole fuer Monat/30-Tage/Charts). Frueher wurde es
-    PRO KONSOLE zweimal aufgerufen - einmal fuer die Uebersichtskachel (via
-    build_overview), einmal fuer die Detailseite (via build_report). Jetzt:
-    einmal berechnen, Ergebnis fuer beide Seiten wiederverwenden. Zusaetzlich
-    wird rows VORAB einmal per _group_by_console() aufgeteilt, statt dass
-    jeder der 6 compute_stats()-Aufrufe die komplette Liste erneut scannt."""
+    (scannt Zeilen je Konsole fuer Monat/30-Tage/Charts). rows wird VORAB
+    einmal per _group_by_console() aufgeteilt, statt dass jeder der 6
+    compute_stats()-Aufrufe die komplette Liste erneut scannt."""
     now = datetime.now(timezone.utc)
     sim_totals = load_sim_totals()
     buckets = _group_by_console(rows, console_names)
@@ -1600,14 +1604,7 @@ def write_reports(rows, start, console_names):
 
     overview_html = render_overview_html(consoles=consoles, start=start, now=now)
     _atomic_write(HTML_PATH, lambda handle: handle.write(overview_html))
-
-    detail_paths = []
-    for c in consoles:
-        detail_html = render_html(**c)
-        path = os.path.join(DATA_DIR, f"{c['device']}.html")
-        _atomic_write(path, lambda handle: handle.write(detail_html))
-        detail_paths.append(path)
-    return HTML_PATH, detail_paths
+    return HTML_PATH
 
 
 # ----------------------------------------------------------------------------
@@ -1800,10 +1797,8 @@ def main():
         if single:
             print(f"Bericht geschrieben: {write_report(rows, start, single)}")
         else:
-            index_path, detail_paths = write_reports(rows, start, console_names)
+            index_path = write_reports(rows, start, console_names)
             print(f"Übersicht geschrieben: {index_path}")
-            for p in detail_paths:
-                print(f"  Detail: {p}")
         return
 
     targets = []
@@ -1828,7 +1823,7 @@ def main():
         if single:
             path = write_report(rows, start, single)
         else:
-            path, _ = write_reports(rows, start, console_names)
+            path = write_reports(rows, start, console_names)
         stamp = datetime.now().astimezone().strftime("%H:%M:%S")
         print(f"[{stamp}] {added} neue Messpunkte, {len(rows)} gesamt -> {path}")
         if args.once:
