@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+_archiv_ispmetrics_experiment/
+.claude/
+failover_status.html
+
+# Generierte Berichte: werden bei jedem Poll (~1/Minute) komplett neu
+# geschrieben und nur fuer den GitHub-Pages-Deploy im selben Workflow-Job
+# gebraucht (siehe wan-monitor.yml), nicht dauerhaft gebraucht. Frueher mit
+# committet, was die Git-Historie auf ueber 3.7GB anwachsen liess, da sich
+# der Inhalt (eingebettete Chart-Daten/Zeitstempel) bei praktisch jedem Lauf
+# fast vollstaendig aendert und kaum delta-komprimierbar ist.
+wan_report.html
+public/index.html
