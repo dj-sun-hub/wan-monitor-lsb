@@ -708,7 +708,20 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
     # Messbeginn) waere die "rollierende" Summe nur ein unvollstaendiger
     # Ausschnitt und faelschlich identisch zum Monatswert - stattdessen wird
     # anhand der Tagesrate im aktuellen Monat auf 30 Tage hochgerechnet.
-    d30_start = now - timedelta(days=30)
+    #
+    # Der Schnitt liegt auf einer KALENDERTAGS-Grenze, nicht auf "jetzt minus
+    # 720 Stunden". Grund: Zeilen aelter als ROLLUP_AFTER_DAYS existieren nur
+    # noch als eine Tageszeile je Konsole (siehe _rollup_old_rows), die auf
+    # 12:00 lokal gestempelt ist. Gegen einen taggenauen Schnitt verglichen
+    # faellt der Randtag dadurch je nach Uhrzeit KOMPLETT rein oder KOMPLETT
+    # raus - die Zahl sprang dadurch einmal taeglich um einen ganzen
+    # Tagesverbrauch (gemessen: 375,3 -> 374,3 GB in Summe, bei KNZ allein
+    # 785 MB), was auf dem Dashboard wie ein Datenfehler aussieht. Mit dem
+    # Tagesschnitt ist der Randtag immer vollstaendig enthalten und die Zahl
+    # bleibt ueber den Tag stabil. Das Fenster ist damit "heute plus die 29
+    # vorherigen Kalendertage".
+    now_local_day = now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    d30_start = (now_local_day - timedelta(days=29)).astimezone(timezone.utc)
     if start > d30_start:
         total_30d = per_day_month * 30.0
     else:
