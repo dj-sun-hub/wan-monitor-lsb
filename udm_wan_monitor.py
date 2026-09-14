@@ -1901,7 +1901,16 @@ HUD_CSS = """
   .readouts { display: flex; gap: 18px; }
   .readouts .r { flex: 1; min-width: 0; }
   .readouts .rl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .09em; }
-  .readouts .rv { font-size: 16px; font-weight: 600; margin-top: 3px; color: var(--text); }
+  /* Einzeilig halten wie Statuszeile und Protokoll: bricht ein Messwert um
+     (typisch "11.5GB / 9.0 GB" bei schmalen Kacheln), wird die ganze
+     Kachelreihe 25px hoeher und die Hoehe fehlt direkt den Charts - gemessen
+     bei 1100px Breite: 5 von 18 Werten umbrochen, Charts dadurch auf dem
+     Minimum von 48px statt 140px. Abgeschnitten wird von hinten, also
+     zuerst der Schwellwert-Zusatz; die eigentliche Zahl bleibt stehen.
+     Zusammen mit min-width:0 unten und minmax(0,1fr) am Raster, sonst
+     wuerde das nowrap die Spalten aufblaehen. */
+  .readouts .rv { font-size: 16px; font-weight: 600; margin-top: 3px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .readouts .rv .unit { font-size: 11px; }
   /* Ohne diese zwei Regeln verlieren die Schwellwert-Farben: '.value-alert'
      (0,1,0) unterliegt '.readouts .rv' (0,2,0) und der Monatswert bliebe
@@ -2184,7 +2193,6 @@ def render_overview_html(consoles, start, now, events=()):
     Segmentmesser, Systemschema, ein Panel pro Konsole (Kernzahlen + Mini-
     Charts) und das Ereignisprotokoll. consoles = Liste von compute_stats()-
     dicts, events = state['events'] (siehe _update_event_log)."""
-    running_days = max((now - start).days, 0)
     days_elapsed_month_calendar = consoles[0]["days_elapsed_month_calendar"] if consoles else 1
     days_in_month = consoles[0]["days_in_month"] if consoles else 30
     day_of_month = min(int(days_elapsed_month_calendar) + 1, days_in_month)
@@ -2204,7 +2212,6 @@ def render_overview_html(consoles, start, now, events=()):
                 f'<div class="val num{" alert" if alert else ""}">{val}<span class="unit">{unit}</span></div></div>')
 
     telemetry = "\n      ".join([
-        cell("Laufzeit", f"{running_days} Tage"),
         cell("Aktueller Monat", human_bytes(total_month_all), foot=f"Tag {day_of_month}/{days_in_month}"),
         cell("Letzte 30 Tage", human_bytes(total_30d_all)),
         cell("Gesamt seit Start", human_bytes(total_all)),
