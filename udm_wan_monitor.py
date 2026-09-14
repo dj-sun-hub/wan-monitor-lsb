@@ -1728,7 +1728,18 @@ def _latency_drop(series, cls, delay):
     Zierat zum Zeitzeiger. Er ist SMIL (<animateMotion>) und laesst sich
     deshalb NICHT per CSS abschalten - das erledigt das Skript in
     canopy/reduced-motion (siehe render_overview_html)."""
-    w, h, cx, defl = 30.0, 46.0, 9.0, 17.0
+    # cx liegt in der MITTE der Zeichenflaeche, also genau unter dem Knoten.
+    # Erste Fassung hatte die Achse bei x=9 und liess die Kurve dort enden, wo
+    # der letzte Messwert lag - die Leitung lief dadurch am Knoten vorbei,
+    # und zwar umso weiter, je hoeher die Latenz (gemessen: LSB +7px, WTB
+    # +9px; dass KLO traf, war Zufall bei 9 ms). Eine Abzweigung in einem
+    # Schaltplan muss aber ankommen, sonst ist es keine Leitung mehr.
+    #
+    # Deshalb zwei Zonen: die Messkurve belegt die oberen DATA_H, danach
+    # fuehrt ein kurzes gerades Stueck zum Knoten. Dieses Stueck ist sichtbar
+    # ein Anschluss und keine Messung - der juengste Wert steht ohnehin als
+    # Zahl neben dem Kuerzel.
+    w, h, cx, defl, data_h = 30.0, 46.0, 15.0, 13.0, 36.0
     pts, loss = [], []
     n = max(len(series) - 1, 1)
     for i, punkt in enumerate(series):
@@ -1736,13 +1747,14 @@ def _latency_drop(series, cls, delay):
             avg, pl = float(punkt[0]), float(punkt[1])
         except (TypeError, ValueError, IndexError):
             continue
-        y = h * i / n
+        y = data_h * i / n
         x = cx + min(avg / LATENCY_SCALE_MAX, 1.0) * defl
         pts.append((x, y))
         if pl:
             loss.append((x, y))
     if len(pts) < 2:
         return None
+    pts.append((cx, h))   # Anschluss an den Knoten
     d = "M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in pts)
     marks = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="1.6" class="loss"/>' for x, y in loss)
     puls = ("" if cls != "ok" else
