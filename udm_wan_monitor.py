@@ -249,6 +249,74 @@ def get_uplink_rates(host_id, site_id, device_id):
 # Antwort einlesen (schema-tolerant)
 # ----------------------------------------------------------------------------
 
+def _thin_latency(reihe, n):
+    """Reduziert (avg, loss)-Punkte auf n Stueck und behaelt je Abschnitt das
+    MAXIMUM beider Groessen - sonst verschwinden genau die Latenzspitzen und
+    Verlustereignisse, wegen derer man hinschaut (dieselbe Ueberlegung wie in
+    _thin_keeping_peaks fuer den Flow-Chart)."""
+    if len(reihe) <= n:
+        return reihe
+    out = []
+    for i in range(n):
+        lo = i * len(reihe) // n
+        hi = max((i + 1) * len(reihe) // n, lo + 1)
+        stueck = reihe[lo:hi]
+        out.append([max(s[0] for s in stueck), max(s[1] for s in stueck)])
+    return out
+
+
+def fetch_latency(console_names_by_host):
+    """Holt Latenz und Paketverlust aller Konsolen in EINEM Aufruf.
+
+    Liefert {konsolenname: {"cur": ms, "loss": pct, "series": [[ms, loss], ...]}}.
+    Konsolen ohne Daten fehlen im Ergebnis - der Aufrufer muss damit umgehen
+    koennen (die Uebersicht zeigt dann einfach keine Kurve, statt gar nicht zu
+    erscheinen)."""
+    payload = api_get("/isp-metrics/5m", {"duration": "24h"})
+    out = {}
+    for eintrag in payload.get("data", []):
+        name = console_names_by_host.get(eintrag.get("hostId"))
+        if not name:
+            continue  # fremde Konsole im Account, gehoert nicht zu MONITORED_HOSTS
+        reihe = []
+        for p in eintrag.get("periods", []):
+            wan = (p.get("data") or {}).get("wan") or {}
+            avg = wan.get("avgLatency")
+            if avg is None:
+                continue
+            reihe.append([float(avg), float(wan.get("packetLoss") or 0)])
+        if not reihe:
+            continue
+        out[name] = {
+            "cur": round(reihe[-1][0]),
+            "loss": reihe[-1][1],
+            "series": _thin_latency(reihe, LATENCY_POINTS),
+        }
+    return out
+
+
+def refresh_latency(state, console_names_by_host, now):
+    """Aktualisiert state['latency'], aber nur wenn der Stand aelter als
+    LATENCY_REFRESH_S ist. Schlaegt der Abruf fehl, bleibt der letzte Stand
+    stehen - eine fehlende Latenzkurve darf niemals den Poll scheitern lassen,
+    an dem die eigentliche Volumenmessung haengt."""
+    cache = state.get("latency") or {}
+    ts = cache.get("ts")
+    if ts:
+        try:
+            if (now - datetime.fromisoformat(ts)).total_seconds() < LATENCY_REFRESH_S:
+                return cache.get("sites") or {}
+        except (ValueError, TypeError):
+            pass
+    try:
+        sites = fetch_latency(console_names_by_host)
+    except Exception as exc:
+        print(f"Hinweis: Latenz konnte nicht geholt werden ({exc}), behalte letzten Stand.")
+        return cache.get("sites") or {}
+    state["latency"] = {"ts": now.isoformat(), "sites": sites}
+    return sites
+
+
 def parse_ts(value):
     if isinstance(value, (int, float)):
         seconds = value / 1000.0 if value > 1e11 else float(value)
@@ -543,6 +611,24 @@ EVENT_LOG_KEEP = 50
 # und zeigt nur wenige Eintraege; aeltere sind per Scrollen im Protokoll
 # selbst erreichbar, ohne die Seitenhoehe zu veraendern.
 EVENT_LOG_SHOW = 4
+
+# Latenz im Systemschema (Nutzerwunsch: die Abzweigleitung IST die Messkurve).
+# Quelle ist /isp-metrics/5m der Site-Manager-API - EIN Aufruf fuer alle
+# Konsolen (1,8s gemessen) statt sechs paralleler Controller-Abfragen (6,5s).
+# Gegengeprueft gegen die klassische /stat/health-API: die Werte stimmen bis
+# auf 1-3 ms ueberein. Das ist wichtig, weil derselbe isp-metrics-Endpunkt bei
+# den BYTE-Werten nachweislich falsch liegt (Faktor ~5000, siehe poll()) - fuer
+# die Latenz bestaetigen sich beide Quellen gegenseitig.
+#
+# Die API liefert ohnehin nur alle 5 Minuten neue Punkte. Bei 1-Minuten-Takt
+# waeren vier von fuenf Abrufen verschenkte Laufzeit, deshalb wird das Ergebnis
+# in monitor_state.json zwischengespeichert und nur nachgeholt, wenn es aelter
+# als LATENCY_REFRESH_S ist. Gespeichert wird die bereits ausgeduennte Reihe
+# (~1,5 KB fuer alle sechs) und nicht die vollen ~288 Punkte je Konsole - der
+# State wird bei JEDEM Poll committet, da gehoeren keine 35 KB hinein.
+LATENCY_REFRESH_S = 240
+LATENCY_POINTS = 30
+LATENCY_SCALE_MAX = 28.0   # ms bei voller Auslenkung; gemeinsame Skala fuer alle
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
@@ -1623,7 +1709,42 @@ def _split_unit(text):
     return (parts[0], parts[1]) if len(parts) == 2 else (text, "")
 
 
-def _schema_html(consoles):
+def _latency_drop(series, cls, delay):
+    """Abzweigleitung als Latenzkurve: oben vor 24 Stunden, unten jetzt,
+    Auslenkung nach rechts = Latenz. Gemeinsame Skala (LATENCY_SCALE_MAX) fuer
+    alle Konsolen, sonst waeren die Ausschlaege untereinander nicht
+    vergleichbar - genau das ist aber der Nutzen ("weiter rechts = langsamer").
+
+    Der wandernde Punkt laeuft die Kurve entlang und wird damit vom reinen
+    Zierat zum Zeitzeiger. Er ist SMIL (<animateMotion>) und laesst sich
+    deshalb NICHT per CSS abschalten - das erledigt das Skript in
+    canopy/reduced-motion (siehe render_overview_html)."""
+    w, h, cx, defl = 30.0, 46.0, 9.0, 17.0
+    pts, loss = [], []
+    n = max(len(series) - 1, 1)
+    for i, punkt in enumerate(series):
+        try:
+            avg, pl = float(punkt[0]), float(punkt[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        y = h * i / n
+        x = cx + min(avg / LATENCY_SCALE_MAX, 1.0) * defl
+        pts.append((x, y))
+        if pl:
+            loss.append((x, y))
+    if len(pts) < 2:
+        return None
+    d = "M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in pts)
+    marks = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="1.6" class="loss"/>' for x, y in loss)
+    puls = ("" if cls != "ok" else
+            f'<circle r="2.2" class="pulse"><animateMotion dur="5.2s" begin="{delay:.2f}s" '
+            f'repeatCount="indefinite" path="{d}"/></circle>')
+    return (f'<span class="drop trace"><svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}" '
+            f'aria-hidden="true"><line x1="{cx:g}" y1="0" x2="{cx:g}" y2="{h:g}" class="axis"/>'
+            f'<path d="{d}" class="lline"/>{marks}{puls}</svg></span>')
+
+
+def _schema_html(consoles, latency=None):
     """Systemschema als Bus-Diagramm: links der Site-Manager (die UniFi-
     Cloud-API, ueber die ALLE Konsolen gepollt werden - das ist die reale
     Topologie dieses Monitors, kein erfundener 'WAN-Kern'), davon eine
@@ -1637,18 +1758,41 @@ def _schema_html(consoles):
     overflow-x:hidden abgeschnittenen) Bild, bei 'none' werden die runden
     Knoten zu Ellipsen. Als Flex-Zeile verteilt sich das Schema dagegen bei
     jeder Breite korrekt, ohne dass Schrift oder Knoten mitskalieren."""
+    latency = latency or {}
     nodes = []
+    hat_kurve = False
     for i, c in enumerate(consoles):
         status = _console_status(c)
         cls = {"failover": "alert", "offline": "lost"}.get(status, "ok")
         short = html.escape(c["device"].split("--")[0])
-        label = html.escape(f'{c["device"]}: { {"alert": "Failover", "lost": "Link Lost"}.get(cls, "Nominal")}')
-        pulse = f'<i class="pulse" style="animation-delay:{i * 0.35:.2f}s"></i>' if cls == "ok" else ""
-        nodes.append(f'<div class="snode {cls}" title="{label}">'
-                     f'<span class="drop">{pulse}</span><span class="bulb"></span>'
-                     f'<span class="name">{short}</span></div>')
-    return (f'<div class="bus" role="img" aria-label="Systemschema: Site-Manager und '
-            f'{len(consoles)} Konsolen">'
+        zustand = {"alert": "Failover", "lost": "Link Lost"}.get(cls, "Nominal")
+        lat = latency.get(c["device"]) or {}
+
+        # Keine Kurve fuer erloschene Standorte: der letzte bekannte Verlauf
+        # waere dort veraltet und wuerde Aktualitaet vortaeuschen.
+        drop = None if cls == "lost" else _latency_drop(lat.get("series") or [], cls, i * 0.55)
+        if drop:
+            hat_kurve = True
+        else:
+            pulse = f'<i class="pulse" style="animation-delay:{i * 0.35:.2f}s"></i>' if cls == "ok" else ""
+            drop = f'<span class="drop">{pulse}</span>'
+
+        # Zahl NEBEN das Kuerzel, nicht darunter: eine zusaetzliche Zeile macht
+        # die Leiste 19px hoeher (gemessen), und die Hoehe fehlt unten direkt
+        # den Charts.
+        ms = lat.get("cur")
+        zahl = f'<b class="lat num">{int(ms)}<i class="ms">ms</i></b>' if ms is not None else ""
+        titel = f'{c["device"]}: {zustand}'
+        if ms is not None:
+            titel += f" · {int(ms)} ms"
+            if lat.get("loss"):
+                titel += f" · {lat['loss']:g} % Paketverlust"
+        nodes.append(f'<div class="snode {cls}" title="{html.escape(titel)}">'
+                     f'{drop}<span class="bulb"></span>'
+                     f'<span class="name">{short}{zahl}</span></div>')
+    return (f'<div class="bus{" with-trace" if hat_kurve else ""}" role="img" '
+            f'aria-label="Systemschema: Site-Manager und {len(consoles)} Konsolen, '
+            f'Abzweigungen zeigen den Latenzverlauf der letzten 24 Stunden">'
             f'<div class="hub">SITE-MANAGER</div>'
             f'<div class="nodes">{"".join(nodes)}</div></div>')
 
@@ -1850,7 +1994,22 @@ HUD_CSS = """
     background: var(--dim); }
   .snode.lost .bulb::before { transform: translate(-50%, -50%) rotate(45deg); }
   .snode.lost .bulb::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  .snode .name { font-size: 11px; color: var(--dim); margin-top: 5px; letter-spacing: .06em; }
+  /* Latenzkurve in der Abzweigleitung (siehe _latency_drop). Die Leiste wird
+     dadurch 26px hoeher - gemessen; die Zahl daneben kostet nichts. */
+  .bus.with-trace { --drop-h: 46px; }
+  .snode .drop.trace { width: 30px; height: 46px; border: none; display: block; }
+  .snode .drop.trace svg { display: block; overflow: visible; }
+  .snode .drop.trace .axis { stroke: rgba(160,220,235,.13); stroke-width: 1; }
+  .snode .drop.trace .lline { fill: none; stroke: var(--phosphor-dim); stroke-width: 1.4;
+    stroke-linejoin: round; stroke-linecap: round; }
+  .snode.alert .drop.trace .lline { stroke: var(--alert); }
+  .snode .drop.trace .loss { fill: var(--alert); }
+  .snode .drop.trace .pulse { fill: var(--down); opacity: .9; }
+  .snode .name { font-size: 11px; color: var(--dim); margin-top: 5px; letter-spacing: .06em;
+    white-space: nowrap; }
+  .snode .lat { font-weight: 500; color: var(--text); margin-left: 6px; letter-spacing: .02em; }
+  .snode .lat .ms { font-size: 8.5px; font-style: normal; color: var(--dim); margin-left: 1px; }
+  .snode.lost .lat { opacity: .5; }
   .snode.alert .name { color: var(--alert); }
   /* Zurueckgenommen statt nur andersfarbig: der ausgefallene Standort soll
      sichtbar aus der Reihe fallen, nicht um Aufmerksamkeit mit dem Failover
@@ -2234,11 +2393,18 @@ CANOPY_HTML = """<div class="canopy" aria-hidden="true">
   document.querySelectorAll('.canopy .band').forEach(function (el) {
     el.style.animationDelay = (-phase).toFixed(2) + 's';
   });
+  // Der Punkt auf der Latenzkurve ist SMIL (<animateMotion>) und laesst sich
+  // NICHT per CSS-@media abschalten - display:none greift bei SMIL nicht
+  // zuverlaessig. Wer reduzierte Bewegung eingestellt hat, bekommt die Kurve
+  // deshalb hier ohne wandernden Punkt.
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('animateMotion').forEach(function (a) { a.remove(); });
+  }
 })();
 </script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S))
 
 
-def render_overview_html(consoles, start, now, events=()):
+def render_overview_html(consoles, start, now, events=(), latency=None):
     """Übersichtsseite in Leitstand-/HUD-Optik: Telemetrie-Leiste, Monats-
     Segmentmesser, Systemschema, ein Panel pro Konsole (Kernzahlen + Mini-
     Charts) und das Ereignisprotokoll. consoles = Liste von compute_stats()-
@@ -2364,7 +2530,7 @@ def render_overview_html(consoles, start, now, events=()):
     <div class="schema bracketed">
       <div class="bk-tr"></div><div class="bk-bl"></div>
       <div class="mlabel">Systemschema &middot; Site-Manager-Bus</div>
-      {_schema_html(consoles)}
+      {_schema_html(consoles, latency)}
     </div>
 
     <div class="log bracketed">
@@ -2442,13 +2608,18 @@ def write_reports(rows, start, console_names, state=None, record_events=True):
                 for name in console_names]
 
     if state is None:
-        events = []
+        events, latency = [], {}
     else:
         if record_events:
             _update_event_log(state, consoles, now)
         events = state.get("events", [])
+        # Latenz kommt aus dem Zwischenspeicher, nicht aus einem eigenen
+        # Abruf - so funktioniert auch --report (ohne API-Zugriff) mit dem
+        # zuletzt geholten Stand.
+        latency = (state.get("latency") or {}).get("sites") or {}
 
-    overview_html = render_overview_html(consoles=consoles, start=start, now=now, events=events)
+    overview_html = render_overview_html(consoles=consoles, start=start, now=now,
+                                         events=events, latency=latency)
     _atomic_write(HTML_PATH, lambda handle: handle.write(overview_html))
     return HTML_PATH
 
@@ -2697,6 +2868,10 @@ def main():
     rows = load_rows()
     while True:
         rows, added = poll(rows, targets, args.interval, sim_baseline)
+        # Latenz fuer das Systemschema. Eigener Aufruf, aber hoechstens alle
+        # LATENCY_REFRESH_S - die API liefert ohnehin nur 5-Minuten-Punkte.
+        # Fehlschlaege sind hier folgenlos (siehe refresh_latency).
+        refresh_latency(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
         # Baseline sofort sichern: scheitert die Berichtserzeugung danach,
         # waere der frisch geholte SIM-Zaehlerstand sonst verloren und der
         # naechste Lauf muesste neu baselinen (ein Intervall ohne Delta).
