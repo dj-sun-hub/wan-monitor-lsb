@@ -923,7 +923,8 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
     # weiterhin an der Kachel.
     chart = (render_chart(series, peak, chart_start_hour, include_bars=True)
              if include_hover_data else "")
-    flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, include_samples=False, max_points=200)
+    flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, include_samples=False,
+                                        max_points=200, include_area=False)
     flow_chart = (render_flow_chart(chart_rows, chart_start, now)
                   if include_hover_data else flow_chart_mini)
     flow_points = len(chart_rows)
@@ -1053,7 +1054,8 @@ def _thin_keeping_peaks(samples, max_points):
     return out
 
 
-def render_flow_chart(window, start, end, include_samples=True, max_points=None):
+def render_flow_chart(window, start, end, include_samples=True, max_points=None,
+                      include_area=True):
     """Feinkoerniger Traffic-Flow-Graph: Rate (kbps) je Poll-Punkt ueber die Zeit,
     im Gegensatz zum Stundenchart nicht zu Stundensummen aggregiert.
 
@@ -1147,7 +1149,14 @@ def render_flow_chart(window, start, end, include_samples=True, max_points=None)
         parts.append(f'<text x="{x + 4:.1f}" y="{height - 8}" class="axis">{day_cursor.strftime("%d.%m.")}</text>')
         day_cursor += timedelta(days=1)
 
-    parts.append(f'<polygon points="{down_area}" class="flow-down-fill"/>')
+    # Die Flaeche unter der Download-Linie entfaellt auf der Uebersicht
+    # (Nutzerwunsch: zwei leuchtende Linien auf Glas wirken passender als
+    # gefuellte Masse). Sie wird dort nicht nur unsichtbar geschaltet, sondern
+    # gar nicht erst erzeugt - das Polygon wiederholt saemtliche Punkte der
+    # Linie und macht rund ein Fuenftel des Chart-Markups aus. Die
+    # Einzelkonsolen-Diagnose (--site) nutzt nur BASE_CSS und behaelt sie.
+    if include_area:
+        parts.append(f'<polygon points="{down_area}" class="flow-down-fill"/>')
     parts.append(f'<polyline points="{down_pts_str}" class="flow-down-line"/>')
     parts.append(f'<polyline points="{up_pts_str}" class="flow-up-line"/>')
     parts.append(f'<polyline points="{avg_down_pts_str}" class="flow-avg-down-line"/>')
@@ -2361,7 +2370,6 @@ GLASS_CSS = """
 
   .chart .down { fill: rgba(127, 240, 228, .6); }
   .chart .up { fill: rgba(255, 196, 122, .55); }
-  .chart .flow-down-fill { fill: var(--down); opacity: .10; }
   .chart .flow-down-line { filter: drop-shadow(0 0 4px rgba(127, 240, 228, .5)); }
   .chart .grid { stroke: rgba(150, 210, 220, .09); }
   .chart .baseline { stroke: rgba(150, 210, 220, .2); }
