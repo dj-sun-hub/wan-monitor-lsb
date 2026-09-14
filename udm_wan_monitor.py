@@ -565,14 +565,16 @@ ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Fl
 # (CHART_WINDOW_DAYS = 1 Tag) und die Failover-Erkennung (die letzten
 # FAILOVER_CONSECUTIVE Polls). Alles Aeltere geht ausschliesslich in Summen
 # ein, und die bleiben beim Zusammenfassen exakt erhalten (nachgerechnet:
-# Down- und Up-Summen identisch). 3 Tage lassen den Charts zwei Tage
-# Sicherheitsabstand und druecken die CSV von 16,6 MB auf ~1,5 MB (-91%).
+# Down- und Up-Summen identisch). Gemessen an der echten CSV: 3 Tage ergaeben
+# 1,5 MB (-91%), 7 Tage ergeben ~3,5 MB (-79%).
 #
 # Preis: poll-genaue Forensik ("was genau passierte im KNZ-Vorfall") reicht
-# nur noch 3 Tage zurueck. Die Tageswerte-Tabelle der manuellen
+# nur noch 7 Tage zurueck - bewusst so gewaehlt (Nutzerentscheidung), damit
+# auch eine Nachfrage "was war da letzte Woche" noch minutengenau
+# beantwortbar bleibt und nicht nur als Tagessumme. Die Tageswerte-Tabelle der manuellen
 # Einzelkonsolen-Diagnose (--site, TABLE_WINDOW_DAYS) zeigt jenseits davon
 # die zusammengefassten Tageszeilen statt Stundenauswertung.
-ROLLUP_AFTER_DAYS = 3
+ROLLUP_AFTER_DAYS = 7
 
 
 def _console_alert_threshold(console_name):
@@ -2016,6 +2018,11 @@ HUD_CSS = """
 #                mit dem wandernden Lichtstreifen, Staub und Randabfall. Ein
 #                Projektor, eine Scheibe - deshalb ausdruecklich nicht je
 #                Kachel (Nutzerwunsch).
+# Umlaufdauer des Lichtstreifens. Steht an EINER Stelle, weil CSS-Animation
+# und das Phasen-Skript in CANOPY_HTML denselben Wert brauchen - liefen sie
+# auseinander, waere der Streifen nach jedem Reload an der falschen Stelle.
+CANOPY_SWEEP_S = 26
+
 GLASS_CSS = """
   :root {
     --nebula: #0d1a2b; --hull-warm: #1c1308; --structure: rgba(120, 190, 205, .05);
@@ -2072,8 +2079,8 @@ GLASS_CSS = """
     background: radial-gradient(82% 74% at 50% 44%, transparent 52%, rgba(4, 7, 10, .58) 100%);
   }
   @media (prefers-reduced-motion: no-preference) {
-    .canopy .band { animation: sweep 26s linear infinite; }
-    .canopy .band.thin { animation: sweep-thin 26s linear infinite; }
+    .canopy .band { animation: sweep __SWEEP__s linear infinite; }
+    .canopy .band.thin { animation: sweep-thin __SWEEP__s linear infinite; }
   }
   @keyframes sweep {
     from { transform: rotate(13deg) translateX(-60%); }
@@ -2144,14 +2151,32 @@ GLASS_CSS = """
   /* Tooltip bleibt bewusst undurchsichtig: er muss ueber wechselndem
      Untergrund lesbar sein, Transparenz macht ihn dort unbrauchbar. */
   .flow-tooltip { background: #0b1218; border-color: rgba(160, 220, 235, .22); }
-"""
+""".replace("__SWEEP__", str(CANOPY_SWEEP_S))
 
 # Die Scheibe als Markup - eine einzige Ebene ueber dem GESAMTEN Bild
 # (Nutzerwunsch: nicht je Kachel). Rein dekorativ, deshalb aria-hidden.
+#
+# Das Skript haelt den Lichtstreifen ueber den Seiten-Reload hinweg in Phase.
+# Ohne das faengt die CSS-Animation bei JEDEM Laden wieder bei 0 an - und da
+# die Seite sich jede Minute selbst neu laedt (refresh_countdown_script),
+# sprang der Streifen einmal pro Minute sichtbar an seinen Startpunkt zurueck
+# (nachgemessen: x -589px vor dem Reload, -725px danach, Animationszeit
+# 3150ms -> 117ms). Ein NEGATIVES animation-delay aus der Wanduhr modulo
+# Animationsdauer laesst ihn dort weiterlaufen, wo er war: alle Betrachter
+# rechnen aus derselben Uhrzeit dieselbe Phase aus, unabhaengig davon, wann
+# ihre Seite zuletzt geladen hat.
 CANOPY_HTML = """<div class="canopy" aria-hidden="true">
   <div class="band"></div><div class="band thin"></div>
   <div class="grime"></div><div class="vignette"></div>
-</div>"""
+</div>
+<script>
+(function () {
+  var phase = (Date.now() / 1000) % __SWEEP__;
+  document.querySelectorAll('.canopy .band').forEach(function (el) {
+    el.style.animationDelay = (-phase).toFixed(2) + 's';
+  });
+})();
+</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S))
 
 
 def render_overview_html(consoles, start, now, events=()):
