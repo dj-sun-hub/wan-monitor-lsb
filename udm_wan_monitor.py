@@ -2427,7 +2427,6 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
 
     total_month_all = sum(c["total_month"] for c in consoles)
     total_30d_all = sum(c["total_30d"] for c in consoles)
-    total_all = sum(c["total"] for c in consoles)
     n_failover = sum(1 for c in consoles if c["is_failover"])
 
     def cell(label, text, alert=False, foot=""):
@@ -2440,9 +2439,13 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
                 f'<div class="val num{" alert" if alert else ""}">{val}<span class="unit">{unit}</span></div></div>')
 
     telemetry = "\n      ".join([
-        cell("Aktueller Monat", human_bytes(total_month_all), foot=f"Tag {day_of_month}/{days_in_month}"),
+        # "Gesamt diesen Monat" (Nutzerwunsch) steht auf DIESER Kachel, weil sie
+        # den Monatswert bereits fuehrt. Die frueher dritte Kachel "Gesamt seit
+        # Start" ist entfallen: haette sie die Beschriftung bekommen, stuenden
+        # dort 494 GB ueber zwei Kalendermonate unter einem Monats-Label - und
+        # mit dem Monatswert waere sie ein exaktes Duplikat dieser hier.
+        cell("Gesamt diesen Monat", human_bytes(total_month_all), foot=f"Tag {day_of_month}/{days_in_month}"),
         cell("Letzte 30 Tage", human_bytes(total_30d_all)),
-        cell("Gesamt seit Start", human_bytes(total_all)),
         cell("Aktive Failover", f"{n_failover} / {len(consoles)}", alert=n_failover > 0),
     ])
 
