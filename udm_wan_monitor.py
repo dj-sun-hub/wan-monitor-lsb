@@ -1731,15 +1731,33 @@ HUD_CSS = """
   .snode { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
   .snode .drop { position: relative; width: 0; height: var(--drop-h); border-left: 2px solid var(--phosphor-dim); }
   .snode.alert .drop { border-left-color: var(--alert); }
-  .snode.lost .drop { border-left-color: var(--line); border-left-style: dashed; }
+  /* Offline war bisher die schwaechste der drei Darstellungen: gestrichelte
+     Leitung und fehlendes Leuchten, aber die Beschriftung blieb exakt wie bei
+     Nominal. Aus ein paar Metern Entfernung - und genau dafuer ist das Bild
+     da - war "Standort tot" damit kaum von "Standort in Ordnung" zu
+     unterscheiden, obwohl es inhaltlich nicht harmloser ist als ein Failover.
+     Deshalb jetzt zusaetzlich ein durchgestrichener, leerer Knoten: das Kreuz
+     ist ein reines FORM-Signal und traegt auch dann, wenn die Farbe nicht
+     ankommt (Entfernung, Farbsehschwaeche). Bewusst grau statt rot -
+     ausgefallen ist nicht dasselbe wie Alarm. */
+  .snode.lost .drop { border-left-color: var(--dim); border-left-style: dashed; opacity: .55; }
   .snode .pulse { position: absolute; left: -3.5px; top: 0; width: 5px; height: 5px;
     border-radius: 50%; background: var(--down); opacity: 0; }
   .snode .bulb { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--down);
     background: var(--ink); box-shadow: 0 0 6px var(--phosphor-dim); }
   .snode.alert .bulb { border-color: var(--alert); background: var(--alert-dim); box-shadow: 0 0 7px var(--alert); }
-  .snode.lost .bulb { border-color: var(--line); background: var(--ink); box-shadow: none; }
+  .snode.lost .bulb { border-color: var(--dim); background: none; box-shadow: none; position: relative; }
+  .snode.lost .bulb::before, .snode.lost .bulb::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 1px;
+    background: var(--dim); }
+  .snode.lost .bulb::before { transform: translate(-50%, -50%) rotate(45deg); }
+  .snode.lost .bulb::after { transform: translate(-50%, -50%) rotate(-45deg); }
   .snode .name { font-size: 11px; color: var(--dim); margin-top: 5px; letter-spacing: .06em; }
   .snode.alert .name { color: var(--alert); }
+  /* Zurueckgenommen statt nur andersfarbig: der ausgefallene Standort soll
+     sichtbar aus der Reihe fallen, nicht um Aufmerksamkeit mit dem Failover
+     konkurrieren. */
+  .snode.lost .name { opacity: .55; }
   @media (prefers-reduced-motion: no-preference) {
     .snode.ok .pulse { animation: pulse-travel 2.6s linear infinite; } }
   @keyframes pulse-travel {
