@@ -1058,8 +1058,25 @@ COLOR_THEMES = {
         "h2_bg": "transparent", "h2_color": "var(--dim)", "h2_padding": "0", "h2_radius": "0",
         "logo": "negative",
     },
+    # Glasprojektion (Nutzerwunsch nach der Stilstudie "Glaskanzel"): wie
+    # "hud", aber das Licht wirkt auf eine Cockpit-Scheibe geworfen statt auf
+    # einen Bildschirm gemalt. Deshalb duenner und heller - projiziertes Licht
+    # liest sich heller als leuchtende Pixel. Grund ist fast schwarz, aber
+    # cyan-gestochen (nicht neutral), damit die kalte Tiefenebene dahinter
+    # (siehe GLASS_CSS .depth) nicht grau wirkt.
+    "glas": {
+        "ink": "#04070a", "panel": "#0b1218", "line": "rgba(160, 220, 235, .10)",
+        "text": "#d6f0ee", "dim": "#6b8b92", "strong": "#ffffff",
+        "down": "#7ff0e4", "up": "#ffc47a", "alert": "#ff6a58", "warn": "#e8c14c",
+        "failover_bg": "#1a100e", "failover_bg_strong": "#241410", "failover_border_strong": "#ff6a58",
+        "h2_bg": "transparent", "h2_color": "var(--dim)", "h2_padding": "0", "h2_radius": "0",
+        "logo": "negative",
+    },
 }
-COLOR_THEME = "hud"  # Leitstand-/HUD-Layout (Nutzerwunsch); "default" = vorheriges dunkles Kachel-Layout
+# "glas" = Glasprojektion (aktuell). "hud" = vorheriges Leitstand-Layout auf
+# undurchsichtigen Kacheln, "default" = urspruengliches dunkles Kachel-Layout.
+# Beide bleiben vollstaendig im Code: ein Wort hier schaltet zurueck.
+COLOR_THEME = "glas"
 
 
 # Logo-Bilddaten aus dem offiziellen CI-Handbuch extrahiert (Seite 1: Block-
@@ -1589,9 +1606,12 @@ def _event_log_html(events, now):
             continue
         stamp = ts_local.strftime("%H:%M:%S") if ts_local.date() == today else ts_local.strftime("%d.%m. %H:%M")
         kind = ev.get("kind", "info")
+        msg = html.escape(str(ev.get("msg", "")))
+        # title: die Meldung wird einzeilig abgeschnitten (siehe .log li .msg),
+        # per Mouseover bleibt der volle Text erreichbar.
         items.append(f'<li class="{html.escape(kind)}"><span class="t num">{stamp}</span>'
                      f'<span class="fn">{html.escape(str(ev.get("console", "")))}</span>'
-                     f'<span class="msg">{html.escape(str(ev.get("msg", "")))}</span></li>')
+                     f'<span class="msg" title="{msg}">{msg}</span></li>')
     if not items:
         items.append('<li class="info"><span class="t num">--:--:--</span><span class="fn">MONITOR</span>'
                      '<span class="msg">NOCH KEINE STATUSWECHSEL AUFGEZEICHNET</span></li>')
@@ -1730,14 +1750,22 @@ HUD_CSS = """
 
   /* Konsolen-Panels: Raster-Abstand wie zuvor (20px). Das Raster bekommt die
      Resthoehe und gibt sie an die Charts weiter (siehe .mini-chart-col). */
-  .overview-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr);
+  /* minmax(0, 1fr) statt 1fr, und min-width:0 an der Kachel: ein "1fr"-Track
+     darf sonst nicht unter seinen min-content schrumpfen. Da Statuszeile und
+     Protokollmeldung bewusst NICHT umbrechen (white-space:nowrap, siehe
+     unten), setzt deren volle Textbreite sonst die Mindestbreite der Kachel -
+     die Spalten werden breiter als der Container und die Seite scrollt
+     seitlich. Mit minmax(0,...) darf der Track schrumpfen und die
+     text-overflow-Ellipse greift wie vorgesehen. */
+  .overview-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-auto-rows: 1fr; margin-top: 16px; }
   @media (min-width: 901px) { .overview-grid { flex: 1 1 auto; min-height: 0; } }
-  @media (max-width: 900px) { .overview-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: auto; } }
-  @media (max-width: 600px) { .overview-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; } }
+  @media (max-width: 600px) { .overview-grid { grid-template-columns: minmax(0, 1fr); } }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 0;
     clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
-    padding: 14px 18px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+    padding: 14px 18px 12px; display: flex; flex-direction: column; gap: 8px;
+    min-height: 0; min-width: 0; }
   .panel.failover { border-color: var(--alert); background: linear-gradient(180deg, var(--panel) 0%, var(--failover-bg) 100%); }
   .panel.offline { opacity: .6; }
   .panel.offline .panel-head .fn { color: var(--dim); }
@@ -1750,9 +1778,12 @@ HUD_CSS = """
   .chip.failover { color: var(--alert); background: rgba(255,90,77,.12); }
   .chip.lost { color: var(--dim); }
   .panel .subhead.alert { color: var(--alert); }
+  /* Einzeilig halten: bricht die Statuszeile um, wird die ganze Kachelreihe
+     hoeher und die Hoehe fehlt den Charts. Voller Text im title-Attribut. */
+  .panel .subhead { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hairline { border: none; border-top: 1px dashed var(--line); margin: 0; }
   .readouts { display: flex; gap: 18px; }
-  .readouts .r { flex: 1; }
+  .readouts .r { flex: 1; min-width: 0; }
   .readouts .rl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .09em; }
   .readouts .rv { font-size: 16px; font-weight: 600; margin-top: 3px; color: var(--text); }
   .readouts .rv .unit { font-size: 11px; }
@@ -1788,14 +1819,19 @@ HUD_CSS = """
     padding: 7px 16px; border-bottom: 1px solid var(--line); flex: 0 0 auto;
     font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
   .log ol { list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
-  .log li { display: grid; grid-template-columns: 78px 105px 1fr; gap: 10px;
+  .log li { display: grid; grid-template-columns: 78px 105px minmax(0, 1fr); gap: 10px;
     padding: 3px 16px; font-size: 11.5px; color: var(--dim); align-items: baseline; }
   .log li .t { color: var(--phosphor-dim); }
   .log li .fn { color: var(--text); font-weight: 600; }
+  /* Einzeilig abschneiden statt umbrechen: eine umbrechende Meldung macht den
+     ganzen Deck-Block hoeher, und die Hoehe fehlt dann direkt den Charts
+     (gemessen: 180px statt 133px bei vier Eintraegen). Vollstaendiger Text
+     haengt im title-Attribut, siehe _event_log_html(). */
+  .log li .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .log li.crit .msg { color: var(--alert); }
   .log li.warn .msg { color: var(--up); }
   .log li.ok .msg { color: var(--down); }
-  @media (max-width: 640px) { .log li { grid-template-columns: 80px 90px 1fr; font-size: 11px; } }
+  @media (max-width: 640px) { .log li { grid-template-columns: 80px 90px minmax(0, 1fr); font-size: 11px; } }
 
   footer { margin-top: 12px; padding-top: 8px; font-size: 10.5px; letter-spacing: .04em;
     line-height: 1.5; flex: 0 0 auto; }
@@ -1843,6 +1879,160 @@ HUD_CSS = """
     .boot-line .dot, .sync-dot.stale, .bracketed.failover::before, .bracketed.failover::after,
     .bracketed.failover .bk-tr, .bracketed.failover .bk-bl { animation: none; } }
 """
+
+
+# Glasprojektion - setzt auf HUD_CSS auf und wird NACH ihm eingebunden (gleiche
+# Spezifitaet, spaeter gewinnt). Nur aktiv, solange COLOR_THEME == "glas";
+# beim Zurueckschalten auf "hud"/"default" faellt dieser Block komplett weg,
+# ohne dass am uebrigen Stylesheet etwas zu aendern waere.
+#
+# Die drei Dinge, die den Glas-Eindruck ueberhaupt erst tragen:
+#   1. .depth  - eine Ebene HINTER dem Inhalt. Durchsichtig vor Reinschwarz
+#                sieht aus wie schwarz; erst wenn dahinter etwas liegt, wird
+#                Transparenz sichtbar.
+#   2. .plate  - die Kacheln mattieren, was hinter ihnen liegt
+#                (backdrop-filter), haben eine von oben angeleuchtete Kante
+#                und lassen Streulicht darunter austreten.
+#   3. .canopy - die Scheibe selbst: EINE bildschirmfeste Ebene ueber allem,
+#                mit dem wandernden Lichtstreifen, Staub und Randabfall. Ein
+#                Projektor, eine Scheibe - deshalb ausdruecklich nicht je
+#                Kachel (Nutzerwunsch).
+GLASS_CSS = """
+  :root {
+    --nebula: #0d1a2b; --hull-warm: #1c1308; --structure: rgba(120, 190, 205, .05);
+    --glass: rgba(120, 195, 210, .085); --glass-2: rgba(96, 170, 190, .03);
+    --glass-edge: rgba(198, 240, 255, .20);
+    --phosphor-dim: #2a7d75; --hull-2: rgba(120, 195, 210, .10); --alert-dim: rgba(255, 106, 88, .18);
+  }
+
+  /* Scanlinien des HUD-Themes weichen der Tiefenebene */
+  body { background-image: none; }
+
+  .depth {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(115% 85% at 10% 0%, var(--nebula) 0%, transparent 55%),
+      radial-gradient(95% 85% at 100% 100%, var(--hull-warm) 0%, transparent 52%),
+      var(--ink);
+  }
+  .depth::after {
+    content: ""; position: absolute; inset: -20%;
+    background:
+      repeating-linear-gradient(58deg, transparent 0 86px, var(--structure) 86px 87px),
+      repeating-linear-gradient(-58deg, transparent 0 144px, var(--structure) 144px 145px);
+  }
+  .wrap { position: relative; z-index: 1; }
+
+  /* Die Scheibe. z-index ueber allem, pointer-events:none - sie faengt keine
+     Klicks ab und stoert die Chart-Tooltips nicht. */
+  .canopy { position: fixed; inset: 0; z-index: 50; pointer-events: none; overflow: hidden; }
+  .canopy .band {
+    position: absolute; top: -35%; left: -50%; width: 40%; height: 170%;
+    transform: rotate(13deg) translateX(-60%);
+    background: linear-gradient(90deg, transparent, rgba(198, 240, 255, .045) 28%,
+      rgba(214, 245, 255, .10) 50%, rgba(198, 240, 255, .04) 72%, transparent);
+  }
+  /* Zweiter, schmalerer Streifen: eine Kanzel hat mehrere Scheiben, das Licht
+     bricht sich mehrfach. */
+  .canopy .band.thin {
+    width: 13%; transform: rotate(13deg) translateX(-260%);
+    background: linear-gradient(90deg, transparent, rgba(214, 245, 255, .07) 50%, transparent);
+  }
+  .canopy .grime {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(90px 26px at 18% 24%, rgba(198, 240, 255, .035), transparent 72%),
+      radial-gradient(140px 40px at 63% 68%, rgba(198, 240, 255, .028), transparent 72%),
+      radial-gradient(60px 20px at 88% 18%, rgba(198, 240, 255, .032), transparent 72%),
+      radial-gradient(110px 30px at 40% 88%, rgba(198, 240, 255, .022), transparent 72%);
+  }
+  /* Randabfall des Projektionsfelds - gehoert auf die Scheibe, nicht auf die
+     einzelne Kachel. */
+  .canopy .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(82% 74% at 50% 44%, transparent 52%, rgba(4, 7, 10, .58) 100%);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .canopy .band { animation: sweep 26s linear infinite; }
+    .canopy .band.thin { animation: sweep-thin 26s linear infinite; }
+  }
+  @keyframes sweep {
+    from { transform: rotate(13deg) translateX(-60%); }
+    to   { transform: rotate(13deg) translateX(340%); } }
+  @keyframes sweep-thin {
+    from { transform: rotate(13deg) translateX(-260%); }
+    to   { transform: rotate(13deg) translateX(1010%); } }
+
+  /* ---- Glasplatten: Telemetriezellen, Schema, Protokoll, Kacheln ---- */
+  .telemetry-strip .cell, .schema, .log, .panel {
+    background: linear-gradient(165deg, var(--glass), var(--glass-2));
+    -webkit-backdrop-filter: blur(7px) saturate(1.15);
+    backdrop-filter: blur(7px) saturate(1.15);
+    border: 1px solid var(--line); border-top-color: var(--glass-edge);
+    position: relative;
+  }
+  /* Abgeschraegte Ecken und Eckklammern des HUD-Themes entfallen: eine
+     Glasplatte hat eine durchgehende, angeleuchtete Kante - das Motiv ersetzt
+     die Klammern, statt mit ihnen zu konkurrieren. */
+  .telemetry-strip .cell, .panel { clip-path: none; }
+  .bracketed::before, .bracketed::after,
+  .bracketed .bk-tr, .bracketed .bk-bl { display: none; }
+
+  /* Streulicht-Pfuetze: Licht blutet unter der Platte aus. Bleibt bewusst AN
+     DER KACHEL (nicht auf der Scheibe) - es entsteht ja dort, wo das Licht
+     auf die Platte trifft. */
+  .telemetry-strip .cell::after, .schema::after, .log::after, .panel::after {
+    content: ""; position: absolute; left: 10%; right: 10%; bottom: -13px; height: 18px;
+    background: radial-gradient(60% 100% at 50% 0%, rgba(127, 240, 228, .16), transparent 72%);
+    pointer-events: none;
+  }
+  .panel.failover::after { background: radial-gradient(60% 100% at 50% 0%, rgba(255, 106, 88, .24), transparent 72%); }
+  .panel.offline::after { display: none; }
+
+  .panel.failover { border-color: rgba(255, 106, 88, .25); border-top-color: rgba(255, 150, 135, .42);
+    background: linear-gradient(165deg, rgba(255, 130, 115, .07), rgba(255, 106, 88, .03)); }
+  .panel.offline { opacity: .55; }
+
+  /* Farbsaum an den Ziffern, wie aus einer billigen Projektionsoptik. Per
+     Selektor statt per Zusatzklasse, damit am erzeugten HTML nichts haengt. */
+  .telemetry-strip .val, .panel-head .fn, .readouts .rv {
+    text-shadow: -.6px 0 rgba(255, 70, 120, .28), .6px 0 rgba(90, 220, 255, .28),
+      0 0 15px rgba(127, 240, 228, .26);
+  }
+
+  /* Schema-Knoten leuchten wie Lichtpunkte auf der Scheibe */
+  .bus .hub { background: rgba(127, 240, 228, .06); border-color: rgba(127, 240, 228, .35);
+    box-shadow: 0 0 14px rgba(127, 240, 228, .12); }
+  .bus .nodes::before { border-top-width: 1px; border-top-color: rgba(160, 220, 235, .2); }
+  .snode .drop { border-left-width: 1px; }
+  .snode .bulb { width: 14px; height: 14px; border-width: 1px;
+    background: rgba(127, 240, 228, .10); box-shadow: 0 0 9px rgba(127, 240, 228, .45); }
+  .snode.alert .bulb { background: var(--alert-dim); box-shadow: 0 0 11px rgba(255, 106, 88, .55); }
+  .snode.lost .bulb { background: none; box-shadow: none; }
+  .snode .pulse { left: -2.5px; box-shadow: 0 0 6px var(--down); }
+
+  .segments i.lit { background: rgba(127, 240, 228, .55); box-shadow: 0 0 6px rgba(127, 240, 228, .45); }
+  .segments i.lit.warn { background: rgba(255, 196, 122, .6); box-shadow: 0 0 6px rgba(255, 196, 122, .5); }
+  .segments i.lit.crit { background: rgba(255, 106, 88, .65); box-shadow: 0 0 6px rgba(255, 106, 88, .5); }
+
+  .chart .down { fill: rgba(127, 240, 228, .6); }
+  .chart .up { fill: rgba(255, 196, 122, .55); }
+  .chart .flow-down-fill { fill: var(--down); opacity: .10; }
+  .chart .flow-down-line { filter: drop-shadow(0 0 4px rgba(127, 240, 228, .5)); }
+  .chart .grid { stroke: rgba(150, 210, 220, .09); }
+  .chart .baseline { stroke: rgba(150, 210, 220, .2); }
+
+  /* Tooltip bleibt bewusst undurchsichtig: er muss ueber wechselndem
+     Untergrund lesbar sein, Transparenz macht ihn dort unbrauchbar. */
+  .flow-tooltip { background: #0b1218; border-color: rgba(160, 220, 235, .22); }
+"""
+
+# Die Scheibe als Markup - eine einzige Ebene ueber dem GESAMTEN Bild
+# (Nutzerwunsch: nicht je Kachel). Rein dekorativ, deshalb aria-hidden.
+CANOPY_HTML = """<div class="canopy" aria-hidden="true">
+  <div class="band"></div><div class="band thin"></div>
+  <div class="grime"></div><div class="vignette"></div>
+</div>"""
 
 
 def render_overview_html(consoles, start, now, events=()):
@@ -1910,7 +2100,7 @@ def render_overview_html(consoles, start, now, events=()):
         cards.append(f"""<div class="panel bracketed{panel_cls}">
       <div class="bk-tr"></div><div class="bk-bl"></div>
       <div class="panel-head"><h3 class="fn"><span class="idx num">{i:02d}·</span>{html.escape(c['device'])}</h3>{chip}</div>
-      <div class="subhead{sub_cls}">{sub}</div>
+      <div class="subhead{sub_cls}" title="{html.escape(sub.replace('&middot;', '·').replace('&gt;', '>').replace('&Oslash;', 'Ø'))}">{sub}</div>
       <div class="readouts">
         <div class="r"><div class="rl">Monat</div><div class="rv num{total_alert_class(c['total_month'], c['device'])}">{month_val}<span class="unit">{month_unit}</span> <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
         <div class="r"><div class="rl">30 Tage</div><div class="rv num">{d30_val}<span class="unit">{d30_unit}</span></div></div>
@@ -1943,9 +2133,11 @@ def render_overview_html(consoles, start, now, events=()):
 <style>
 {BASE_CSS}
 {HUD_CSS}
+{GLASS_CSS if COLOR_THEME == "glas" else ""}
 </style>
 </head>
 <body>
+{'<div class="depth"></div>' if COLOR_THEME == "glas" else ""}
 <div class="wrap">
   <header>
     <div class="header-top">
@@ -1998,6 +2190,7 @@ def render_overview_html(consoles, start, now, events=()):
     Failover ab Upload-Ø &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps über {FAILOVER_CONSECUTIVE} Polls &middot;
     Link Lost ab {OFFLINE_THRESHOLD_S // 60} Min ohne Messpunkt.</footer>
 </div>
+{CANOPY_HTML if COLOR_THEME == "glas" else ""}
 {refresh_countdown_script(now)}
 {flow_tooltip_script()}
 </body>
