@@ -1983,8 +1983,17 @@ HUD_CSS = """
   .bus .nodes::before { content: ""; position: absolute; left: 0; right: 0;
     top: calc(var(--hub-h) / 2); border-top: 2px solid var(--line); }
   .snode { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
-  .snode .drop { position: relative; width: 0; height: var(--drop-h); border-left: 2px solid var(--phosphor-dim); }
-  .snode.alert .drop { border-left-color: var(--alert); }
+  /* Die Leitung ist ein eigenes, mittig ausgerichtetes Element - NICHT der
+     linke Rahmen des Kastens. Grund: absolut positionierte Kinder richten
+     sich nach der INNENkante, also um die Rahmenbreite verschoben. Mit der
+     frueheren Rahmen-Loesung lief der Tropfen dadurch 0,5px und die
+     Verlustkerbe 1,0px neben der Linie her (nachgemessen an allen sechs
+     Knoten). Jetzt teilen sich Linie, Tropfen und Kerbe dieselbe Mitte bei
+     left:50%, unabhaengig von Strichstaerken. */
+  .snode .drop { position: relative; width: 9px; height: var(--drop-h); border: none; }
+  .snode .drop::before { content: ""; position: absolute; left: 50%; margin-left: -1px;
+    top: 0; bottom: 0; width: 2px; background: var(--phosphor-dim); }
+  .snode.alert .drop::before { background: var(--alert); }
   /* Offline war bisher die schwaechste der drei Darstellungen: gestrichelte
      Leitung und fehlendes Leuchten, aber die Beschriftung blieb exakt wie bei
      Nominal. Aus ein paar Metern Entfernung - und genau dafuer ist das Bild
@@ -1994,8 +2003,10 @@ HUD_CSS = """
      ist ein reines FORM-Signal und traegt auch dann, wenn die Farbe nicht
      ankommt (Entfernung, Farbsehschwaeche). Bewusst grau statt rot -
      ausgefallen ist nicht dasselbe wie Alarm. */
-  .snode.lost .drop { border-left-color: var(--dim); border-left-style: dashed; opacity: .55; }
-  .snode .pulse { position: absolute; left: -3.5px; top: 0; width: 5px; height: 5px;
+  .snode.lost .drop { opacity: .55; }
+  .snode.lost .drop::before { background: repeating-linear-gradient(180deg,
+    var(--dim) 0 3px, transparent 3px 6px); }
+  .snode .pulse { position: absolute; left: 50%; margin-left: -2.5px; top: 0; width: 5px; height: 5px;
     border-radius: 50%; background: var(--down); opacity: 0; }
   .snode .bulb { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--down);
     background: var(--ink); box-shadow: 0 0 6px var(--phosphor-dim); }
@@ -2011,7 +2022,7 @@ HUD_CSS = """
      frueher hier stehende Latenz-Schlangenlinie ist raus. */
   /* left:-4px bei 9px Breite setzt die Kerbenmitte auf x=+0.5 - genau die
      Mitte der 1px starken Leitung, die bei x=0..1 liegt. */
-  .snode .nick { position: absolute; left: -4px; width: 9px; height: 2px;
+  .snode .nick { position: absolute; left: 50%; margin-left: -4.5px; width: 9px; height: 2px;
     background: var(--alert); box-shadow: 0 0 5px var(--alert); opacity: .95;
     border-radius: 0; margin-top: -1px; }
   .snode .name { font-size: 11px; color: var(--dim); margin-top: 5px; letter-spacing: .06em;
@@ -2357,12 +2368,12 @@ GLASS_CSS = """
   .bus .hub { background: rgba(127, 240, 228, .06); border-color: rgba(127, 240, 228, .35);
     box-shadow: 0 0 14px rgba(127, 240, 228, .12); }
   .bus .nodes::before { border-top-width: 1px; border-top-color: rgba(160, 220, 235, .2); }
-  .snode .drop { border-left-width: 1px; }
+  .snode .drop::before { width: 1px; margin-left: -0.5px; }
   .snode .bulb { width: 14px; height: 14px; border-width: 1px;
     background: rgba(127, 240, 228, .10); box-shadow: 0 0 9px rgba(127, 240, 228, .45); }
   .snode.alert .bulb { background: var(--alert-dim); box-shadow: 0 0 11px rgba(255, 106, 88, .55); }
   .snode.lost .bulb { background: none; box-shadow: none; }
-  .snode .pulse { left: -2.5px; box-shadow: 0 0 6px var(--down); }
+  .snode .pulse { box-shadow: 0 0 6px var(--down); }
 
   .segments i.lit { background: rgba(127, 240, 228, .55); box-shadow: 0 0 6px rgba(127, 240, 228, .45); }
   .segments i.lit.warn { background: rgba(255, 196, 122, .6); box-shadow: 0 0 6px rgba(255, 196, 122, .5); }
