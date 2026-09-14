@@ -628,7 +628,6 @@ EVENT_LOG_SHOW = 4
 # State wird bei JEDEM Poll committet, da gehoeren keine 35 KB hinein.
 LATENCY_REFRESH_S = 240
 LATENCY_POINTS = 30
-LATENCY_SCALE_MAX = 28.0   # ms bei voller Auslenkung; gemeinsame Skala fuer alle
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
@@ -1718,51 +1717,41 @@ def _split_unit(text):
     return (parts[0], parts[1]) if len(parts) == 2 else (text, "")
 
 
-def _latency_drop(series, cls, delay):
-    """Abzweigleitung als Latenzkurve: oben vor 24 Stunden, unten jetzt,
-    Auslenkung nach rechts = Latenz. Gemeinsame Skala (LATENCY_SCALE_MAX) fuer
-    alle Konsolen, sonst waeren die Ausschlaege untereinander nicht
-    vergleichbar - genau das ist aber der Nutzen ("weiter rechts = langsamer").
+def _loss_nicks(series, max_marks=4, min_abstand=0.14):
+    """Rote Kerben auf der geraden Abzweigleitung, dort wo es in den letzten
+    24 Stunden Paketverlust gab - oben vor 24 h, unten jetzt.
 
-    Der wandernde Punkt laeuft die Kurve entlang und wird damit vom reinen
-    Zierat zum Zeitzeiger. Er ist SMIL (<animateMotion>) und laesst sich
-    deshalb NICHT per CSS abschalten - das erledigt das Skript in
-    canopy/reduced-motion (siehe render_overview_html)."""
-    # cx liegt in der MITTE der Zeichenflaeche, also genau unter dem Knoten.
-    # Erste Fassung hatte die Achse bei x=9 und liess die Kurve dort enden, wo
-    # der letzte Messwert lag - die Leitung lief dadurch am Knoten vorbei,
-    # und zwar umso weiter, je hoeher die Latenz (gemessen: LSB +7px, WTB
-    # +9px; dass KLO traf, war Zufall bei 9 ms). Eine Abzweigung in einem
-    # Schaltplan muss aber ankommen, sonst ist es keine Leitung mehr.
-    #
-    # Deshalb zwei Zonen: die Messkurve belegt die oberen DATA_H, danach
-    # fuehrt ein kurzes gerades Stueck zum Knoten. Dieses Stueck ist sichtbar
-    # ein Anschluss und keine Messung - der juengste Wert steht ohnehin als
-    # Zahl neben dem Kuerzel.
-    w, h, cx, defl, data_h = 30.0, 46.0, 15.0, 13.0, 36.0
-    pts, loss = [], []
+    Vorgaenger war eine Schlangenlinie, deren Auslenkung die Latenz zeigte.
+    Die ist raus (Nutzerwunsch): sie liess die Leitung am Knoten vorbeilaufen,
+    und der wandernde Punkt bekam ueber den Selektor '.snode.ok .pulse'
+    zusaetzlich zur SMIL-Bewegung noch die CSS-Animation des alten
+    HTML-Elements ab - zwei ueberlagerte Bewegungen, der Punkt fiel sichtbar
+    neben der Linie herunter.
+
+    Begrenzt auf max_marks Kerben mit Mindestabstand: bei 30 Stuetzpunkten auf
+    20 px Leitung saehen zehn Marken wie eine gestrichelte Linie aus und
+    saegten die Aussage kaputt. Gezeigt werden die staerksten Ereignisse."""
+    treffer = []
     n = max(len(series) - 1, 1)
     for i, punkt in enumerate(series):
         try:
-            avg, pl = float(punkt[0]), float(punkt[1])
+            pl = float(punkt[1])
         except (TypeError, ValueError, IndexError):
             continue
-        y = data_h * i / n
-        x = cx + min(avg / LATENCY_SCALE_MAX, 1.0) * defl
-        pts.append((x, y))
-        if pl:
-            loss.append((x, y))
-    if len(pts) < 2:
-        return None
-    pts.append((cx, h))   # Anschluss an den Knoten
-    d = "M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in pts)
-    marks = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="1.6" class="loss"/>' for x, y in loss)
-    puls = ("" if cls != "ok" else
-            f'<circle r="2.2" class="pulse"><animateMotion dur="5.2s" begin="{delay:.2f}s" '
-            f'repeatCount="indefinite" path="{d}"/></circle>')
-    return (f'<span class="drop trace"><svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}" '
-            f'aria-hidden="true"><line x1="{cx:g}" y1="0" x2="{cx:g}" y2="{h:g}" class="axis"/>'
-            f'<path d="{d}" class="lline"/>{marks}{puls}</svg></span>')
+        if pl > 0:
+            treffer.append((pl, i / n))
+    if not treffer:
+        return "", 0
+    gesamt = len(treffer)
+    treffer.sort(key=lambda t: -t[0])
+    gewaehlt = []
+    for pl, pos in treffer:
+        if all(abs(pos - p) >= min_abstand for _, p in gewaehlt):
+            gewaehlt.append((pl, pos))
+        if len(gewaehlt) >= max_marks:
+            break
+    return "".join(f'<i class="nick" style="top:{pos * 100:.0f}%"></i>'
+                   for _, pos in sorted(gewaehlt, key=lambda t: t[1])), gesamt
 
 
 def _schema_html(consoles, latency=None):
@@ -1781,7 +1770,6 @@ def _schema_html(consoles, latency=None):
     jeder Breite korrekt, ohne dass Schrift oder Knoten mitskalieren."""
     latency = latency or {}
     nodes = []
-    hat_kurve = False
     for i, c in enumerate(consoles):
         status = _console_status(c)
         cls = {"failover": "alert", "offline": "lost"}.get(status, "ok")
@@ -1789,14 +1777,14 @@ def _schema_html(consoles, latency=None):
         zustand = {"alert": "Failover", "lost": "Link Lost"}.get(cls, "Nominal")
         lat = latency.get(c["device"]) or {}
 
-        # Keine Kurve fuer erloschene Standorte: der letzte bekannte Verlauf
-        # waere dort veraltet und wuerde Aktualitaet vortaeuschen.
-        drop = None if cls == "lost" else _latency_drop(lat.get("series") or [], cls, i * 0.55)
-        if drop:
-            hat_kurve = True
-        else:
-            pulse = f'<i class="pulse" style="animation-delay:{i * 0.35:.2f}s"></i>' if cls == "ok" else ""
-            drop = f'<span class="drop">{pulse}</span>'
+        # Gerade Leitung (Nutzerwunsch, die Latenz-Schlangenlinie ist raus).
+        # Paketverlust erscheint als rote Kerbe an der Stelle, an der er
+        # auftrat - oben vor 24 h, unten jetzt. Bei erloschenen Standorten
+        # keine Kerben: der letzte bekannte Verlauf waere dort veraltet und
+        # wuerde Aktualitaet vortaeuschen.
+        nicks, n_loss = ("", 0) if cls == "lost" else _loss_nicks(lat.get("series") or [])
+        pulse = f'<i class="pulse" style="animation-delay:{i * 0.35:.2f}s"></i>' if cls == "ok" else ""
+        drop = f'<span class="drop">{pulse}{nicks}</span>'
 
         # Zahl NEBEN das Kuerzel, nicht darunter: eine zusaetzliche Zeile macht
         # die Leiste 19px hoeher (gemessen), und die Hoehe fehlt unten direkt
@@ -1806,14 +1794,17 @@ def _schema_html(consoles, latency=None):
         titel = f'{c["device"]}: {zustand}'
         if ms is not None:
             titel += f" · {int(ms)} ms"
-            if lat.get("loss"):
-                titel += f" · {lat['loss']:g} % Paketverlust"
+        if n_loss:
+            # Der Tooltip nennt ALLE Verlustereignisse, auch die, fuer die auf
+            # der kurzen Leitung keine eigene Kerbe mehr Platz hatte.
+            titel += (f" · Paketverlust in {n_loss} von {len(lat.get('series') or [])} "
+                      f"Messpunkten (24 h)")
         nodes.append(f'<div class="snode {cls}" title="{html.escape(titel)}">'
                      f'{drop}<span class="bulb"></span>'
                      f'<span class="name">{short}{zahl}</span></div>')
-    return (f'<div class="bus{" with-trace" if hat_kurve else ""}" role="img" '
+    return (f'<div class="bus" role="img" '
             f'aria-label="Systemschema: Site-Manager und {len(consoles)} Konsolen, '
-            f'Abzweigungen zeigen den Latenzverlauf der letzten 24 Stunden">'
+            f'rote Kerben markieren Paketverlust der letzten 24 Stunden">'
             f'<div class="hub">SITE-MANAGER</div>'
             f'<div class="nodes">{"".join(nodes)}</div></div>')
 
@@ -2015,17 +2006,14 @@ HUD_CSS = """
     background: var(--dim); }
   .snode.lost .bulb::before { transform: translate(-50%, -50%) rotate(45deg); }
   .snode.lost .bulb::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  /* Latenzkurve in der Abzweigleitung (siehe _latency_drop). Die Leiste wird
-     dadurch 26px hoeher - gemessen; die Zahl daneben kostet nichts. */
-  .bus.with-trace { --drop-h: 46px; }
-  .snode .drop.trace { width: 30px; height: 46px; border: none; display: block; }
-  .snode .drop.trace svg { display: block; overflow: visible; }
-  .snode .drop.trace .axis { stroke: rgba(160,220,235,.13); stroke-width: 1; }
-  .snode .drop.trace .lline { fill: none; stroke: var(--phosphor-dim); stroke-width: 1.4;
-    stroke-linejoin: round; stroke-linecap: round; }
-  .snode.alert .drop.trace .lline { stroke: var(--alert); }
-  .snode .drop.trace .loss { fill: var(--alert); }
-  .snode .drop.trace .pulse { fill: var(--down); opacity: .9; }
+  /* Paketverlust als rote Kerbe quer ueber die gerade Abzweigleitung (siehe
+     _loss_nicks). Die Leitung bleibt gerade und behaelt ihre alte Hoehe - die
+     frueher hier stehende Latenz-Schlangenlinie ist raus. */
+  /* left:-4px bei 9px Breite setzt die Kerbenmitte auf x=+0.5 - genau die
+     Mitte der 1px starken Leitung, die bei x=0..1 liegt. */
+  .snode .nick { position: absolute; left: -4px; width: 9px; height: 2px;
+    background: var(--alert); box-shadow: 0 0 5px var(--alert); opacity: .95;
+    border-radius: 0; margin-top: -1px; }
   .snode .name { font-size: 11px; color: var(--dim); margin-top: 5px; letter-spacing: .06em;
     white-space: nowrap; }
   .snode .lat { font-weight: 500; color: var(--text); margin-left: 6px; letter-spacing: .02em; }
@@ -2413,13 +2401,6 @@ CANOPY_HTML = """<div class="canopy" aria-hidden="true">
   document.querySelectorAll('.canopy .band').forEach(function (el) {
     el.style.animationDelay = (-phase).toFixed(2) + 's';
   });
-  // Der Punkt auf der Latenzkurve ist SMIL (<animateMotion>) und laesst sich
-  // NICHT per CSS-@media abschalten - display:none greift bei SMIL nicht
-  // zuverlaessig. Wer reduzierte Bewegung eingestellt hat, bekommt die Kurve
-  // deshalb hier ohne wandernden Punkt.
-  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.querySelectorAll('animateMotion').forEach(function (a) { a.remove(); });
-  }
 })();
 </script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S))
 
