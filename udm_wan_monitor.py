@@ -551,14 +551,28 @@ CHART_WINDOW_DAYS = 1  # Stunden-/Flow-Chart (Detail + Uebersichtskacheln): 24 S
 TABLE_WINDOW_DAYS = 30
 ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Flow-Chart
 
-# Ohne Rotation waechst wan_traffic.csv unbegrenzt (bereits ~21.000 Zeilen/
-# 1.2 MB nach 3 Tagen) und merge_rows() schreibt bei JEDEM Poll die komplette
-# Datei neu - das wird mit der Zeit zum dominanten Kostenfaktor. Zeilen
-# aelter als ROLLUP_AFTER_DAYS werden deshalb zu einer Zeile pro Kalendertag/
-# Konsole/Uplink zusammengefasst (siehe _rollup_old_rows()). Deutlicher
-# Sicherheitsabstand zu TABLE_WINDOW_DAYS, damit die Tageswerte-Tabelle nie
-# auf bereits aggregierte Zeilen trifft.
-ROLLUP_AFTER_DAYS = 35
+# Ohne Rotation waechst wan_traffic.csv unbegrenzt und merge_rows() schreibt
+# bei JEDEM Poll die komplette Datei neu - das wird schnell zum dominanten
+# Kostenfaktor. Zeilen aelter als ROLLUP_AFTER_DAYS werden deshalb zu einer
+# Zeile pro Kalendertag/Konsole/Uplink zusammengefasst (_rollup_old_rows()).
+#
+# Stand vorher: 35 Tage - so grosszuegig, dass die Rotation nach 34 Tagen
+# Laufzeit noch KEIN einziges Mal gegriffen hatte und alle 284.657 Poll-
+# Zeilen einzeln in einer 16,6-MB-Datei lagen, die jede Minute komplett neu
+# geschrieben und committet wurde.
+#
+# Poll-genaue Aufloesung wird tatsaechlich nur gebraucht fuer die Charts
+# (CHART_WINDOW_DAYS = 1 Tag) und die Failover-Erkennung (die letzten
+# FAILOVER_CONSECUTIVE Polls). Alles Aeltere geht ausschliesslich in Summen
+# ein, und die bleiben beim Zusammenfassen exakt erhalten (nachgerechnet:
+# Down- und Up-Summen identisch). 3 Tage lassen den Charts zwei Tage
+# Sicherheitsabstand und druecken die CSV von 16,6 MB auf ~1,5 MB (-91%).
+#
+# Preis: poll-genaue Forensik ("was genau passierte im KNZ-Vorfall") reicht
+# nur noch 3 Tage zurueck. Die Tageswerte-Tabelle der manuellen
+# Einzelkonsolen-Diagnose (--site, TABLE_WINDOW_DAYS) zeigt jenseits davon
+# die zusammengefassten Tageszeilen statt Stundenauswertung.
+ROLLUP_AFTER_DAYS = 3
 
 
 def _console_alert_threshold(console_name):
@@ -593,7 +607,8 @@ def alert_threshold_label(console_name):
     return human_bytes(_console_alert_threshold(console_name))
 
 
-def compute_stats(rows, start, site_filter=None, include_hover_data=False):
+def compute_stats(rows, start, site_filter=None, include_hover_data=False,
+                  rows_prefiltered=False):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
     leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird fuer Karten
     der Übersichtsseite (render_overview_html) genutzt, und optional (siehe
@@ -632,13 +647,37 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False):
     """
     now = datetime.now(timezone.utc)
 
-    def in_site(r):
-        if not site_filter:
-            return True
+    # rows_prefiltered: im Dauerbetrieb hat _group_by_console() die Zeilen
+    # bereits exakt nach Konsole aufgeteilt - sie hier per Substring ERNEUT
+    # zu pruefen war reine Doppelarbeit (284.657 in_site-Aufrufe mit 569.314
+    # .lower()-Allokationen je Bericht, ~0,16s). Der Filter bleibt fuer die
+    # manuelle Diagnose (--site auf der vollen Zeilenliste) erhalten.
+    if rows_prefiltered and site_filter and rows:
+        # Billige Plausibilitaetspruefung (erste und letzte Zeile), denn ein
+        # falsches rows_prefiltered=True faellt sonst NICHT auf: es wuerde
+        # stillschweigend ueber alle Konsolen summieren und die Kachel
+        # trotzdem mit einem einzelnen Konsolennamen beschriften. Genau diese
+        # Klasse Fehler (plausibel aussehende, aber falsche Volumenzahlen)
+        # hat schon einmal fuer Rueckfragen der Konsolenbetreiber gesorgt.
+        # Im Zweifel lieber doch filtern als falsche Zahlen anzeigen - und
+        # laut sein, statt den Poll abzubrechen.
         needle = site_filter.lower()
-        return needle in r["site"].lower() or needle in r["uplink"].lower()
+        for probe in (rows[0], rows[-1]):
+            if needle not in probe["site"].lower() and needle not in probe["uplink"].lower():
+                print(f"Warnung: compute_stats({site_filter}) mit rows_prefiltered=True aufgerufen, "
+                      f"aber die Zeilen enthalten auch '{probe['site']}' - filtere sicherheitshalber selbst.")
+                rows_prefiltered = False
+                break
 
-    all_rows = [r for r in rows if r["ts"] >= start and in_site(r)]
+    if rows_prefiltered or not site_filter:
+        all_rows = [r for r in rows if r["ts"] >= start]
+    else:
+        needle = site_filter.lower()
+
+        def in_site(r):
+            return needle in r["site"].lower() or needle in r["uplink"].lower()
+
+        all_rows = [r for r in rows if r["ts"] >= start and in_site(r)]
 
     total_down = sum(r["down_bytes"] for r in all_rows)
     total_up = sum(r["up_bytes"] for r in all_rows)
@@ -736,28 +775,38 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False):
 
     peak = max((d + u for _, d, u in series), default=0.0) or 1.0
 
-    # Tageswerte-Tabelle: eigenes, laengeres Fenster (TABLE_WINDOW_DAYS).
-    table_start = max(start, now - timedelta(days=TABLE_WINDOW_DAYS))
-    table_rows = [r for r in all_rows if r["ts"] >= table_start]
-    days = {}
-    hours_by_day = {}
-    for row in table_rows:
-        local_day = row["ts"].astimezone().strftime("%d.%m.%Y")
-        entry = days.setdefault(local_day, [0.0, 0.0, 0])
-        entry[0] += row["down_bytes"]
-        entry[1] += row["up_bytes"]
-        hours_by_day.setdefault(local_day, set()).add(
-            row["ts"].replace(minute=0, second=0, microsecond=0))
-    for day, hset in hours_by_day.items():
-        days[day][2] = len(hset)
+    # Tageswerte-Tabelle, Ausreisserliste und 24h-Einzelauflistung gibt es NUR
+    # noch fuer die manuelle Einzelkonsolen-Diagnose (--site). Die Uebersicht
+    # zeigt nichts davon an - berechnet wurden sie trotzdem bei jedem Poll,
+    # und die Tabelle war mit Abstand der teuerste Einzelposten des ganzen
+    # Berichts: sie laeuft ueber TABLE_WINDOW_DAYS (30 Tage) Zeilen und macht
+    # dabei je Zeile ein astimezone() + strftime(). Gemessen 255.000 solcher
+    # Aufrufe und ~0,92s der 1,31s Gesamtlaufzeit von compute_stats - fuer
+    # Werte, die niemand zu sehen bekam.
+    if include_hover_data:
+        table_start = max(start, now - timedelta(days=TABLE_WINDOW_DAYS))
+        table_rows = [r for r in all_rows if r["ts"] >= table_start]
+        days = {}
+        hours_by_day = {}
+        for row in table_rows:
+            local_day = row["ts"].astimezone().strftime("%d.%m.%Y")
+            entry = days.setdefault(local_day, [0.0, 0.0, 0])
+            entry[0] += row["down_bytes"]
+            entry[1] += row["up_bytes"]
+            hours_by_day.setdefault(local_day, set()).add(
+                row["ts"].replace(minute=0, second=0, microsecond=0))
+        for day, hset in hours_by_day.items():
+            days[day][2] = len(hset)
 
-    # Ausreisser (innerhalb des Chart-Fensters)
-    spikes = sorted(series, key=lambda item: item[1] + item[2], reverse=True)[:5]
-    spikes = [s for s in spikes if (s[1] + s[2]) > 0]
+        # Ausreisser (innerhalb des Chart-Fensters)
+        spikes = sorted(series, key=lambda item: item[1] + item[2], reverse=True)[:5]
+        spikes = [s for s in spikes if (s[1] + s[2]) > 0]
 
-    # Letzte 24 Stunden, Einzelauflistung
-    last24_start = now - timedelta(hours=24)
-    last24 = [s for s in series if last24_start <= s[0] <= now]
+        # Letzte 24 Stunden, Einzelauflistung
+        last24_start = now - timedelta(hours=24)
+        last24 = [s for s in series if last24_start <= s[0] <= now]
+    else:
+        days, spikes, last24 = {}, [], []
 
     # Uebersichtskacheln (Dauerbetrieb) verzichten bewusst auf Hover-Tooltips
     # UND die dafuer noetigen eingebetteten Rohdaten (Nutzerwunsch) - sowohl
@@ -765,7 +814,14 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False):
     # noch fuer die manuelle Einzelkonsolen-Diagnose (--site) berechnet, nicht
     # mehr im Dauerbetrieb (write_reports) - seit es dort keine eigenen
     # Detailseiten mehr gibt (spart Groesse/Rechenzeit bei jedem Poll).
-    chart = render_chart(series, peak, chart_start_hour, include_bars=include_hover_data)
+    #
+    # Der Stundenchart wird auf der Uebersicht nicht mehr gezeigt (der
+    # Flow-Chart hat seinen Platz bekommen), also auch nicht mehr gezeichnet.
+    # Die Stundenwerte selbst (series/peak) bleiben - sie kosten fast nichts,
+    # laufen nur ueber das 1-Tage-Chartfenster, und "Spitze X/h" steht
+    # weiterhin an der Kachel.
+    chart = (render_chart(series, peak, chart_start_hour, include_bars=True)
+             if include_hover_data else "")
     flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, include_samples=False, max_points=200)
     flow_chart = (render_flow_chart(chart_rows, chart_start, now)
                   if include_hover_data else flow_chart_mini)
@@ -867,6 +923,35 @@ def render_chart(series, peak, start, include_bars=True):
             f'role="img" aria-label="Stundenvolumen" {data_bars_part}>{"".join(parts)}</svg>')
 
 
+def _thin_keeping_peaks(samples, max_points):
+    """Duennt (ts, down_kbps, up_kbps) auf hoechstens max_points aus und
+    BEHAELT dabei die Spitzen.
+
+    Vorher wurde schlicht jeder n-te Messpunkt genommen (step = len/max,
+    pts[int(i*step)]) - also 6 von 7 Punkten kommentarlos weggeworfen. Damit
+    verschwanden echte Ausschlaege komplett aus dem Bild: gemessen ueber 24h
+    zeigte der Chart bei HAN nur 4 statt 15 kbps Spitze (-73%), bei WTB 1873
+    statt 2507 kbps (-25%). Fuer ein Failover-Dashboard, in dem genau die
+    Spitzen die Aussage sind, war das die falsche Reduktion.
+
+    Stattdessen je Abschnitt das Maximum beider Reihen. Beide Werte sind im
+    Abschnitt tatsaechlich gemessen worden, es wird also nichts erfunden; und
+    der Zeitstempel ist der des groesseren Ausschlags, damit die Spitze an
+    der richtigen Stelle der Zeitachse steht (die Punkte stehen dadurch nicht
+    exakt aequidistant, bleiben aber chronologisch)."""
+    n = len(samples)
+    if not max_points or n <= max_points:
+        return samples
+    out = []
+    for i in range(max_points):
+        lo = i * n // max_points
+        hi = max((i + 1) * n // max_points, lo + 1)
+        chunk = samples[lo:hi]
+        ts = max(chunk, key=lambda s: max(s[1], s[2]))[0]
+        out.append((ts, max(s[1] for s in chunk), max(s[2] for s in chunk)))
+    return out
+
+
 def render_flow_chart(window, start, end, include_samples=True, max_points=None):
     """Feinkoerniger Traffic-Flow-Graph: Rate (kbps) je Poll-Punkt ueber die Zeit,
     im Gegensatz zum Stundenchart nicht zu Stundensummen aggregiert.
@@ -891,9 +976,6 @@ def render_flow_chart(window, start, end, include_samples=True, max_points=None)
     pts = sorted((r for r in window if r["interval_s"]), key=lambda r: r["ts"])
     if len(pts) < 2:
         return '<p class="dim" style="margin:0">Noch nicht genug Messpunkte fuer den Flow-Graphen.</p>'
-    if max_points and len(pts) > max_points:
-        step = len(pts) / max_points
-        pts = [pts[int(i * step)] for i in range(max_points)]
 
     span_s = max((end - start).total_seconds(), 1)
 
@@ -903,6 +985,7 @@ def render_flow_chart(window, start, end, include_samples=True, max_points=None)
     samples = [(r["ts"],
                 rate_kbps(r["down_bytes"], r["interval_s"]),
                 rate_kbps(r["up_bytes"], r["interval_s"])) for r in pts]
+    samples = _thin_keeping_peaks(samples, max_points)
     peak = max((max(d, u) for _, d, u in samples), default=0.0) or 1.0
     # Logarithmische Hoehen-Skalierung (log1p), siehe render_chart() fuer die
     # Begruendung: sonst verschwindet die Grundlast ruhiger Konsolen (LSB,
@@ -1812,7 +1895,12 @@ HUD_CSS = """
   .readouts .rv.value-warn { color: var(--warn); }
   .readouts .threshold-ref { font-size: 10.5px; }
   .mini-meter .segments { height: 6px; }
-  .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  /* Eine Spalte: der Stundenchart ist entfallen, der Flow-Chart hat seine
+     Breite bekommen. Er zeigt dieselben Messpunkte einzeln, die der
+     Stundenchart nur zu 24 Balken summiert hat - seit die Ausduennung die
+     Spitzen behaelt (siehe _thin_keeping_peaks) geht dabei nichts mehr
+     verloren. */
+  .mini-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
     flex: 1 1 auto; min-height: 0; }
   .mini-chart-col { display: flex; flex-direction: column; min-height: 0; }
   /* Zeichenflaeche bleibt bei den bisherigen 140px, sobald der Bildschirm
@@ -2127,12 +2215,7 @@ def render_overview_html(consoles, start, now, events=()):
       <div class="mini-meter" title="Monatsvolumen im Verhältnis zur Rot-Schwelle ({alert_threshold_label(c['device'])})">{_segments_html(12, round(min(ratio, 1.0) * 12), meter_mode)}</div>
       <div class="mini-charts">
         <div class="mini-chart-col">
-          <div class="mini-chart-label">Stunde <span class="lg">Spitze {human_bytes(c['peak'])}/h</span></div>
-          {c['chart']}
-        </div>
-        <div class="mini-chart-col">
-          <div class="mini-chart-label">Flow <span class="lg"><span class="dot" style="background:var(--down)"></span>Down
-            <span class="dot" style="background:var(--up)"></span>Up</span></div>
+          <div class="mini-chart-label">Flow &middot; 24 h <span class="lg">Spitze {human_bytes(c['peak'])}/h<span class="dot" style="background:var(--down)"></span>Down<span class="dot" style="background:var(--up)"></span>Up</span></div>
           {c['flow_chart_mini']}
         </div>
       </div>
@@ -2260,7 +2343,7 @@ def write_reports(rows, start, console_names, state=None, record_events=True):
     Poll dann ein zweites Mal meldet."""
     now = datetime.now(timezone.utc)
     buckets = _group_by_console(rows, console_names)
-    consoles = [compute_stats(buckets[name], start, site_filter=name)
+    consoles = [compute_stats(buckets[name], start, site_filter=name, rows_prefiltered=True)
                 for name in console_names]
 
     if state is None:
