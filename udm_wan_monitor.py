@@ -2034,7 +2034,14 @@ CANOPY_SWEEP_S = 26
 
 GLASS_CSS = """
   :root {
-    --nebula: #0d1a2b; --hull-warm: #1c1308; --structure: rgba(120, 190, 205, .05);
+    /* Tiefenebene: durchgehend kalt. Die beiden Leuchten sind bewusst
+       nahezu weisses Blau mit wenig Saettigung - sie lesen sich als LICHT,
+       nicht als Farbe, und lassen damit die drei bedeutungstragenden Farben
+       des Dashboards (Teal = Download, Amber = Upload, Rot = Failover)
+       unangetastet. Eine gesaettigte Leuchte wuerde die Platten toenen und
+       Teal/Amber dahinter mitverschieben. */
+    --nebula: #1b3147; --hull-far: #16283a;
+    --lamp-a: rgba(198, 230, 255, .24); --lamp-b: rgba(150, 200, 255, .20);
     --glass: rgba(120, 195, 210, .085); --glass-2: rgba(96, 170, 190, .03);
     --glass-edge: rgba(198, 240, 255, .20);
     --phosphor-dim: #2a7d75; --hull-2: rgba(120, 195, 210, .10); --alert-dim: rgba(255, 106, 88, .18);
@@ -2043,18 +2050,18 @@ GLASS_CSS = """
   /* Scanlinien des HUD-Themes weichen der Tiefenebene */
   body { background-image: none; }
 
+  /* Bewusst OHNE die frueheren Rumpfstreben (Nutzerwunsch). Sie waren das
+     Einzige mit harten Kanten und damit das, woran die Mattierung am besten
+     ablesbar war - den Glaseindruck tragen jetzt Kantenbevel, Reflexion und
+     Frost-Koernung der Platten selbst. */
   .depth {
     position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background:
-      radial-gradient(115% 85% at 10% 0%, var(--nebula) 0%, transparent 55%),
-      radial-gradient(95% 85% at 100% 100%, var(--hull-warm) 0%, transparent 52%),
+      radial-gradient(18% 22% at 73% 16%, var(--lamp-a) 0%, transparent 72%),
+      radial-gradient(15% 19% at 26% 84%, var(--lamp-b) 0%, transparent 72%),
+      radial-gradient(62% 52% at 14% 8%, var(--nebula) 0%, transparent 62%),
+      radial-gradient(52% 48% at 92% 88%, var(--hull-far) 0%, transparent 58%),
       var(--ink);
-  }
-  .depth::after {
-    content: ""; position: absolute; inset: -20%;
-    background:
-      repeating-linear-gradient(58deg, transparent 0 86px, var(--structure) 86px 87px),
-      repeating-linear-gradient(-58deg, transparent 0 144px, var(--structure) 144px 145px);
   }
   .wrap { position: relative; z-index: 1; }
 
@@ -2098,12 +2105,36 @@ GLASS_CSS = """
     from { transform: rotate(13deg) translateX(-260%); }
     to   { transform: rotate(13deg) translateX(1010%); } }
 
-  /* ---- Glasplatten: Telemetriezellen, Schema, Protokoll, Kacheln ---- */
+  /* ---- Glasplatten: Telemetriezellen, Schema, Protokoll, Kacheln ----
+     Drei Dinge machen aus der getoenten Flaeche eine Scheibe mit Dicke:
+       1. Kantenbevel - innen oben/links Licht, unten/rechts Schatten. Das
+          ist es, was Dicke suggeriert; ohne den bleibt es Toenung.
+       2. Reflexion quer ueber die Platte, wie ein Fenster, das den Himmel
+          spiegelt.
+       3. Frost-Koernung als feTurbulence-Rauschen direkt im Glas (inline
+          als data-URI, kein externer Abruf - der waere von der CSP der
+          Seite ohnehin geblockt).
+     Die Mattierung selbst (backdrop-filter) traegt weniger als man denkt,
+     seit die Streben im Hintergrund weg sind: sie braucht harte Kanten zum
+     Verschleifen, und die gibt es dahinter nicht mehr. */
   .telemetry-strip .cell, .schema, .log, .panel {
-    background: linear-gradient(165deg, var(--glass), var(--glass-2));
-    -webkit-backdrop-filter: blur(7px) saturate(1.15);
-    backdrop-filter: blur(7px) saturate(1.15);
-    border: 1px solid var(--line); border-top-color: var(--glass-edge);
+    -webkit-backdrop-filter: blur(13px) saturate(1.42) brightness(1.05);
+    backdrop-filter: blur(13px) saturate(1.42) brightness(1.05);
+    background:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
+      linear-gradient(115deg, rgba(232,253,255,.11) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.045) 100%),
+      linear-gradient(158deg, rgba(140,205,220,.085), rgba(96,170,190,.025) 45%, rgba(120,195,210,.06));
+    border: 1px solid rgba(150,210,230,.15);
+    border-top-color: rgba(216,250,255,.42);
+    border-left-color: rgba(198,240,255,.24);
+    border-bottom-color: rgba(6,14,20,.55);
+    box-shadow:
+      inset 0 1px 0 rgba(236,254,255,.34),
+      inset 1px 0 0 rgba(210,245,255,.14),
+      inset 0 -1px 0 rgba(0,0,0,.40),
+      inset -1px 0 0 rgba(0,0,0,.25),
+      inset 0 18px 30px -22px rgba(236,254,255,.32),
+      0 20px 42px -26px rgba(0,0,0,.92);
     position: relative;
   }
   /* Abgeschraegte Ecken und Eckklammern des HUD-Themes entfallen: eine
@@ -2117,15 +2148,34 @@ GLASS_CSS = """
      DER KACHEL (nicht auf der Scheibe) - es entsteht ja dort, wo das Licht
      auf die Platte trifft. */
   .telemetry-strip .cell::after, .schema::after, .log::after, .panel::after {
-    content: ""; position: absolute; left: 10%; right: 10%; bottom: -13px; height: 18px;
-    background: radial-gradient(60% 100% at 50% 0%, rgba(127, 240, 228, .16), transparent 72%);
+    content: ""; position: absolute; left: 6%; right: 6%; bottom: -15px; height: 22px;
+    background: radial-gradient(58% 100% at 50% 0%, rgba(127, 240, 228, .26), transparent 74%);
     pointer-events: none;
   }
   .panel.failover::after { background: radial-gradient(60% 100% at 50% 0%, rgba(255, 106, 88, .24), transparent 72%); }
   .panel.offline::after { display: none; }
 
-  .panel.failover { border-color: rgba(255, 106, 88, .25); border-top-color: rgba(255, 150, 135, .42);
-    background: linear-gradient(165deg, rgba(255, 130, 115, .07), rgba(255, 106, 88, .03)); }
+  /* Die Failover-Platte bleibt eine Glasplatte: Frost-Koernung und Reflexion
+     werden mit uebernommen, nur die unterste Farbschicht und die Kanten
+     werden warm. Wuerde hier nur 'background' gesetzt, verloere ausgerechnet
+     die auffaelligste Kachel ihre Glaswirkung. */
+  .panel.failover {
+    background:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
+      linear-gradient(115deg, rgba(255,232,228,.10) 0%, transparent 34%, transparent 62%, rgba(255,200,190,.04) 100%),
+      linear-gradient(158deg, rgba(255,130,115,.085), rgba(255,106,88,.025) 45%, rgba(255,120,105,.06));
+    border-color: rgba(255, 106, 88, .28);
+    border-top-color: rgba(255, 186, 175, .46);
+    border-left-color: rgba(255, 160, 148, .26);
+    border-bottom-color: rgba(20, 6, 4, .55);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 214, 206, .34),
+      inset 1px 0 0 rgba(255, 180, 170, .14),
+      inset 0 -1px 0 rgba(0,0,0,.40),
+      inset -1px 0 0 rgba(0,0,0,.25),
+      inset 0 18px 30px -22px rgba(255, 214, 206, .28),
+      0 20px 42px -26px rgba(0,0,0,.92);
+  }
   .panel.offline { opacity: .55; }
 
   /* Farbsaum an den Ziffern, wie aus einer billigen Projektionsoptik. Per
