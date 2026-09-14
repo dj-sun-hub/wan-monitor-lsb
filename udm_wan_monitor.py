@@ -538,7 +538,11 @@ FRESH_STALE_S = OFFLINE_THRESHOLD_S
 # Vorher war ein Failover nur sichtbar, SOLANGE er lief - wer 10 Minuten
 # spaeter draufschaute, sah nichts mehr davon.
 EVENT_LOG_KEEP = 50
-EVENT_LOG_SHOW = 8
+# Die Uebersicht muss ohne Scrollbalken auf EINEN Bildschirm passen (harte
+# Vorgabe) - das Protokoll steht deshalb neben dem Systemschema statt darunter
+# und zeigt nur wenige Eintraege; aeltere sind per Scrollen im Protokoll
+# selbst erreichbar, ohne die Seitenhoehe zu veraendern.
+EVENT_LOG_SHOW = 4
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
@@ -1603,10 +1607,31 @@ def _event_log_html(events, now):
 # der Darstellung sollen gleich bleiben.
 HUD_CSS = """
   :root { --hull-2: #171f26; --phosphor-dim: #2d6b64; --alert-dim: #7a2b25; }
+
+  /* ---------------------------------------------------------------------
+     Passt-auf-einen-Bildschirm-Layout (harte Vorgabe: KEIN Scrollbalken).
+     Die Seite ist eine Flex-Spalte ueber die volle Viewport-Hoehe; alles
+     ausser dem Kachelraster hat seine natuerliche Hoehe, das Raster bekommt
+     den Rest und gibt Ueberschuss/Mangel an die Charts weiter (max 140px =
+     unveraenderte Zeichenflaeche wie vorher, min 64px, damit auf niedrigen
+     Fenstern die Seite schrumpft statt zu scrollen). Reine Hoehenverteilung
+     per Flexbox - ohne JavaScript, ohne feste Pixelannahmen ueber die
+     Bildschirmgroesse des Betrachters.
+     --------------------------------------------------------------------- */
   body { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 15px;
+    padding: 16px 20px 12px;
     background-image: repeating-linear-gradient(180deg, rgba(95,224,209,.025) 0px,
       rgba(95,224,209,.025) 1px, transparent 1px, transparent 3px); }
-  .wrap { max-width: 1840px; }
+  .wrap { max-width: 1840px; width: 100%; }
+  /* Nur bei dreispaltigem Raster (zwei Kachelreihen) auf Bildschirmhoehe
+     einpassen. Bei zwei oder einer Spalte sind es drei bzw. sechs Reihen -
+     die in die Fensterhoehe zu zwingen wuerde die Kacheln zu Streifen
+     stauchen; dort ist Scrollen richtig. */
+  @media (min-width: 901px) {
+    html, body { height: 100%; }
+    body { display: flex; flex-direction: column; }
+    .wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  }
   h1, .chip, .fn, .hub-lbl { font-family: "Rajdhani", "Segoe UI", sans-serif; letter-spacing: .04em; }
   .num { font-variant-numeric: tabular-nums; }
 
@@ -1625,9 +1650,9 @@ HUD_CSS = """
   @keyframes bk-pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 
   /* Kopfzeile */
-  header { border-bottom: none; margin-bottom: 22px; padding-bottom: 0; }
+  header { border-bottom: none; margin-bottom: 0; padding-bottom: 0; flex: 0 0 auto; }
   .boot-line { font-size: 11.5px; color: var(--phosphor-dim); letter-spacing: .12em;
-    margin-bottom: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    margin-bottom: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .boot-line .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--down);
     box-shadow: 0 0 6px var(--down); animation: blink 2s steps(1) infinite; margin: 0; }
   .boot-line .sync { margin-left: auto; display: flex; align-items: center; gap: 6px;
@@ -1637,36 +1662,44 @@ HUD_CSS = """
   .sync-dot.aging { background: var(--up); box-shadow: 0 0 5px var(--up); }
   .sync-dot.stale { background: var(--alert); box-shadow: 0 0 5px var(--alert); animation: blink 1s steps(1) infinite; }
   #refresh-cd { color: inherit; font-weight: 600; }
-  h1 { font-size: 30px; font-weight: 700; margin: 0 0 4px; text-transform: uppercase;
+  .brand-logo { height: 32px; }
+  h1 { font-size: 24px; font-weight: 700; margin: 0; text-transform: uppercase;
     letter-spacing: .04em; text-wrap: balance; }
   h1 .accent { color: var(--down); }
   .subhead { color: var(--dim); font-size: 12.5px; letter-spacing: .05em; }
   .subhead b { color: var(--text); font-weight: 600; }
 
-  .telemetry-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 14px; margin-top: 20px; }
-  .telemetry-strip .cell { background: var(--panel); padding: 14px 16px 12px;
+  .telemetry-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-top: 12px; }
+  .telemetry-strip .cell { background: var(--panel); padding: 9px 14px 8px;
     clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%); }
-  .telemetry-strip .label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
-  .telemetry-strip .val { font-size: 22px; font-weight: 600; color: var(--text); margin-top: 4px; }
-  .telemetry-strip .val .unit { font-size: 13px; color: var(--dim); margin-left: 3px; }
+  .telemetry-strip .label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  .telemetry-strip .label .lfoot { color: var(--phosphor-dim); }
+  .telemetry-strip .val { font-size: 19px; font-weight: 600; color: var(--text); margin-top: 2px; }
+  .telemetry-strip .val .unit { font-size: 12px; color: var(--dim); margin-left: 3px; }
   .telemetry-strip .val.alert { color: var(--alert); }
 
-  .mlabel { font-size: 11px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
-  .month-meter { margin-top: 18px; }
-  .month-meter .mlabel { margin-bottom: 6px; }
-  .segments { display: flex; gap: 3px; height: 12px; }
+  .mlabel { font-size: 10px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
+  .month-meter { margin-top: 10px; }
+  .month-meter .mlabel { margin-bottom: 4px; }
+  .segments { display: flex; gap: 3px; height: 9px; }
   .segments i { flex: 1; background: var(--hull-2); border-top: 1px solid var(--line); }
   .segments i.lit { background: var(--down); box-shadow: 0 0 5px var(--phosphor-dim); border-top-color: var(--down); }
   .segments i.lit.warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); border-top-color: var(--warn); }
   .segments i.lit.crit { background: var(--alert); box-shadow: 0 0 4px var(--alert); border-top-color: var(--alert); }
 
+  /* Schema und Protokoll teilen sich EINE Zeile - untereinander waren sie
+     zusammen ~340px hoch und sprengten die Bildschirmhoehe. */
+  .deck { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 20px; margin-top: 14px; flex: 0 0 auto; }
+  @media (max-width: 900px) { .deck { grid-template-columns: 1fr; } }
+
   /* Systemschema (HTML/CSS statt SVG, siehe _schema_html) */
-  .schema { margin-top: 28px; }
-  .schema .mlabel { margin-bottom: 10px; }
-  .bus { display: flex; align-items: flex-start; padding: 4px 0 2px; }
+  .schema { background: var(--panel); border: 1px solid var(--line); padding: 10px 16px 12px; }
+  .schema .mlabel { margin-bottom: 8px; }
+  .bus { display: flex; align-items: flex-start; padding: 2px 0 0; }
   /* --hub-h/2: die Trunk-Linie dockt genau an der Mittelachse des Hubs an. */
-  .bus { --hub-h: 27px; --drop-h: 26px; }
+  .bus { --hub-h: 25px; --drop-h: 20px; }
   .bus .hub { flex: 0 0 auto; font-family: "Rajdhani", "Segoe UI", sans-serif;
     font-size: 11px; font-weight: 600; letter-spacing: .08em; line-height: 1;
     color: var(--text); background: var(--hull-2); border: 1px solid var(--down);
@@ -1681,11 +1714,11 @@ HUD_CSS = """
   .snode.lost .drop { border-left-color: var(--line); border-left-style: dashed; }
   .snode .pulse { position: absolute; left: -3.5px; top: 0; width: 5px; height: 5px;
     border-radius: 50%; background: var(--down); opacity: 0; }
-  .snode .bulb { width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid var(--down);
+  .snode .bulb { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--down);
     background: var(--ink); box-shadow: 0 0 6px var(--phosphor-dim); }
   .snode.alert .bulb { border-color: var(--alert); background: var(--alert-dim); box-shadow: 0 0 7px var(--alert); }
   .snode.lost .bulb { border-color: var(--line); background: var(--ink); box-shadow: none; }
-  .snode .name { font-size: 11px; color: var(--dim); margin-top: 7px; letter-spacing: .06em; }
+  .snode .name { font-size: 11px; color: var(--dim); margin-top: 5px; letter-spacing: .06em; }
   .snode.alert .name { color: var(--alert); }
   @media (prefers-reduced-motion: no-preference) {
     .snode.ok .pulse { animation: pulse-travel 2.6s linear infinite; } }
@@ -1695,13 +1728,16 @@ HUD_CSS = """
     88% { opacity: 1; }
     100% { transform: translateY(var(--drop-h)); opacity: 0; } }
 
-  /* Konsolen-Panels: Raster-Abstand/Innenabstand wie zuvor (20px / 21px 23px) */
-  .overview-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); margin-top: 28px; }
-  @media (max-width: 900px) { .overview-grid { grid-template-columns: repeat(2, 1fr); } }
+  /* Konsolen-Panels: Raster-Abstand wie zuvor (20px). Das Raster bekommt die
+     Resthoehe und gibt sie an die Charts weiter (siehe .mini-chart-col). */
+  .overview-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 1fr; margin-top: 16px; }
+  @media (min-width: 901px) { .overview-grid { flex: 1 1 auto; min-height: 0; } }
+  @media (max-width: 900px) { .overview-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: auto; } }
   @media (max-width: 600px) { .overview-grid { grid-template-columns: 1fr; } }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 0;
     clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
-    padding: 21px 23px; display: flex; flex-direction: column; gap: 11px; }
+    padding: 14px 18px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
   .panel.failover { border-color: var(--alert); background: linear-gradient(180deg, var(--panel) 0%, var(--failover-bg) 100%); }
   .panel.offline { opacity: .6; }
   .panel.offline .panel-head .fn { color: var(--dim); }
@@ -1726,23 +1762,34 @@ HUD_CSS = """
   .readouts .rv.value-alert { color: var(--alert); }
   .readouts .rv.value-warn { color: var(--warn); }
   .readouts .threshold-ref { font-size: 10.5px; }
-  .mini-meter .segments { height: 7px; }
-  .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .mini-chart-col .chart { height: 140px; }
+  .mini-meter .segments { height: 6px; }
+  .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+    flex: 1 1 auto; min-height: 0; }
+  .mini-chart-col { display: flex; flex-direction: column; min-height: 0; }
+  /* Zeichenflaeche bleibt bei den bisherigen 140px, sobald der Bildschirm
+     hoch genug ist (max-height); auf niedrigeren Fenstern schrumpft sie,
+     statt die Seite in einen Scrollbalken laufen zu lassen. */
+  .mini-chart-col .chart { flex: 1 1 auto; height: auto; min-height: 64px; max-height: 140px; }
+  /* Legende sitzt in der Chart-Beschriftungszeile statt in einer eigenen
+     Zeile darunter - eine Zeile weniger je Kachel spart ueber zwei
+     Kachelreihen rund 50px Seitenhoehe. */
   .mini-chart-label { color: var(--dim); font-size: 9.5px; text-transform: uppercase;
-    letter-spacing: .09em; margin-bottom: 2px; }
+    letter-spacing: .09em; margin-bottom: 2px; flex: 0 0 auto;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    white-space: nowrap; overflow: hidden; }
+  .mini-chart-label .lg { color: var(--dim); letter-spacing: .05em; }
+  .mini-chart-label .dot { width: 7px; height: 7px; border-radius: 0; margin: 0 3px 0 5px; }
   .chart .flow-down-line { filter: drop-shadow(0 0 2px var(--phosphor-dim)); }
-  .panel .legend { margin-top: 0; font-size: 10.5px; gap: 14px; }
-  .panel .legend .dot { width: 8px; height: 8px; border-radius: 0; }
 
-  /* Ereignisprotokoll */
-  .log { margin-top: 28px; background: var(--panel); border: 1px solid var(--line); padding: 4px 0; }
+  /* Ereignisprotokoll - sitzt neben dem Schema (siehe .deck) */
+  .log { background: var(--panel); border: 1px solid var(--line); padding: 0 0 2px;
+    display: flex; flex-direction: column; min-height: 0; }
   .log .log-head { display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 16px; border-bottom: 1px solid var(--line);
-    font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
-  .log ol { list-style: none; margin: 0; padding: 6px 0; }
-  .log li { display: grid; grid-template-columns: 110px 110px 1fr; gap: 12px;
-    padding: 5px 16px; font-size: 12px; color: var(--dim); align-items: baseline; }
+    padding: 7px 16px; border-bottom: 1px solid var(--line); flex: 0 0 auto;
+    font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  .log ol { list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+  .log li { display: grid; grid-template-columns: 78px 105px 1fr; gap: 10px;
+    padding: 3px 16px; font-size: 11.5px; color: var(--dim); align-items: baseline; }
   .log li .t { color: var(--phosphor-dim); }
   .log li .fn { color: var(--text); font-weight: 600; }
   .log li.crit .msg { color: var(--alert); }
@@ -1750,7 +1797,47 @@ HUD_CSS = """
   .log li.ok .msg { color: var(--down); }
   @media (max-width: 640px) { .log li { grid-template-columns: 80px 90px 1fr; font-size: 11px; } }
 
-  footer { margin-top: 36px; font-size: 11px; letter-spacing: .04em; line-height: 1.7; }
+  footer { margin-top: 12px; padding-top: 8px; font-size: 10.5px; letter-spacing: .04em;
+    line-height: 1.5; flex: 0 0 auto; }
+
+  /* Niedrige Fenster (kleine Notebooks, Browser mit vielen Leisten): die
+     sechs Konsolenkacheln haben Vorrang. Erst wird das Beiwerk gestaucht,
+     dann faellt der Monatsbalken weg - die Tagesangabe steht ohnehin auch
+     in der Telemetrie-Kachel "Aktueller Monat". Ziel bleibt: kein
+     Scrollbalken. */
+  @media (max-height: 820px) {
+    body { padding: 10px 16px 8px; }
+    .deck { max-height: 104px; margin-top: 10px; }
+    .month-meter { display: none; }
+    .telemetry-strip .cell { padding: 6px 12px 5px; }
+    .telemetry-strip .val { font-size: 16px; }
+    .overview-grid { margin-top: 10px; gap: 14px; }
+    .panel { padding: 10px 14px 9px; gap: 6px; }
+    .mini-chart-col .chart { min-height: 48px; }
+    footer { margin-top: 8px; padding-top: 6px; }
+  }
+  /* Noch niedriger: Schema und Protokoll weichen ganz. Beides ist eine
+     Zusammenfassung dessen, was die Kacheln darunter ohnehin zeigen - lieber
+     weglassen als die Kacheln in einen Scrollbalken draengen. */
+  @media (max-height: 700px) {
+    .deck { display: none; }
+    .mini-chart-col .chart { min-height: 40px; }
+    footer { font-size: 10px; }
+  }
+
+  /* Schmale Bildschirme scrollen ohnehin (siehe min-width:901px oben), also
+     hier die volle Zeichenflaeche und alle Bausteine zurueckholen. MUSS nach
+     den beiden Hoehen-Stufen stehen: gleiche Spezifitaet, spaeter gewinnt -
+     sonst wuerde auf einem hochkant gehaltenen Telefon (Fensterhoehe < 820px)
+     faelschlich die Stauch-Variante fuer flache Fenster greifen. */
+  @media (max-width: 900px) {
+    body { padding: 16px 20px 12px; }
+    .deck { display: grid; max-height: none; }
+    .month-meter { display: block; }
+    .overview-grid { margin-top: 16px; gap: 20px; }
+    .panel { padding: 14px 18px 12px; gap: 8px; }
+    .mini-chart-col .chart { height: 140px; min-height: 0; max-height: none; flex: 0 0 auto; }
+  }
   @keyframes blink { 50% { opacity: .15; } }
   @media (prefers-reduced-motion: reduce) {
     .boot-line .dot, .sync-dot.stale, .bracketed.failover::before, .bracketed.failover::after,
@@ -1773,15 +1860,18 @@ def render_overview_html(consoles, start, now, events=()):
     total_all = sum(c["total"] for c in consoles)
     n_failover = sum(1 for c in consoles if c["is_failover"])
 
-    def cell(label, text, alert=False):
+    def cell(label, text, alert=False, foot=""):
         val, unit = _split_unit(text)
+        # foot steht im Label mit, nicht als eigene Zeile: eine zusaetzliche
+        # Zeile in der Telemetrie-Leiste kostet direkt Seitenhoehe.
+        label_html = (f'{label} <span class="lfoot">{foot}</span>' if foot else label)
         return (f'<div class="cell bracketed"><div class="bk-tr"></div><div class="bk-bl"></div>'
-                f'<div class="label">{label}</div>'
+                f'<div class="label">{label_html}</div>'
                 f'<div class="val num{" alert" if alert else ""}">{val}<span class="unit">{unit}</span></div></div>')
 
     telemetry = "\n      ".join([
         cell("Laufzeit", f"{running_days} Tage"),
-        cell("Aktueller Monat", human_bytes(total_month_all)),
+        cell("Aktueller Monat", human_bytes(total_month_all), foot=f"Tag {day_of_month}/{days_in_month}"),
         cell("Letzte 30 Tage", human_bytes(total_30d_all)),
         cell("Gesamt seit Start", human_bytes(total_all)),
         cell("Aktive Failover", f"{n_failover} / {len(consoles)}", alert=n_failover > 0),
@@ -1793,22 +1883,25 @@ def render_overview_html(consoles, start, now, events=()):
         threshold = _console_alert_threshold(c["device"])
         ratio = c["total_month"] / threshold if threshold else 0.0
         meter_mode = "crit" if ratio > 1.0 else ("warn" if ratio > WARN_THRESHOLD_FACTOR else "")
+        # Bewusst kurze, EINZEILIGE Statuszeilen: ein Umbruch hier kostet
+        # ueber zwei Kachelreihen hinweg sofort ~30px Seitenhoehe, und die
+        # Seite muss ohne Scrollbalken auf einen Bildschirm passen.
         if status == "failover":
             chip = '<span class="chip failover">Failover</span>'
-            sub = (f'Upload-Ø {human_kbps(c["last_rate_kbps"])} &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps '
-                   f'({FAILOVER_CONSECUTIVE} Polls) &middot; Traffic läuft über LTE')
+            sub = (f'Upload-Ø {human_kbps(c["last_rate_kbps"])} &middot; Schwelle '
+                   f'{FAILOVER_THRESHOLD_KBPS:.0f} kbps &middot; LTE trägt Last')
             sub_cls = " alert"
         elif status == "offline":
             chip = '<span class="chip lost">Link Lost</span>'
             if c["last_seen"] is not None:
                 age_min = int((now - c["last_seen"]).total_seconds() // 60)
-                sub = f'Kein Poll seit {age_min} Min &middot; letzter Stand eingefroren'
+                sub = f'Kein Poll seit {age_min} Min &middot; Stand eingefroren'
             else:
                 sub = 'Noch kein einziger Messpunkt'
             sub_cls = ""
         else:
             chip = '<span class="chip nominal">Nominal</span>'
-            sub = f'Akt. Upload {human_kbps(c["last_rate_kbps"])} &middot; unter Schwelle {FAILOVER_THRESHOLD_KBPS:.0f} kbps'
+            sub = f'Akt. Upload {human_kbps(c["last_rate_kbps"])} &middot; unter Schwelle'
             sub_cls = ""
         month_val, month_unit = _split_unit(human_bytes(c["total_month"]))
         d30_val, d30_unit = _split_unit(human_bytes(c["total_30d"]))
@@ -1818,7 +1911,6 @@ def render_overview_html(consoles, start, now, events=()):
       <div class="bk-tr"></div><div class="bk-bl"></div>
       <div class="panel-head"><h3 class="fn"><span class="idx num">{i:02d}·</span>{html.escape(c['device'])}</h3>{chip}</div>
       <div class="subhead{sub_cls}">{sub}</div>
-      <hr class="hairline">
       <div class="readouts">
         <div class="r"><div class="rl">Monat</div><div class="rv num{total_alert_class(c['total_month'], c['device'])}">{month_val}<span class="unit">{month_unit}</span> <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
         <div class="r"><div class="rl">30 Tage</div><div class="rv num">{d30_val}<span class="unit">{d30_unit}</span></div></div>
@@ -1827,18 +1919,14 @@ def render_overview_html(consoles, start, now, events=()):
       <div class="mini-meter" title="Monatsvolumen im Verhältnis zur Rot-Schwelle ({alert_threshold_label(c['device'])})">{_segments_html(12, round(min(ratio, 1.0) * 12), meter_mode)}</div>
       <div class="mini-charts">
         <div class="mini-chart-col">
-          <div class="mini-chart-label">Stunde</div>
+          <div class="mini-chart-label">Stunde <span class="lg">Spitze {human_bytes(c['peak'])}/h</span></div>
           {c['chart']}
         </div>
         <div class="mini-chart-col">
-          <div class="mini-chart-label">Flow</div>
+          <div class="mini-chart-label">Flow <span class="lg"><span class="dot" style="background:var(--down)"></span>Down
+            <span class="dot" style="background:var(--up)"></span>Up</span></div>
           {c['flow_chart_mini']}
         </div>
-      </div>
-      <div class="legend small">
-        <span><span class="dot" style="background:var(--down)"></span>Down</span>
-        <span><span class="dot" style="background:var(--up)"></span>Up</span>
-        <span>Spitze {human_bytes(c['peak'])}/h</span>
       </div>
     </div>""")
     cards_html = "\n    ".join(cards) or '<p class="dim">Keine Konsolen konfiguriert.</p>'
@@ -1870,8 +1958,6 @@ def render_overview_html(consoles, start, now, events=()):
           </span>
         </div>
         <h1>WAN-Failover <span class="accent">Übersicht</span></h1>
-        <div class="subhead">Dauerbetrieb seit <b>{start.astimezone().strftime('%d.%m.%Y %H:%M')}</b> &middot;
-          {len(consoles)} Konsolen &middot; SIM-Datenzähler der LTE-Modems &middot; nur Failover-Traffic</div>
       </div>
       {_logo_html()}
     </div>
@@ -1881,32 +1967,35 @@ def render_overview_html(consoles, start, now, events=()):
     </div>
 
     <div class="month-meter">
-      <div class="mlabel">Kalendermonat &middot; Tag {day_of_month} / {days_in_month}</div>
+      <div class="mlabel">Kalendermonat &middot; Tag {day_of_month} von {days_in_month}</div>
       {_segments_html(days_in_month, day_of_month)}
     </div>
+  </header>
 
+  <div class="deck">
     <div class="schema bracketed">
       <div class="bk-tr"></div><div class="bk-bl"></div>
       <div class="mlabel">Systemschema &middot; Site-Manager-Bus</div>
       {_schema_html(consoles)}
     </div>
-  </header>
+
+    <div class="log bracketed">
+      <div class="bk-tr"></div><div class="bk-bl"></div>
+      <div class="log-head"><span>Ereignisprotokoll</span><span>Statuswechsel</span></div>
+      <ol>
+        {_event_log_html(events, now)}
+      </ol>
+    </div>
+  </div>
 
   <div class="overview-grid">
     {cards_html}
   </div>
 
-  <div class="log bracketed">
-    <div class="bk-tr"></div><div class="bk-bl"></div>
-    <div class="log-head"><span>Ereignisprotokoll</span><span>Statuswechsel &middot; letzte {EVENT_LOG_SHOW}</span></div>
-    <ol>
-      {_event_log_html(events, now)}
-    </ol>
-  </div>
-
-  <footer>Datenquelle: SIM-Datenzähler des LTE-Modems (via Site-Manager-Connector-Proxy),
-    {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.
-    Failover-Schwelle: Upload-Ø &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps über {FAILOVER_CONSECUTIVE} Polls &middot;
+  <footer>Dauerbetrieb seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} &middot;
+    Datenquelle: SIM-Datenzähler der LTE-Modems (via Site-Manager-Connector-Proxy), {len(consoles)} Konsolen &middot;
+    Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst &middot;
+    Failover ab Upload-Ø &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps über {FAILOVER_CONSECUTIVE} Polls &middot;
     Link Lost ab {OFFLINE_THRESHOLD_S // 60} Min ohne Messpunkt.</footer>
 </div>
 {refresh_countdown_script(now)}
