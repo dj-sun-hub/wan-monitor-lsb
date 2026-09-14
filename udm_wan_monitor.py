@@ -521,6 +521,24 @@ FAILOVER_EXCLUDED_DEVICES = set()
 # Update" gilt (5x der 1-Minuten-Pollintervall Toleranz fuer vereinzelt
 # uebersprungene Laeufe, siehe poll() Fehlerbehandlung).
 OFFLINE_THRESHOLD_S = 300
+# Datenfrische-Anzeige ("SYNC" oben rechts): die Seite zaehlt clientseitig
+# die Sekunden seit ihrem Erzeugungszeitpunkt hoch. Bis FRESH_WARN_S teal,
+# danach amber, ab FRESH_STALE_S rot blinkend. Zweck: die Seite ist statisch
+# und wird alle ~60s neu deployt - haengt der Workflow (Deploy-Livelock,
+# Runner-Rueckstau, das gab es mehrfach), sieht sie trotzdem voellig normal
+# aus, die Zahlen sind aber 20 Minuten alt und niemand merkt es. So markiert
+# sie sich selbst als veraltet, ohne Reload und ohne Blick in GitHub Actions.
+# FRESH_STALE_S bewusst = OFFLINE_THRESHOLD_S: dieselbe Toleranz, die auch
+# eine Konsole als "Link Lost" einstuft.
+FRESH_WARN_S = 180
+FRESH_STALE_S = OFFLINE_THRESHOLD_S
+# Ereignisprotokoll: Statuswechsel je Konsole (Nominal <-> Failover <-> Link
+# Lost) werden in monitor_state.json festgehalten (EVENT_LOG_KEEP Eintraege
+# rollierend) und die juengsten EVENT_LOG_SHOW auf der Uebersicht gezeigt.
+# Vorher war ein Failover nur sichtbar, SOLANGE er lief - wer 10 Minuten
+# spaeter draufschaute, sah nichts mehr davon.
+EVENT_LOG_KEEP = 50
+EVENT_LOG_SHOW = 8
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
@@ -762,6 +780,7 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False):
         flow_chart=flow_chart, flow_chart_mini=flow_chart_mini,
         flow_points=flow_points, flow_interval_min=flow_interval_min,
         last24=last24, is_failover=is_failover, last_rate_kbps=last_rate_kbps, is_offline=is_offline,
+        last_seen=last_seen,
     )
 
 
@@ -1020,8 +1039,23 @@ COLOR_THEMES = {
         "h2_bg": "var(--down)", "h2_color": "#ffffff", "h2_padding": "5px 14px", "h2_radius": "8px",
         "logo": "negative",
     },
+    # Leitstand-/HUD-Optik (Nutzerwunsch, aus der Stilstudie "WAN-
+    # Kommandobruecke" uebernommen): dieselbe Farbfamilie wie "default"
+    # (Teal fuer Down, Amber fuer Up, Rot fuer Alert), nur gesaettigter und
+    # heller fuer den Charakter eines leuchtenden Konsolen-Displays, auf
+    # nahezu schwarzem Grund. Bewusst KEIN reines Neon-Gruen-auf-Schwarz.
+    # Zusaetzliche HUD-Tokens (--hull-2, --phosphor-dim, --alert-dim) werden
+    # nur von der Uebersichtsseite gebraucht und dort direkt gesetzt.
+    "hud": {
+        "ink": "#090c0f", "panel": "#10161b", "line": "#263139",
+        "text": "#d9ece9", "dim": "#6d848c", "strong": "#ffffff",
+        "down": "#5fe0d1", "up": "#e6ac5c", "alert": "#ff5a4d", "warn": "#e8c14c",
+        "failover_bg": "#1a1210", "failover_bg_strong": "#241410", "failover_border_strong": "#ff5a4d",
+        "h2_bg": "transparent", "h2_color": "var(--dim)", "h2_padding": "0", "h2_radius": "0",
+        "logo": "negative",
+    },
 }
-COLOR_THEME = "default"  # Weisgerber-Farblayout verworfen (Nutzer-Feedback), Logo bleibt aber aktiv
+COLOR_THEME = "hud"  # Leitstand-/HUD-Layout (Nutzerwunsch); "default" = vorheriges dunkles Kachel-Layout
 
 
 # Logo-Bilddaten aus dem offiziellen CI-Handbuch extrahiert (Seite 1: Block-
@@ -1165,11 +1199,25 @@ def refresh_countdown_script(now):
 (function() {{
   var generatedAtMs = new Date("{now.isoformat()}").getTime();
   var refreshS = {REPORT_REFRESH_S};
+  var freshWarnS = {FRESH_WARN_S}, freshStaleS = {FRESH_STALE_S};
   var minRetryMs = 10000;
   var el = document.getElementById('refresh-cd');
+  var syncVal = document.getElementById('sync-val');
+  var syncDot = document.querySelector('.sync-dot');
   if (!el) return;
+  // Datenfrische (siehe FRESH_WARN_S): Alter des Datenstands, nicht der
+  // Reload-Countdown - nach einem Reload ohne neuen Poll bleibt
+  // generatedAtMs gleich und das Alter waechst weiter, genau das soll
+  // sichtbar werden.
+  function syncTick(elapsedS) {{
+    if (!syncVal || !syncDot) return;
+    syncVal.textContent = elapsedS < 60 ? elapsedS + 's'
+      : Math.floor(elapsedS / 60) + 'm ' + (elapsedS % 60) + 's';
+    syncDot.className = 'sync-dot' + (elapsedS > freshStaleS ? ' stale' : (elapsedS > freshWarnS ? ' aging' : ''));
+  }}
   function tick() {{
     var elapsedS = Math.floor((Date.now() - generatedAtMs) / 1000);
+    syncTick(Math.max(elapsedS, 0));
     var remaining = Math.max(refreshS - elapsedS, 0);
     var m = Math.floor(remaining / 60), s = remaining % 60;
     el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
@@ -1427,43 +1475,356 @@ def render_html(**c):
 </html>"""
 
 
-def render_overview_html(consoles, start, now):
-    """Übersichtsseite: eine Karte pro Konsole (Kernzahlen + Mini-Chart),
-    Link zur jeweiligen Detailseite. consoles = Liste von compute_stats()-dicts."""
+def _console_status(c):
+    """Einheitliche Status-Einstufung einer Konsole fuer Uebersicht, Schema
+    und Ereignisprotokoll: 'failover' > 'offline' > 'nominal'. Failover hat
+    Vorrang, is_offline setzt is_failover in compute_stats() aber ohnehin
+    schon zurueck, beides gleichzeitig kommt also nicht vor."""
+    if c["is_failover"]:
+        return "failover"
+    if c["is_offline"]:
+        return "offline"
+    return "nominal"
+
+
+def _segments_html(total, lit, mode=""):
+    """Segment-Messer (HUD-Motiv statt durchgehendem Balken): total Segmente,
+    die ersten lit davon 'leuchten'. mode ('warn'/'crit') faerbt die
+    leuchtenden Segmente amber/rot."""
+    lit = max(0, min(int(lit), total))
+    lit_cls = "lit" + (f" {mode}" if mode else "")
+    cells = "".join(f'<i class="{lit_cls}"></i>' if i < lit else "<i></i>" for i in range(total))
+    return f'<div class="segments">{cells}</div>'
+
+
+def _split_unit(text):
+    """'31.5 GB' -> ('31.5', 'GB') fuer getrennt gestylte Einheit in den
+    Telemetrie-Kacheln. Kein Leerzeichen -> Einheit leer."""
+    parts = text.rsplit(" ", 1)
+    return (parts[0], parts[1]) if len(parts) == 2 else (text, "")
+
+
+def _schema_html(consoles):
+    """Systemschema als Bus-Diagramm: links der Site-Manager (die UniFi-
+    Cloud-API, ueber die ALLE Konsolen gepollt werden - das ist die reale
+    Topologie dieses Monitors, kein erfundener 'WAN-Kern'), davon eine
+    Bus-Linie mit einem Abzweig je Konsole. Knotenfarbe = aktueller Status
+    wie in den Panels; auf nominalen Abzweigen wandert ein Puls (rein
+    dekorativ, respektiert prefers-reduced-motion).
+
+    Bewusst HTML/CSS statt SVG: ein SVG braucht eine feste viewBox, und die
+    passt nie zur tatsaechlichen Containerbreite - bei 'meet' entstehen
+    breite Leerraender und der letzte Knoten rutscht aus dem (per
+    overflow-x:hidden abgeschnittenen) Bild, bei 'none' werden die runden
+    Knoten zu Ellipsen. Als Flex-Zeile verteilt sich das Schema dagegen bei
+    jeder Breite korrekt, ohne dass Schrift oder Knoten mitskalieren."""
+    nodes = []
+    for i, c in enumerate(consoles):
+        status = _console_status(c)
+        cls = {"failover": "alert", "offline": "lost"}.get(status, "ok")
+        short = html.escape(c["device"].split("--")[0])
+        label = html.escape(f'{c["device"]}: { {"alert": "Failover", "lost": "Link Lost"}.get(cls, "Nominal")}')
+        pulse = f'<i class="pulse" style="animation-delay:{i * 0.35:.2f}s"></i>' if cls == "ok" else ""
+        nodes.append(f'<div class="snode {cls}" title="{label}">'
+                     f'<span class="drop">{pulse}</span><span class="bulb"></span>'
+                     f'<span class="name">{short}</span></div>')
+    return (f'<div class="bus" role="img" aria-label="Systemschema: Site-Manager und '
+            f'{len(consoles)} Konsolen">'
+            f'<div class="hub">SITE-MANAGER</div>'
+            f'<div class="nodes">{"".join(nodes)}</div></div>')
+
+
+def _update_event_log(state, consoles, now):
+    """Haelt Statuswechsel je Konsole in state['events'] fest (rollierend,
+    EVENT_LOG_KEEP) und merkt sich den zuletzt gesehenen Status in
+    state['status'], damit beim naechsten Poll (neuer Prozess!) der Wechsel
+    erkannt wird. Beim allerersten Lauf ohne gespeicherten Status gibt es
+    EINEN Ausgangslage-Eintrag statt sechs Pseudo-Wechseln."""
+    events = state.setdefault("events", [])
+    prev = state.get("status")
+    current = {c["device"]: _console_status(c) for c in consoles}
+
+    def add(console, kind, msg):
+        events.append({"ts": now.isoformat(), "console": console, "kind": kind, "msg": msg})
+
+    if prev is None:
+        n_nom = sum(1 for s in current.values() if s == "nominal")
+        n_fo = sum(1 for s in current.values() if s == "failover")
+        n_off = sum(1 for s in current.values() if s == "offline")
+        add("MONITOR", "info",
+            f"PROTOKOLL AKTIVIERT — AUSGANGSLAGE: {n_nom} NOMINAL, {n_fo} FAILOVER, {n_off} LINK LOST")
+    else:
+        for c in consoles:
+            name, status, old = c["device"], current[c["device"]], prev.get(c["device"])
+            if old == status:
+                continue
+            if status == "failover":
+                add(name, "crit", f"UPLOAD-Ø {human_kbps(c['last_rate_kbps'])} > {FAILOVER_THRESHOLD_KBPS:.0f} KBPS "
+                                  f"({FAILOVER_CONSECUTIVE} POLLS) — FAILOVER BESTÄTIGT")
+            elif status == "offline":
+                add(name, "warn", f"KEIN POLL SEIT > {OFFLINE_THRESHOLD_S} S — STATUS: LINK LOST")
+            elif old == "failover":
+                add(name, "ok", f"UPLOAD-Ø {human_kbps(c['last_rate_kbps'])} WIEDER UNTER SCHWELLE — FAILOVER BEENDET")
+            elif old == "offline":
+                add(name, "ok", "VERBINDUNG WIEDERHERGESTELLT — LINK NOMINAL")
+            else:
+                add(name, "ok", "NEU IM MONITOR — STATUS: NOMINAL")
+    del events[:-EVENT_LOG_KEEP]
+    state["status"] = current
+
+
+def _event_log_html(events, now):
+    """Die juengsten EVENT_LOG_SHOW Eintraege, neuester zuerst. Datum nur,
+    wenn der Eintrag nicht von heute ist (spart Platz in der Zeitspalte)."""
+    today = now.astimezone().date()
+    items = []
+    for ev in list(events)[-EVENT_LOG_SHOW:][::-1]:
+        try:
+            ts_local = datetime.fromisoformat(ev["ts"]).astimezone()
+        except (KeyError, ValueError, TypeError):
+            continue
+        stamp = ts_local.strftime("%H:%M:%S") if ts_local.date() == today else ts_local.strftime("%d.%m. %H:%M")
+        kind = ev.get("kind", "info")
+        items.append(f'<li class="{html.escape(kind)}"><span class="t num">{stamp}</span>'
+                     f'<span class="fn">{html.escape(str(ev.get("console", "")))}</span>'
+                     f'<span class="msg">{html.escape(str(ev.get("msg", "")))}</span></li>')
+    if not items:
+        items.append('<li class="info"><span class="t num">--:--:--</span><span class="fn">MONITOR</span>'
+                     '<span class="msg">NOCH KEINE STATUSWECHSEL AUFGEZEICHNET</span></li>')
+    return "\n      ".join(items)
+
+
+# Zusatz-CSS der Uebersichtsseite: Leitstand-/HUD-Optik (aus der Stilstudie
+# uebernommen, Nutzerwunsch). Baut auf BASE_CSS auf (Chart-Innereien,
+# Tooltip, Footer) und ueberschreibt nur, was fuer das HUD anders ist.
+# Die Chart-Zeichenflaeche (140px Hoehe, identische viewBox) sowie Raster-
+# Abstand und Kachel-Innenabstand sind UNVERAENDERT gegenueber dem
+# vorherigen Layout - ausdruecklicher Nutzerwunsch: maximale Hoehen/Laengen
+# der Darstellung sollen gleich bleiben.
+HUD_CSS = """
+  :root { --hull-2: #171f26; --phosphor-dim: #2d6b64; --alert-dim: #7a2b25; }
+  body { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 15px;
+    background-image: repeating-linear-gradient(180deg, rgba(95,224,209,.025) 0px,
+      rgba(95,224,209,.025) 1px, transparent 1px, transparent 3px); }
+  .wrap { max-width: 1840px; }
+  h1, .chip, .fn, .hub-lbl { font-family: "Rajdhani", "Segoe UI", sans-serif; letter-spacing: .04em; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Eckklammern: das wiederkehrende HUD-Motiv */
+  .bracketed { position: relative; }
+  .bracketed::before, .bracketed::after, .bracketed .bk-tr, .bracketed .bk-bl {
+    content: ""; position: absolute; width: 14px; height: 14px;
+    border: 2px solid var(--down); opacity: .75; pointer-events: none; }
+  .bracketed::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+  .bracketed::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+  .bracketed .bk-tr { top: -1px; right: -1px; border-left: none; border-bottom: none; }
+  .bracketed .bk-bl { bottom: -1px; left: -1px; border-right: none; border-top: none; }
+  .bracketed.failover::before, .bracketed.failover::after,
+  .bracketed.failover .bk-tr, .bracketed.failover .bk-bl {
+    border-color: var(--alert); animation: bk-pulse 1.4s ease-in-out infinite; }
+  @keyframes bk-pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+
+  /* Kopfzeile */
+  header { border-bottom: none; margin-bottom: 22px; padding-bottom: 0; }
+  .boot-line { font-size: 11.5px; color: var(--phosphor-dim); letter-spacing: .12em;
+    margin-bottom: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .boot-line .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--down);
+    box-shadow: 0 0 6px var(--down); animation: blink 2s steps(1) infinite; margin: 0; }
+  .boot-line .sync { margin-left: auto; display: flex; align-items: center; gap: 6px;
+    color: var(--dim); cursor: help; }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--down);
+    box-shadow: 0 0 5px var(--phosphor-dim); flex: none; }
+  .sync-dot.aging { background: var(--up); box-shadow: 0 0 5px var(--up); }
+  .sync-dot.stale { background: var(--alert); box-shadow: 0 0 5px var(--alert); animation: blink 1s steps(1) infinite; }
+  #refresh-cd { color: inherit; font-weight: 600; }
+  h1 { font-size: 30px; font-weight: 700; margin: 0 0 4px; text-transform: uppercase;
+    letter-spacing: .04em; text-wrap: balance; }
+  h1 .accent { color: var(--down); }
+  .subhead { color: var(--dim); font-size: 12.5px; letter-spacing: .05em; }
+  .subhead b { color: var(--text); font-weight: 600; }
+
+  .telemetry-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px; margin-top: 20px; }
+  .telemetry-strip .cell { background: var(--panel); padding: 14px 16px 12px;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%); }
+  .telemetry-strip .label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  .telemetry-strip .val { font-size: 22px; font-weight: 600; color: var(--text); margin-top: 4px; }
+  .telemetry-strip .val .unit { font-size: 13px; color: var(--dim); margin-left: 3px; }
+  .telemetry-strip .val.alert { color: var(--alert); }
+
+  .mlabel { font-size: 11px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
+  .month-meter { margin-top: 18px; }
+  .month-meter .mlabel { margin-bottom: 6px; }
+  .segments { display: flex; gap: 3px; height: 12px; }
+  .segments i { flex: 1; background: var(--hull-2); border-top: 1px solid var(--line); }
+  .segments i.lit { background: var(--down); box-shadow: 0 0 5px var(--phosphor-dim); border-top-color: var(--down); }
+  .segments i.lit.warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); border-top-color: var(--warn); }
+  .segments i.lit.crit { background: var(--alert); box-shadow: 0 0 4px var(--alert); border-top-color: var(--alert); }
+
+  /* Systemschema (HTML/CSS statt SVG, siehe _schema_html) */
+  .schema { margin-top: 28px; }
+  .schema .mlabel { margin-bottom: 10px; }
+  .bus { display: flex; align-items: flex-start; padding: 4px 0 2px; }
+  /* --hub-h/2: die Trunk-Linie dockt genau an der Mittelachse des Hubs an. */
+  .bus { --hub-h: 27px; --drop-h: 26px; }
+  .bus .hub { flex: 0 0 auto; font-family: "Rajdhani", "Segoe UI", sans-serif;
+    font-size: 11px; font-weight: 600; letter-spacing: .08em; line-height: 1;
+    color: var(--text); background: var(--hull-2); border: 1px solid var(--down);
+    padding: 8px 12px; white-space: nowrap; }
+  .bus .nodes { flex: 1 1 auto; min-width: 0; display: flex;
+    position: relative; padding-top: calc(var(--hub-h) / 2); }
+  .bus .nodes::before { content: ""; position: absolute; left: 0; right: 0;
+    top: calc(var(--hub-h) / 2); border-top: 2px solid var(--line); }
+  .snode { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+  .snode .drop { position: relative; width: 0; height: var(--drop-h); border-left: 2px solid var(--phosphor-dim); }
+  .snode.alert .drop { border-left-color: var(--alert); }
+  .snode.lost .drop { border-left-color: var(--line); border-left-style: dashed; }
+  .snode .pulse { position: absolute; left: -3.5px; top: 0; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--down); opacity: 0; }
+  .snode .bulb { width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid var(--down);
+    background: var(--ink); box-shadow: 0 0 6px var(--phosphor-dim); }
+  .snode.alert .bulb { border-color: var(--alert); background: var(--alert-dim); box-shadow: 0 0 7px var(--alert); }
+  .snode.lost .bulb { border-color: var(--line); background: var(--ink); box-shadow: none; }
+  .snode .name { font-size: 11px; color: var(--dim); margin-top: 7px; letter-spacing: .06em; }
+  .snode.alert .name { color: var(--alert); }
+  @media (prefers-reduced-motion: no-preference) {
+    .snode.ok .pulse { animation: pulse-travel 2.6s linear infinite; } }
+  @keyframes pulse-travel {
+    0% { transform: translateY(0); opacity: 0; }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { transform: translateY(var(--drop-h)); opacity: 0; } }
+
+  /* Konsolen-Panels: Raster-Abstand/Innenabstand wie zuvor (20px / 21px 23px) */
+  .overview-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); margin-top: 28px; }
+  @media (max-width: 900px) { .overview-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .overview-grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 0;
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+    padding: 21px 23px; display: flex; flex-direction: column; gap: 11px; }
+  .panel.failover { border-color: var(--alert); background: linear-gradient(180deg, var(--panel) 0%, var(--failover-bg) 100%); }
+  .panel.offline { opacity: .6; }
+  .panel.offline .panel-head .fn { color: var(--dim); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .panel-head .fn { font-size: 17px; font-weight: 600; color: var(--text); margin: 0; }
+  .panel-head .idx { color: var(--phosphor-dim); font-size: 12px; margin-right: 6px; }
+  .chip { font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; font-weight: 600;
+    padding: 2px 8px; border: 1px solid currentColor; white-space: nowrap; }
+  .chip.nominal { color: var(--down); }
+  .chip.failover { color: var(--alert); background: rgba(255,90,77,.12); }
+  .chip.lost { color: var(--dim); }
+  .panel .subhead.alert { color: var(--alert); }
+  .hairline { border: none; border-top: 1px dashed var(--line); margin: 0; }
+  .readouts { display: flex; gap: 18px; }
+  .readouts .r { flex: 1; }
+  .readouts .rl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .09em; }
+  .readouts .rv { font-size: 16px; font-weight: 600; margin-top: 3px; color: var(--text); }
+  .readouts .rv .unit { font-size: 11px; }
+  /* Ohne diese zwei Regeln verlieren die Schwellwert-Farben: '.value-alert'
+     (0,1,0) unterliegt '.readouts .rv' (0,2,0) und der Monatswert bliebe
+     immer normal eingefaerbt. */
+  .readouts .rv.value-alert { color: var(--alert); }
+  .readouts .rv.value-warn { color: var(--warn); }
+  .readouts .threshold-ref { font-size: 10.5px; }
+  .mini-meter .segments { height: 7px; }
+  .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .mini-chart-col .chart { height: 140px; }
+  .mini-chart-label { color: var(--dim); font-size: 9.5px; text-transform: uppercase;
+    letter-spacing: .09em; margin-bottom: 2px; }
+  .chart .flow-down-line { filter: drop-shadow(0 0 2px var(--phosphor-dim)); }
+  .panel .legend { margin-top: 0; font-size: 10.5px; gap: 14px; }
+  .panel .legend .dot { width: 8px; height: 8px; border-radius: 0; }
+
+  /* Ereignisprotokoll */
+  .log { margin-top: 28px; background: var(--panel); border: 1px solid var(--line); padding: 4px 0; }
+  .log .log-head { display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 16px; border-bottom: 1px solid var(--line);
+    font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  .log ol { list-style: none; margin: 0; padding: 6px 0; }
+  .log li { display: grid; grid-template-columns: 110px 110px 1fr; gap: 12px;
+    padding: 5px 16px; font-size: 12px; color: var(--dim); align-items: baseline; }
+  .log li .t { color: var(--phosphor-dim); }
+  .log li .fn { color: var(--text); font-weight: 600; }
+  .log li.crit .msg { color: var(--alert); }
+  .log li.warn .msg { color: var(--up); }
+  .log li.ok .msg { color: var(--down); }
+  @media (max-width: 640px) { .log li { grid-template-columns: 80px 90px 1fr; font-size: 11px; } }
+
+  footer { margin-top: 36px; font-size: 11px; letter-spacing: .04em; line-height: 1.7; }
+  @keyframes blink { 50% { opacity: .15; } }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-line .dot, .sync-dot.stale, .bracketed.failover::before, .bracketed.failover::after,
+    .bracketed.failover .bk-tr, .bracketed.failover .bk-bl { animation: none; } }
+"""
+
+
+def render_overview_html(consoles, start, now, events=()):
+    """Übersichtsseite in Leitstand-/HUD-Optik: Telemetrie-Leiste, Monats-
+    Segmentmesser, Systemschema, ein Panel pro Konsole (Kernzahlen + Mini-
+    Charts) und das Ereignisprotokoll. consoles = Liste von compute_stats()-
+    dicts, events = state['events'] (siehe _update_event_log)."""
     running_days = max((now - start).days, 0)
     days_elapsed_month_calendar = consoles[0]["days_elapsed_month_calendar"] if consoles else 1
     days_in_month = consoles[0]["days_in_month"] if consoles else 30
-    pct = min(days_elapsed_month_calendar / max(days_in_month, 0.001), 1.0)
-    current_hour = now.replace(minute=0, second=0, microsecond=0)
+    day_of_month = min(int(days_elapsed_month_calendar) + 1, days_in_month)
 
     total_month_all = sum(c["total_month"] for c in consoles)
     total_30d_all = sum(c["total_30d"] for c in consoles)
     total_all = sum(c["total"] for c in consoles)
+    n_failover = sum(1 for c in consoles if c["is_failover"])
+
+    def cell(label, text, alert=False):
+        val, unit = _split_unit(text)
+        return (f'<div class="cell bracketed"><div class="bk-tr"></div><div class="bk-bl"></div>'
+                f'<div class="label">{label}</div>'
+                f'<div class="val num{" alert" if alert else ""}">{val}<span class="unit">{unit}</span></div></div>')
+
+    telemetry = "\n      ".join([
+        cell("Laufzeit", f"{running_days} Tage"),
+        cell("Aktueller Monat", human_bytes(total_month_all)),
+        cell("Letzte 30 Tage", human_bytes(total_30d_all)),
+        cell("Gesamt seit Start", human_bytes(total_all)),
+        cell("Aktive Failover", f"{n_failover} / {len(consoles)}", alert=n_failover > 0),
+    ])
 
     cards = []
-    for c in consoles:
-        # Graue Kachel/OFFLINE haengt NUR noch an echter Daten-Staere (kein
-        # neuer SIM-Zaehlerstand seit OFFLINE_THRESHOLD_S), NICHT mehr an
-        # 0 kbps: manche Konsolen (z.B. LSB) haben legitim oft 0 kbps Upload,
-        # ohne offline zu sein - das fuehrte zu Fehlalarmen.
-        has_current_point = any(r["ts"] >= current_hour for r in c["window"])
-        live_badge = '<span class="live-tag">läuft</span>' if has_current_point and not c["is_offline"] else ""
-        failover_badge = '<span class="failover-tag">FAILOVER</span>' if c["is_failover"] else ""
-        offline_badge = '<span class="offline-tag">OFFLINE</span>' if c["is_offline"] and not c["is_failover"] else ""
-        if c["is_failover"]:
-            card_class = "card console-card failover"
-        elif c["is_offline"]:
-            card_class = "card console-card idle"
+    for i, c in enumerate(consoles, 1):
+        status = _console_status(c)
+        threshold = _console_alert_threshold(c["device"])
+        ratio = c["total_month"] / threshold if threshold else 0.0
+        meter_mode = "crit" if ratio > 1.0 else ("warn" if ratio > WARN_THRESHOLD_FACTOR else "")
+        if status == "failover":
+            chip = '<span class="chip failover">Failover</span>'
+            sub = (f'Upload-Ø {human_kbps(c["last_rate_kbps"])} &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps '
+                   f'({FAILOVER_CONSECUTIVE} Polls) &middot; Traffic läuft über LTE')
+            sub_cls = " alert"
+        elif status == "offline":
+            chip = '<span class="chip lost">Link Lost</span>'
+            if c["last_seen"] is not None:
+                age_min = int((now - c["last_seen"]).total_seconds() // 60)
+                sub = f'Kein Poll seit {age_min} Min &middot; letzter Stand eingefroren'
+            else:
+                sub = 'Noch kein einziger Messpunkt'
+            sub_cls = ""
         else:
-            card_class = "card console-card"
-        cards.append(f"""<div class="{card_class}">
-      <div class="card-head"><h3>{c['device']}</h3>{live_badge}{failover_badge}{offline_badge}</div>
-      <div class="mini-grid">
-        <div><div class="mlabel">Monat</div><div class="mvalue{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])} <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
-        <div><div class="mlabel">30 Tage</div><div class="mvalue">{human_bytes(c['total_30d'])}</div></div>
-        <div><div class="mlabel">Gesamt</div><div class="mvalue">{human_bytes(c['total'])}
-          <span class="live-rate">Akt. Upload: {human_kbps(c['last_rate_kbps'])}</span></div></div>
+            chip = '<span class="chip nominal">Nominal</span>'
+            sub = f'Akt. Upload {human_kbps(c["last_rate_kbps"])} &middot; unter Schwelle {FAILOVER_THRESHOLD_KBPS:.0f} kbps'
+            sub_cls = ""
+        month_val, month_unit = _split_unit(human_bytes(c["total_month"]))
+        d30_val, d30_unit = _split_unit(human_bytes(c["total_30d"]))
+        total_val, total_unit = _split_unit(human_bytes(c["total"]))
+        panel_cls = {"failover": " failover", "offline": " offline"}.get(status, "")
+        cards.append(f"""<div class="panel bracketed{panel_cls}">
+      <div class="bk-tr"></div><div class="bk-bl"></div>
+      <div class="panel-head"><h3 class="fn"><span class="idx num">{i:02d}·</span>{html.escape(c['device'])}</h3>{chip}</div>
+      <div class="subhead{sub_cls}">{sub}</div>
+      <hr class="hairline">
+      <div class="readouts">
+        <div class="r"><div class="rl">Monat</div><div class="rv num{total_alert_class(c['total_month'], c['device'])}">{month_val}<span class="unit">{month_unit}</span> <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
+        <div class="r"><div class="rl">30 Tage</div><div class="rv num">{d30_val}<span class="unit">{d30_unit}</span></div></div>
+        <div class="r"><div class="rl">Gesamt</div><div class="rv num">{total_val}<span class="unit">{total_unit}</span></div></div>
       </div>
+      <div class="mini-meter" title="Monatsvolumen im Verhältnis zur Rot-Schwelle ({alert_threshold_label(c['device'])})">{_segments_html(12, round(min(ratio, 1.0) * 12), meter_mode)}</div>
       <div class="mini-charts">
         <div class="mini-chart-col">
           <div class="mini-chart-label">Stunde</div>
@@ -1488,37 +1849,12 @@ def render_overview_html(consoles, start, now):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WAN-Failover Übersicht</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
 <style>
 {BASE_CSS}
-  .wrap {{ max-width: 1840px; }}
-  header {{ margin-bottom: 16px; padding-bottom: 12px; }}
-  .totals {{ margin-top: 4px; }}
-  .totals b {{ color: var(--strong); font-weight: 600; }}
-  .overview-grid {{ display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); }}
-  @media (max-width: 900px) {{ .overview-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
-  @media (max-width: 600px) {{ .overview-grid {{ grid-template-columns: 1fr; }} }}
-  .console-card {{ display: flex; flex-direction: column; gap: 11px; padding: 21px 23px; }}
-  .console-card.failover {{ border-color: var(--alert); background: var(--failover-bg); }}
-  @media (prefers-reduced-motion: no-preference) {{
-    .console-card.failover {{ animation: failover-blink 1.2s ease-in-out infinite; }}
-  }}
-  @keyframes failover-blink {{
-    0%, 100% {{ border-color: var(--alert); background: var(--failover-bg); }}
-    50% {{ border-color: var(--failover-border-strong); background: var(--failover-bg-strong); }}
-  }}
-  .console-card.idle {{ opacity: .5; filter: grayscale(85%); }}
-  .card-head {{ display: flex; align-items: center; gap: 8px; }}
-  .card-head h3 {{ margin: 0; font-size: 16px; font-weight: 600; }}
-  .mini-grid {{ display: flex; gap: 20px; }}
-  .mlabel {{ color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }}
-  .mvalue {{ font: 600 18px/1.25 ui-monospace, monospace; margin-top: 2px; }}
-  .live-rate {{ font: 500 11.5px/1.25 ui-monospace, monospace; color: var(--dim);
-    margin-left: 4px; white-space: nowrap; }}
-  .mini-charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 3px; }}
-  .mini-chart-col .chart {{ height: 140px; }}
-  .mini-chart-label {{ color: var(--dim); font-size: 10px; text-transform: uppercase;
-    letter-spacing: .07em; margin-bottom: 2px; }}
-  .console-card .legend {{ margin-top: 0; }}
+{HUD_CSS}
 </style>
 </head>
 <body>
@@ -1526,27 +1862,52 @@ def render_overview_html(consoles, start, now):
   <header>
     <div class="header-top">
       <div class="header-info">
-        <h1>WAN-Failover Übersicht</h1>
-        <div class="sub">Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
-          Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-          nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
-        <div class="sub totals">Alle Konsolen: <b>{human_bytes(total_month_all)}</b> diesen Monat &nbsp;&middot;&nbsp;
-          <b>{human_bytes(total_30d_all)}</b> letzte 30 Tage &nbsp;&middot;&nbsp;
-          <b>{human_bytes(total_all)}</b> gesamt seit Start (nur Failover-Traffic)</div>
+        <div class="boot-line">
+          <span class="dot"></span> LIVE &middot; STAND {now.astimezone().strftime('%d.%m.%Y %H:%M:%S')}
+          &middot; NÄCHSTER REFRESH <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span>
+          <span class="sync" title="Alter des angezeigten Datenstands. Teal bis {FRESH_WARN_S // 60} Min, amber bis {FRESH_STALE_S // 60} Min, danach rot: die Seite wird nicht mehr aktualisiert (Workflow prüfen).">
+            <i class="sync-dot"></i> SYNC <span id="sync-val" class="num">0s</span>
+          </span>
+        </div>
+        <h1>WAN-Failover <span class="accent">Übersicht</span></h1>
+        <div class="subhead">Dauerbetrieb seit <b>{start.astimezone().strftime('%d.%m.%Y %H:%M')}</b> &middot;
+          {len(consoles)} Konsolen &middot; SIM-Datenzähler der LTE-Modems &middot; nur Failover-Traffic</div>
       </div>
       {_logo_html()}
     </div>
-    <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
-    <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
-      (Tag {int(days_elapsed_month_calendar) + 1} von {days_in_month})</div>
+
+    <div class="telemetry-strip">
+      {telemetry}
+    </div>
+
+    <div class="month-meter">
+      <div class="mlabel">Kalendermonat &middot; Tag {day_of_month} / {days_in_month}</div>
+      {_segments_html(days_in_month, day_of_month)}
+    </div>
+
+    <div class="schema bracketed">
+      <div class="bk-tr"></div><div class="bk-bl"></div>
+      <div class="mlabel">Systemschema &middot; Site-Manager-Bus</div>
+      {_schema_html(consoles)}
+    </div>
   </header>
 
   <div class="overview-grid">
     {cards_html}
   </div>
 
+  <div class="log bracketed">
+    <div class="bk-tr"></div><div class="bk-bl"></div>
+    <div class="log-head"><span>Ereignisprotokoll</span><span>Statuswechsel &middot; letzte {EVENT_LOG_SHOW}</span></div>
+    <ol>
+      {_event_log_html(events, now)}
+    </ol>
+  </div>
+
   <footer>Datenquelle: SIM-Datenzähler des LTE-Modems (via Site-Manager-Connector-Proxy),
-    {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.</footer>
+    {len(consoles)} Konsolen. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.
+    Failover-Schwelle: Upload-Ø &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps über {FAILOVER_CONSECUTIVE} Polls &middot;
+    Link Lost ab {OFFLINE_THRESHOLD_S // 60} Min ohne Messpunkt.</footer>
 </div>
 {refresh_countdown_script(now)}
 {flow_tooltip_script()}
@@ -1576,7 +1937,7 @@ def _group_by_console(rows, console_names):
     return buckets
 
 
-def write_reports(rows, start, console_names):
+def write_reports(rows, start, console_names, state=None, record_events=True):
     """Schreibt die Übersichtsseite (wan_report.html) - reine Übersichtskacheln,
     keine eigenen Detailseiten mehr (Nutzerwunsch: spart pro Poll 6 volle
     HTML-Seiten samt teurem Flow-Chart-Hoverdaten, war ein Haupttreiber fuer
@@ -1586,13 +1947,30 @@ def write_reports(rows, start, console_names):
     Performance: compute_stats() ist mit wachsender CSV der teuerste Teil
     (scannt Zeilen je Konsole fuer Monat/30-Tage/Charts). rows wird VORAB
     einmal per _group_by_console() aufgeteilt, statt dass jeder der 6
-    compute_stats()-Aufrufe die komplette Liste erneut scannt."""
+    compute_stats()-Aufrufe die komplette Liste erneut scannt.
+
+    state: monitor_state.json-dict. Wird IN-PLACE um Ereignisprotokoll und
+    zuletzt gesehenen Status je Konsole ergaenzt (siehe _update_event_log);
+    der Aufrufer muss es danach sichern. Ohne state (z.B. Test/Diagnose)
+    wird die Seite ohne Protokoll-Eintraege gerendert.
+
+    record_events=False zeigt ein vorhandenes Protokoll an, schreibt es aber
+    NICHT fort - fuer --report (reiner Bericht aus der CSV, ohne API-Zugriff),
+    das sonst Pseudo-Statuswechsel erzeugen wuerde, die der naechste echte
+    Poll dann ein zweites Mal meldet."""
     now = datetime.now(timezone.utc)
     buckets = _group_by_console(rows, console_names)
     consoles = [compute_stats(buckets[name], start, site_filter=name)
                 for name in console_names]
 
-    overview_html = render_overview_html(consoles=consoles, start=start, now=now)
+    if state is None:
+        events = []
+    else:
+        if record_events:
+            _update_event_log(state, consoles, now)
+        events = state.get("events", [])
+
+    overview_html = render_overview_html(consoles=consoles, start=start, now=now, events=events)
     _atomic_write(HTML_PATH, lambda handle: handle.write(overview_html))
     return HTML_PATH
 
@@ -1818,7 +2196,8 @@ def main():
         if single:
             print(f"Bericht geschrieben: {write_report(rows, start, single)}")
         else:
-            index_path = write_reports(rows, start, console_names)
+            index_path = write_reports(rows, start, console_names,
+                                       state=state, record_events=False)
             print(f"Übersicht geschrieben: {index_path}")
         return
 
@@ -1840,11 +2219,20 @@ def main():
     rows = load_rows()
     while True:
         rows, added = poll(rows, targets, args.interval, sim_baseline)
+        # Baseline sofort sichern: scheitert die Berichtserzeugung danach,
+        # waere der frisch geholte SIM-Zaehlerstand sonst verloren und der
+        # naechste Lauf muesste neu baselinen (ein Intervall ohne Delta).
         save_state()
         if single:
             path = write_report(rows, start, single)
         else:
-            path = write_reports(rows, start, console_names)
+            # write_reports() ergaenzt state um die Ereignisprotokoll-
+            # Eintraege - die brauchen ein ZWEITES save_state() danach, sonst
+            # waeren die Statuswechsel beim naechsten Prozessstart wieder weg
+            # (--once startet je Poll einen neuen Prozess) und wuerden endlos
+            # neu gemeldet.
+            path = write_reports(rows, start, console_names, state=state)
+            save_state()
         stamp = datetime.now().astimezone().strftime("%H:%M:%S")
         print(f"[{stamp}] {added} neue Messpunkte, {len(rows)} gesamt -> {path}")
         if args.once:
