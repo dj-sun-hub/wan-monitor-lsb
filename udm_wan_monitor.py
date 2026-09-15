@@ -268,6 +268,25 @@ def _thin_latency(reihe, n):
 def fetch_latency(console_names_by_host):
     """Holt Latenz und Paketverlust aller Konsolen in EINEM Aufruf.
 
+    WAS hier gemessen wird (vom Betreiber bestaetigt und nachgeprueft):
+    Die UDM misst per ICMP ueber ihren WAN-Uplink. Nachgesehen ueber
+    /stat/device haengen alle sechs Konsolen am selben physischen Port 9
+    (ifname eth8, type "ethernet") - die UDM sieht dort also nur ein
+    Ethernet-Kabel. Dahinter steckt aber das LTE-Modem: das Failover
+    uebernimmt eine vorgeschaltete Sophos, die UDM selbst ist
+    ausschliesslich ueber LTE angebunden. Die Zahl auf dem Dashboard
+    beschreibt damit IMMER die LTE-Strecke und wechselt nie den Pfad - was
+    fuer dieses Dashboard genau richtig ist, denn es geht um genau diese
+    Leitung. (Die Latenzen von 6-20 ms waeren fuer Glasfaser zu hoch.)
+
+    Nicht abschliessend geklaert, hier notiert falls es spaeter auffaellt:
+    Bei HAN, KLO und NID antworten zwei der drei ICMP-Ziele gar nicht
+    (www.microsoft.com und google.com, 0 % availability); nur 1.1.1.1
+    antwortet, und auffallend schnell. Dieselben drei Konsolen fuehren eine
+    zweite Schnittstelle gre1 (type "wireless_5g") mit deutlich hoeherer
+    Latenz (22-51 ms). UniFi selbst bildet fuer den WAN-Uplink dort keinen
+    latency_average, weil zwei Monitore ausgefallen sind.
+
     Liefert {konsolenname: {"cur": ms, "loss": pct, "series": [[ms, loss], ...]}}.
     Konsolen ohne Daten fehlen im Ergebnis - der Aufrufer muss damit umgehen
     koennen (die Uebersicht zeigt dann einfach keine Kurve, statt gar nicht zu
