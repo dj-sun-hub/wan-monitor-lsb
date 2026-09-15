@@ -279,13 +279,20 @@ def fetch_latency(console_names_by_host):
     fuer dieses Dashboard genau richtig ist, denn es geht um genau diese
     Leitung. (Die Latenzen von 6-20 ms waeren fuer Glasfaser zu hoch.)
 
-    Nicht abschliessend geklaert, hier notiert falls es spaeter auffaellt:
-    Bei HAN, KLO und NID antworten zwei der drei ICMP-Ziele gar nicht
-    (www.microsoft.com und google.com, 0 % availability); nur 1.1.1.1
-    antwortet, und auffallend schnell. Dieselben drei Konsolen fuehren eine
-    zweite Schnittstelle gre1 (type "wireless_5g") mit deutlich hoeherer
-    Latenz (22-51 ms). UniFi selbst bildet fuer den WAN-Uplink dort keinen
-    latency_average, weil zwei Monitore ausgefallen sind.
+    Stand 15.09.2026, voruebergehend: bei HAN, KLO und NID ist die
+    Verkabelung noch nicht die richtige (bei KNZ, LSB und WTB schon). Dort
+    antworten deshalb zwei der drei ICMP-Ziele gar nicht (www.microsoft.com
+    und google.com, 0 % availability), nur 1.1.1.1 antwortet - und mit 6-12 ms
+    auffallend schnell fuer eine LTE-Strecke. UniFi bildet fuer den
+    WAN-Uplink dort folgerichtig keinen latency_average, weil zwei Monitore
+    ausgefallen sind; dieselben drei Konsolen fuehren zusaetzlich eine
+    Schnittstelle gre1 (type "wireless_5g") mit 22-51 ms.
+
+    Der Betreiber stellt die Verkabelung in den Tagen nach dem 15.09.2026 um.
+    Danach sollten dort alle drei Ziele antworten - und die angezeigte Latenz
+    WIRD an diesen drei Standorten steigen, vermutlich in den Bereich der
+    anderen drei (11-20 ms) oder hoeher. Das ist dann kein Defekt, sondern
+    der erste ehrliche Messwert.
 
     Liefert {konsolenname: {"cur": ms, "loss": pct, "series": [[ms, loss], ...]}}.
     Konsolen ohne Daten fehlen im Ergebnis - der Aufrufer muss damit umgehen
