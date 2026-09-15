@@ -1767,7 +1767,7 @@ def _loss_nicks(series, max_marks=4, min_abstand=0.14):
         if pl > 0:
             treffer.append((pl, i / n))
     if not treffer:
-        return "", 0
+        return "", 0, 0.0
     gesamt = len(treffer)
     treffer.sort(key=lambda t: -t[0])
     gewaehlt = []
@@ -1777,7 +1777,7 @@ def _loss_nicks(series, max_marks=4, min_abstand=0.14):
         if len(gewaehlt) >= max_marks:
             break
     return "".join(f'<i class="nick" style="top:{pos * 100:.0f}%"></i>'
-                   for _, pos in sorted(gewaehlt, key=lambda t: t[1])), gesamt
+                   for _, pos in sorted(gewaehlt, key=lambda t: t[1])), gesamt, max(pl for pl, _ in treffer)
 
 
 def _schema_html(consoles, latency=None):
@@ -1808,7 +1808,7 @@ def _schema_html(consoles, latency=None):
         # auftrat - oben vor 24 h, unten jetzt. Bei erloschenen Standorten
         # keine Kerben: der letzte bekannte Verlauf waere dort veraltet und
         # wuerde Aktualitaet vortaeuschen.
-        nicks, n_loss = ("", 0) if cls == "lost" else _loss_nicks(lat.get("series") or [])
+        nicks, n_loss, max_loss = ("", 0, 0.0) if cls == "lost" else _loss_nicks(lat.get("series") or [])
         pulse = f'<i class="pulse" style="animation-delay:{i * 0.35:.2f}s"></i>' if cls == "ok" else ""
         drop = f'<span class="drop">{pulse}{nicks}</span>'
 
@@ -1817,6 +1817,14 @@ def _schema_html(consoles, latency=None):
         # den Charts.
         ms = lat.get("cur")
         zahl = f'<b class="lat num">{int(ms)}<i class="ms">ms</i></b>' if ms is not None else ""
+        # Paketverlust als Prozentzahl - bewusst der HOECHSTWERT der letzten
+        # 24 Stunden, nicht der aktuelle Messpunkt: der ist fast immer 0 und
+        # die Zahl waere praktisch nie zu sehen, obwohl es im Fenster davor
+        # sehr wohl Verluste gab. Erscheint nur bei Verlust, im Normalbetrieb
+        # sieht die Leiste aus wie ohne. Kostet keine Hoehe (steht neben der
+        # Latenz, nicht darunter).
+        if max_loss:
+            zahl += f'<b class="pl num">{max_loss:g}<i class="ms">%</i></b>'
         titel = f'{c["device"]}: {zustand}'
         if ms is not None:
             titel += f" · {int(ms)} ms"
@@ -1824,7 +1832,7 @@ def _schema_html(consoles, latency=None):
             # Der Tooltip nennt ALLE Verlustereignisse, auch die, fuer die auf
             # der kurzen Leitung keine eigene Kerbe mehr Platz hatte.
             titel += (f" · Paketverlust in {n_loss} von {len(lat.get('series') or [])} "
-                      f"Messpunkten (24 h)")
+                      f"Messpunkten (24 h), höchstens {max_loss:g} %")
         nodes.append(f'<div class="snode {cls}" title="{html.escape(titel)}">'
                      f'{drop}<span class="bulb"></span>'
                      f'<span class="name">{short}{zahl}</span></div>')
@@ -2055,6 +2063,39 @@ HUD_CSS = """
     white-space: nowrap; }
   .snode .lat { font-weight: 500; color: var(--text); margin-left: 6px; letter-spacing: .02em; }
   .snode .lat .ms { font-size: 8.5px; font-style: normal; color: var(--dim); margin-left: 1px; }
+  /* Die Prozentzahl steht UNTER der Latenz, nicht daneben (so passt es am
+     Monitor besser, und nebeneinander ueberlappten sich die Beschriftungen
+     benachbarter Knoten: gemessen bei 1060px Breite bis -24px im
+     schlimmsten Fall, dreistellige Latenz plus zweistelliger Verlust an
+     allen sechs Knoten). Die zweite Zeile entsteht nur, wenn es wirklich
+     Verlust gab - und der gezeigte Wert ist das 24-Stunden-Maximum, aendert
+     sich also im Stundentakt und nicht bei jedem Poll. Ein Hoehensprung im
+     Minutentakt ist dadurch ausgeschlossen. */
+  .snode .pl { display: block; font-weight: 600; color: var(--alert);
+    margin-left: 0; letter-spacing: .02em; line-height: 1.35; }
+  .snode .pl .ms { font-size: 8.5px; font-style: normal; color: var(--alert); opacity: .75; margin-left: 1px; }
+  /* Die Knotenbeschriftung bricht nicht um (sonst waere die Leiste hoeher),
+     kann bei schmalen Fenstern aber ueber ihre Spalte hinauslaufen und die
+     Nachbarn ueberlappen. Gemessen bei 950px Breite: nur Kuerzel +27px Luft,
+     mit Latenz schon -3px, mit Latenz UND Prozentzahl bis -20px. Deshalb
+     zwei Stufen. In der zweiten fallen die Einheiten weg - die Bedeutung
+     traegt dort die Farbe (teal = ms, rot = %), und der volle Text steht
+     ohnehin im Tooltip. */
+     Bei schmalen Fenstern zusaetzlich verkleinert - sechs Kuerzel plus
+     Messwerte brauchen dort mehr Platz, als die Spalte hergibt. */
+  @media (max-width: 1250px) {
+    .snode .name { font-size: 10px; }
+    .snode .lat { margin-left: 4px; }
+  }
+  /* Noch schmaler: die Einheit "ms" faellt weg. Sie ist die entbehrlichere
+     der beiden - die Latenz steht direkt beim Kuerzel und ist teal, waehrend
+     die rote Prozentzahl ihre Einheit behaelt, weil sie seltener auftritt
+     und sonst als blosse Zahl missverstaendlich waere. Voller Text im
+     Tooltip. */
+  @media (max-width: 1050px) {
+    .snode .name { font-size: 9px; }
+    .snode .lat .ms { display: none; }
+  }
   .snode.lost .lat { opacity: .5; }
   .snode.alert .name { color: var(--alert); }
   /* Zurueckgenommen statt nur andersfarbig: der ausgefallene Standort soll
