@@ -1637,7 +1637,12 @@ HUD_CSS = """
   .radar .sweep { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
     background: conic-gradient(from 0deg, rgba(127,240,228,.62) 0deg, rgba(127,240,228,.20) 28deg, transparent 60deg, transparent 360deg);
     animation: radar-sweep 4.2s linear infinite; }
-  @keyframes radar-sweep { to { transform: rotate(360deg); } }
+  /* GEGEN den Uhrzeigersinn: der helle Keil des Suchstrahls liegt bei 0-60
+     Grad, laeuft also dem verblassenden Schweif hinterher. Bei Drehung im
+     Uhrzeigersinn kaeme dadurch der Schweif zuerst und der Strahl danach -
+     genau verkehrt. Andersherum laeuft der Strahl voran und zieht den
+     Schweif hinter sich her, wie es sein soll. */
+  @keyframes radar-sweep { to { transform: rotate(-360deg); } }
   .radar .blip { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px;
     border-radius: 50%; background: var(--strong);
     box-shadow: 0 0 4px var(--down), 0 0 11px var(--down); }
