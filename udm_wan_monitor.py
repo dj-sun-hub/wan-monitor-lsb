@@ -1785,8 +1785,9 @@ def _schema_html(consoles, latency=None):
         # 24 Stunden, nicht der aktuelle Messpunkt: der ist fast immer 0 und
         # die Zahl waere praktisch nie zu sehen, obwohl es im Fenster davor
         # sehr wohl Verluste gab. Erscheint nur bei Verlust, im Normalbetrieb
-        # sieht die Leiste aus wie ohne. Kostet keine Hoehe (steht neben der
-        # Latenz, nicht darunter).
+        # sieht die Leiste aus wie ohne. Steht als eigene Zeile mittig unter
+        # dem Knoten (Nutzerwunsch); das kostet eine Zeile Hoehe, die die
+        # Leiste im Regelfall - kein Verlust - aber nicht braucht.
         if max_loss:
             zahl += f'<b class="pl num">{max_loss:g}<i class="ms">%</i></b>'
         titel = f'{c["device"]}: {zustand}'
@@ -2035,8 +2036,13 @@ HUD_CSS = """
      Verlust gab - und der gezeigte Wert ist das 24-Stunden-Maximum, aendert
      sich also im Stundentakt und nicht bei jedem Poll. Ein Hoehensprung im
      Minutentakt ist dadurch ausgeschlossen. */
+  /* text-align:center hebt das rechtsbuendige .num auf. Ohne das klebte die
+     Prozentzahl am rechten Rand der Beschriftung, stand also unter der
+     ms-Zahl statt unter dem Knoten. Da die Beschriftung selbst mittig unter
+     dem Knoten sitzt (align-items:center), liegt die zentrierte Zahl damit
+     genau unter der Bubble. */
   .snode .pl { display: block; font-weight: 600; color: var(--alert);
-    margin-left: 0; letter-spacing: .02em; line-height: 1.35; }
+    margin-left: 0; letter-spacing: .02em; line-height: 1.35; text-align: center; }
   .snode .pl .ms { font-size: 8.5px; font-style: normal; color: var(--alert); opacity: .75; margin-left: 1px; }
   /* Die Knotenbeschriftung bricht nicht um (sonst waere die Leiste hoeher),
      kann bei schmalen Fenstern aber ueber ihre Spalte hinauslaufen und die
