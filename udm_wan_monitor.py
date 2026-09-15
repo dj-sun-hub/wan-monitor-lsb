@@ -1298,6 +1298,47 @@ def _segments_html(total, lit, mode=""):
     return f'<div class="segments">{cells}</div>'
 
 
+# Latenz-Radar: Vollausschlag am aeusseren Ring und Zahl der Ringe. 40 ms
+# deckt die real gemessenen 5-25 ms mit Reserve ab, ohne dass alle Punkte in
+# der Mitte kleben.
+RADAR_MAX_MS = 40.0
+RADAR_RINGE = 4
+
+
+def _radar_html(consoles, latency):
+    """Latenz-Radar fuer den Statuspylon.
+
+    Winkel = Standort (ein Sektor je Konsole, Reihenfolge wie im Bus),
+    Abstand von der Mitte = Latenz. Das ist bewusst KEIN Dekor: jede Position
+    steht fuer einen gemessenen Wert, und eine Konsole ohne Messwert bekommt
+    gar keinen Punkt - einer in der Mitte hiesse 'null Millisekunden'."""
+    latency = latency or {}
+    blips = []
+    for i, c in enumerate(consoles):
+        lat = latency.get(c["device"]) or {}
+        ms = lat.get("cur")
+        if ms is None:
+            continue
+        kurz = html.escape(c["device"].split("--")[0])
+        cls = {"failover": "alert", "offline": "lost"}.get(_console_status(c), "ok")
+        winkel = math.radians(-90 + i * 360.0 / max(len(consoles), 1))
+        # 6 % Totzone innen, damit Punkte nahe 0 ms nicht im Fadenkreuz sitzen
+        r = 6 + min(ms / RADAR_MAX_MS, 1.0) * 40
+        x = 50 + r * math.cos(winkel)
+        y = 50 + r * math.sin(winkel)
+        blips.append(f'<i class="blip {cls}" style="left:{x:.1f}%;top:{y:.1f}%" '
+                     f'title="{kurz}: {int(ms)} ms"><b>{kurz}</b></i>')
+    ringe = "".join(
+        f'<i class="ring" style="width:{(i + 1) * 92.0 / RADAR_RINGE:.1f}%;'
+        f'height:{(i + 1) * 92.0 / RADAR_RINGE:.1f}%" '
+        f'title="{int((i + 1) * RADAR_MAX_MS / RADAR_RINGE)} ms"></i>'
+        for i in range(RADAR_RINGE))
+    return (f'<div class="radar" title="Latenz-Radar &middot; Winkel = Standort, '
+            f'Abstand von der Mitte = Latenz, aeusserer Ring {int(RADAR_MAX_MS)} ms">'
+            f'{ringe}<i class="sweep"></i>{"".join(blips)}'
+            f'<b class="rlabel">{int(RADAR_MAX_MS)} ms</b></div>')
+
+
 def _split_unit(text):
     """'31.5 GB' -> ('31.5', 'GB') fuer getrennt gestylte Einheit in den
     Telemetrie-Kacheln. Kein Leerzeichen -> Einheit leer."""
@@ -1545,7 +1586,7 @@ HUD_CSS = """
   /* Statuspylon: die beiden Kennzahlen stehen OHNE Kasten auf dem Seiten-
      grund, damit sie nicht wie eine dritte Kachel neben Schema und Protokoll
      wirken. Sie sind Ableseinstrumente, keine Panele. */
-  .pylon { display: flex; gap: 14px; padding: 2px 0 0; min-width: 0; }
+  .pylon { display: flex; gap: 16px; padding: 2px 0 0; min-width: 0; align-items: stretch; }
   .pylon .werte { display: flex; flex-direction: column; justify-content: space-between;
     gap: 10px; min-width: 0; }
   .pylon .label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
@@ -1560,17 +1601,31 @@ HUD_CSS = """
   .mlabel { font-size: 10px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
   .segments { display: flex; gap: 3px; height: 9px; }
   .segments i { flex: 1; background: var(--hull-2); border-top: 1px solid var(--line); }
-  /* Monatsfortschritt senkrecht: unten der Monatsanfang, oben das Monatsende.
-     Bewusst gedreht und nicht als weiteres waagerechtes Band - sonst waere es
-     der dritte Querbalken untereinander, und genau die sollten weg. Der
-     senkrechte Strich ist ausserdem der einzige auf der Seite und deshalb
-     sofort zu finden. Gilt NUR hier, die Kachelmesser bleiben waagerecht. */
-  .pylon .saeule { flex: 0 0 9px; }
-  .pylon .saeule .segments { flex-direction: column-reverse; height: 100%; width: 9px; gap: 3px; }
-  .pylon .saeule .segments i { border-top: none; border-right: 1px solid var(--line); }
-  .pylon .saeule .segments i.lit { border-right-color: var(--down); }
-  .pylon .saeule .segments i.lit.warn { border-right-color: var(--warn); }
-  .pylon .saeule .segments i.lit.crit { border-right-color: var(--alert); }
+  /* Latenz-Radar im Pylon (siehe _radar_html). Der senkrechte Monatsbalken,
+     der hier vorher stand, ist dafuer gewichen: die Tagesangabe steht
+     ohnehin im Label der Monatszahl. */
+  .radar { position: relative; flex: 0 0 auto; width: 118px; height: 118px;
+    border-radius: 50%; align-self: center; overflow: hidden;
+    border: 1px solid rgba(127, 240, 228, .40);
+    background:
+      linear-gradient(0deg, transparent calc(50% - .5px), rgba(127,240,228,.20) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
+      linear-gradient(90deg, transparent calc(50% - .5px), rgba(127,240,228,.20) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
+      radial-gradient(circle at 50% 50%, rgba(127,240,228,.10), transparent 74%); }
+  .radar .ring { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    border: 1px solid rgba(127,240,228,.22); border-radius: 50%; pointer-events: none; }
+  .radar .sweep { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+    background: conic-gradient(from 0deg, rgba(127,240,228,.50) 0deg, rgba(127,240,228,.16) 28deg, transparent 60deg, transparent 360deg);
+    animation: radar-sweep 4.2s linear infinite; }
+  @keyframes radar-sweep { to { transform: rotate(360deg); } }
+  .radar .blip { position: absolute; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%; background: var(--down); box-shadow: 0 0 7px var(--down); }
+  .radar .blip.alert { background: var(--alert); box-shadow: 0 0 9px var(--alert); }
+  .radar .blip.lost { background: var(--dim); box-shadow: none; }
+  .radar .blip b { position: absolute; left: 7px; top: -6px; font-size: 7.5px; font-weight: 500;
+    letter-spacing: .06em; color: var(--dim); }
+  .radar .blip.alert b { color: var(--alert); }
+  .radar .rlabel { position: absolute; right: 4px; bottom: 3px; font-size: 7.5px;
+    letter-spacing: .06em; color: var(--phosphor-dim); font-weight: 400; }
   .segments i.lit { background: var(--down); box-shadow: 0 0 5px var(--phosphor-dim); border-top-color: var(--down); }
   .segments i.lit.warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); border-top-color: var(--warn); }
   .segments i.lit.crit { background: var(--alert); box-shadow: 0 0 4px var(--alert); border-top-color: var(--alert); }
@@ -1588,7 +1643,7 @@ HUD_CSS = """
     /* Senkrecht ergibt der Balken nur neben zwei uebereinanderstehenden
        Zahlen Sinn; einspaltig stehen sie nebeneinander. */
     .pylon { display: block; }
-    .pylon .saeule { display: none; }
+    .radar { display: none; }
     .pylon .werte { flex-direction: row; justify-content: flex-start; gap: 34px; }
   }
 
@@ -1835,7 +1890,7 @@ HUD_CSS = """
     .bank { grid-template-columns: 1fr; max-height: none; }
     .bank .schema, .bank .log { display: none; }
     .pylon { display: block; }
-    .pylon .saeule { display: none; }
+    .radar { display: none; }
     .pylon .werte { flex-direction: row; justify-content: flex-start; gap: 34px; }
     .mini-chart-col .chart { min-height: 40px; }
     footer { font-size: 10px; }
@@ -2070,6 +2125,74 @@ GLASS_CSS = """
   .chart .grid { stroke: rgba(150, 210, 220, .09); }
   .chart .baseline { stroke: rgba(150, 210, 220, .2); }
 
+  /* ------------------------------------------------------------------
+     HUD-Struktur in der Flaeche (Nutzerwunsch: gerastert, diagonal,
+     sechseckig). Alles als CSS-Verlauf bzw. SVG-Muster im data-URI, kein
+     externer Abruf - den blockt die CSP der Seite ohnehin.
+
+     Die Maske laesst das Muster nach unten auslaufen, BEVOR es die
+     Flow-Kurven erreicht: ueber einer Kurve gelesen wird ein Gitter sofort
+     zum Stoerer.
+     ------------------------------------------------------------------ */
+  .panel, .schema, .log { position: relative; }
+  .panel > *:not(.bk-tr):not(.bk-bl), .schema > *, .log > * { position: relative; z-index: 1; }
+  /* display/width/height/border/opacity ausdruecklich zuruecksetzen: diese
+     Elemente tragen .bracketed, und dessen ::before ist 14x14px mit 2px Rand
+     (die Eckklammern) bzw. im Glas-Thema display:none. Kaskadiert wird pro
+     Eigenschaft - ohne das Zuruecksetzen bleibt das Muster unsichtbar oder
+     14px gross. */
+  .panel::before, .schema::before, .log::before {
+    content: ""; display: block; position: absolute; inset: 0;
+    width: auto; height: auto; border: none; opacity: 1;
+    pointer-events: none; z-index: 0;
+    background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.9' stroke-opacity='0.38'/></svg>\"),
+      repeating-linear-gradient(45deg, rgba(127,240,228,.15) 0 1px, transparent 1px 15px);
+    background-size: 56px 48px, auto;
+    -webkit-mask-image: linear-gradient(162deg, #000 0%, rgba(0,0,0,.30) 34%, transparent 64%);
+    mask-image: linear-gradient(162deg, #000 0%, rgba(0,0,0,.30) 34%, transparent 64%);
+  }
+  .panel.failover::before { background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%23ff6a58' stroke-width='0.9' stroke-opacity='0.38'/></svg>\"),
+      repeating-linear-gradient(45deg, rgba(255,106,88,.24) 0 1px, transparent 1px 15px); }
+
+  /* Messskala an der Kachel-Oberkante */
+  .panel::after {
+    content: ""; display: block; position: absolute; left: 10px; right: 10px; top: 0;
+    width: auto; height: 4px; border: none; opacity: 1;
+    background-image: repeating-linear-gradient(90deg, rgba(127,240,228,.55) 0 1px, transparent 1px 9px);
+    background-repeat: repeat-x; pointer-events: none; z-index: 2;
+  }
+  .panel.failover::after {
+    background-image: repeating-linear-gradient(90deg, rgba(255,106,88,.85) 0 1px, transparent 1px 9px);
+  }
+
+  /* Gefaste Ecken. WICHTIG: eine Abdeckung in Seitenfarbe waere falsch -
+     hinter den Kacheln liegt .depth mit vier Lichtverlaeufen, ein Dreieck in
+     var(--ink) sitzt dort als dunkler Fleck. Also echtes clip-path.
+     Das schneidet allerdings auch alles AUSSERHALB der Kachel ab, und dort
+     sass die Streulicht-Pfuetze (.panel::after im Glas-Thema). Sie ist
+     deshalb hier ein filter: drop-shadow - der wird NACH dem Clipping
+     angewandt, folgt der geschnittenen Silhouette und leuchtet dadurch auch
+     entlang der Schraege mit. */
+  .panel {
+    clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 26px 100%, 0 calc(100% - 26px));
+    filter: drop-shadow(0 12px 18px rgba(127, 240, 228, .30)) drop-shadow(0 14px 26px rgba(0,0,0,.85));
+  }
+  .panel.failover { filter: drop-shadow(0 12px 20px rgba(255, 106, 88, .45)) drop-shadow(0 14px 26px rgba(0,0,0,.85)); }
+  /* Die Schnittkante selbst, auf den ohnehin vorhandenen leeren Divs. */
+  .panel .bk-tr, .panel .bk-bl { display: block; position: absolute; width: 38px; height: 2px;
+    border: none; opacity: 1; pointer-events: none; z-index: 4;
+    transform: rotate(-45deg); transform-origin: 50% 50%; }
+  .panel .bk-tr { top: 12px; right: -5px;
+    background: linear-gradient(90deg, transparent, rgba(216,250,255,.85)); }
+  .panel .bk-bl { bottom: 12px; left: -5px;
+    background: linear-gradient(90deg, rgba(216,250,255,.85), transparent); }
+  .panel.failover .bk-tr { background: linear-gradient(90deg, transparent, rgba(255,150,135,.9)); }
+  .panel.failover .bk-bl { background: linear-gradient(90deg, rgba(255,150,135,.9), transparent); }
+
+  /* Sechseckige Statusknoten im Bus - sechs Standorte, sechs Ecken. */
+  .snode .bulb { border-radius: 0;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+
 """.replace("__SWEEP__", str(CANOPY_SWEEP_S))
 
 # Die Scheibe als Markup - eine einzige Ebene ueber dem GESAMTEN Bild
@@ -2215,9 +2338,7 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
 
   <div class="bank">
     <div class="pylon">
-      <div class="saeule" title="Kalendermonat &middot; Tag {day_of_month} von {days_in_month}">
-        {_segments_html(days_in_month, day_of_month)}
-      </div>
+      {_radar_html(consoles, latency)}
       <div class="werte">
         {pylon}
       </div>
