@@ -314,9 +314,16 @@ def fetch_latency(console_names_by_host):
             reihe.append([float(avg), float(wan.get("packetLoss") or 0)])
         if not reihe:
             continue
+        # Haeufigkeit auf der VOLLEN Reihe zaehlen, nicht auf der gleich
+        # ausgeduennten: _thin_latency behaelt je Abschnitt das Maximum, aus
+        # 1 von 151 Punkten wuerde dort 1 von 30 - die Schwelle in
+        # _loss_zeigen() waere damit wertlos.
+        mit_verlust = [w for _a, w in reihe if w > 0]
         out[name] = {
             "cur": round(reihe[-1][0]),
             "loss": reihe[-1][1],
+            "loss_punkte": len(mit_verlust),
+            "punkte": len(reihe),
             "series": _thin_latency(reihe, LATENCY_POINTS),
         }
     return out
@@ -660,6 +667,13 @@ EVENT_LOG_SHOW = 4
 # State wird bei JEDEM Poll committet, da gehoeren keine 35 KB hinein.
 LATENCY_REFRESH_S = 240
 LATENCY_POINTS = 30
+# Ab wann ein Paketverlust als Prozentzahl in der Leiste steht. Die rote
+# Kerbe erscheint immer; die ZAHL erst, wenn der Verlust nicht nur ein
+# einzelner Ausreisser war - sonst liest sich "1 %" wie ein Dauerzustand,
+# obwohl es fuenf Minuten von 24 Stunden waren. Dieselbe Unterscheidung
+# trifft der UniFi Site Manager mit seinem "None" / "Detected".
+LOSS_MIN_PUNKTE = 2      # mindestens so viele betroffene Messpunkte, ODER
+LOSS_MIN_ANTEIL = 0.01   # mehr als dieser Anteil aller Messpunkte
 
 # Dauerbetrieb: der Flow-Chart bleibt auf ein recentes Fenster begrenzt, sonst
 # wird er nach Wochen/Monaten Laufzeit unbrauchbar gross. Die Monatskennzahl
@@ -1346,6 +1360,20 @@ def _split_unit(text):
     return (parts[0], parts[1]) if len(parts) == 2 else (text, "")
 
 
+def _loss_zeigen(lat):
+    """Ist der Paketverlust haeufig genug, um als Prozentzahl zu erscheinen?
+
+    Braucht die Zaehlung aus fetch_latency (loss_punkte/punkte). Fehlt sie -
+    etwa bei einem Zwischenspeicher aus einer aelteren Fassung -, wird die
+    Zahl gezeigt wie bisher: lieber einmal zu viel anzeigen als einen
+    echten Verlust verschweigen."""
+    punkte = lat.get("punkte")
+    betroffen = lat.get("loss_punkte")
+    if not punkte or betroffen is None:
+        return True
+    return betroffen >= LOSS_MIN_PUNKTE or betroffen / punkte > LOSS_MIN_ANTEIL
+
+
 def _loss_nicks(series, max_marks=4, min_abstand=0.14):
     """Rote Kerben auf der geraden Abzweigleitung, dort wo es in den letzten
     24 Stunden Paketverlust gab - oben vor 24 h, unten jetzt.
@@ -1420,14 +1448,16 @@ def _schema_html(consoles, latency=None):
         # den Charts.
         ms = lat.get("cur")
         zahl = f'<b class="lat num">{int(ms)}<i class="ms">ms</i></b>' if ms is not None else ""
-        # Paketverlust als Prozentzahl - bewusst der HOECHSTWERT der letzten
-        # 24 Stunden, nicht der aktuelle Messpunkt: der ist fast immer 0 und
-        # die Zahl waere praktisch nie zu sehen, obwohl es im Fenster davor
-        # sehr wohl Verluste gab. Erscheint nur bei Verlust, im Normalbetrieb
-        # sieht die Leiste aus wie ohne. Steht als eigene Zeile mittig unter
-        # dem Knoten (Nutzerwunsch); das kostet eine Zeile Hoehe, die die
-        # Leiste im Regelfall - kein Verlust - aber nicht braucht.
-        if max_loss:
+        # Paketverlust als Prozentzahl - der HOECHSTWERT der letzten 24
+        # Stunden, aber NUR wenn der Verlust nicht bloss ein einzelner
+        # Ausreisser war (siehe _loss_zeigen). Ein einzelner
+        # Fuenf-Minuten-Punkt von 151 ergab sonst '1 %', was sich wie ein
+        # Dauerzustand liest - der UniFi Site Manager meldete fuer
+        # dieselbe Konsole 'None'. Die rote Kerbe erscheint unabhaengig
+        # davon: sie zeigt, DASS und WANN etwas war, ohne Dauer zu
+        # behaupten. Steht als eigene Zeile mittig unter dem Knoten
+        # (Nutzerwunsch).
+        if max_loss and _loss_zeigen(lat):
             zahl += f'<b class="pl num">{max_loss:g}<i class="ms">%</i></b>'
         titel = f'{c["device"]}: {zustand}'
         if ms is not None:
