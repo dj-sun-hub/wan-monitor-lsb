@@ -1586,16 +1586,29 @@ HUD_CSS = """
   /* Statuspylon: die beiden Kennzahlen stehen OHNE Kasten auf dem Seiten-
      grund, damit sie nicht wie eine dritte Kachel neben Schema und Protokoll
      wirken. Sie sind Ableseinstrumente, keine Panele. */
-  .pylon { display: flex; gap: 16px; padding: 2px 0 0; min-width: 0; align-items: stretch; }
+  /* Der Pylon ist das einzige Element ohne eigene Kachel. Mit den blassen
+     Label-Farben, die INNERHALB einer Platte funktionieren, ging er auf dem
+     gemusterten Hintergrund unter. Statt ihm doch eine Kachel zu geben
+     (Nutzerwunsch: soll frei stehen) bekommt er Eigenkontrast - und eine
+     sehr weiche lokale Abdunklung, die den Untergrund unter ihm beruhigt,
+     ohne eine Kante zu setzen. */
+  .pylon { display: flex; gap: 16px; padding: 2px 0 0; min-width: 0; align-items: stretch;
+    position: relative; }
+  .pylon::before {
+    content: ""; position: absolute; left: -22px; right: -18px; top: -14px; bottom: -14px;
+    pointer-events: none; z-index: -1;
+    background: radial-gradient(58% 62% at 42% 50%, rgba(4, 9, 13, .72), transparent 76%);
+  }
   .pylon .werte { display: flex; flex-direction: column; justify-content: space-between;
     gap: 10px; min-width: 0; }
-  .pylon .label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
-  .pylon .label .lfoot { color: var(--phosphor-dim); }
-  .pylon .val { font-family: "Rajdhani", sans-serif; font-size: 33px; font-weight: 600;
-    line-height: 1.02; color: var(--text); }
-  .pylon .val .unit { font-size: 14px; color: var(--dim); margin-left: 3px; }
+  .pylon .label { font-size: 10.5px; color: var(--text); opacity: .72;
+    text-transform: uppercase; letter-spacing: .1em; font-weight: 500; }
+  .pylon .label .lfoot { color: var(--down); opacity: .85; }
+  .pylon .val { font-family: "Rajdhani", sans-serif; font-size: 38px; font-weight: 600;
+    line-height: 1.02; color: var(--strong); }
+  .pylon .val .unit { font-size: 15px; color: var(--text); opacity: .7; margin-left: 3px; }
   .pylon .val.alert { color: var(--alert); }
-  .pylon .fuss { font-size: 10px; color: var(--phosphor-dim); letter-spacing: .08em;
+  .pylon .fuss { font-size: 10.5px; color: var(--down); opacity: .8; letter-spacing: .08em;
     text-transform: uppercase; margin-top: 2px; }
 
   .mlabel { font-size: 10px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
@@ -1937,7 +1950,12 @@ HUD_CSS = """
 # Umlaufdauer des Lichtstreifens. Steht an EINER Stelle, weil CSS-Animation
 # und das Phasen-Skript in CANOPY_HTML denselben Wert brauchen - liefen sie
 # auseinander, waere der Streifen nach jedem Reload an der falschen Stelle.
-CANOPY_SWEEP_S = 26
+CANOPY_SWEEP_S = 82
+# Die zweite Schwade laeuft bewusst nicht im selben Takt: sonst wiederholt
+# sich das Bild periodisch und wird als Muster erkennbar. 82 zu 112 ist kein
+# glattes Verhaeltnis, die beiden treffen sich erst nach gut zwei Stunden
+# wieder in derselben Stellung.
+CANOPY_SWEEP_THIN_S = 112
 
 GLASS_CSS = """
   :root {
@@ -2002,17 +2020,32 @@ GLASS_CSS = """
       repeating-linear-gradient(0deg, rgba(127,240,228,.020) 0 1px, transparent 1px 3px),
       radial-gradient(70% 55% at 50% -12%, rgba(127, 240, 228, .09), transparent 72%);
   }
+  /* Nebelschwaden statt Lichtstreifen. Vorher zwei schmale Baender mit
+     sauberen Verlaufskanten - das las sich als Scheinwerfer, der ueber die
+     Scheibe faehrt. Jetzt breite, weiche Wolken, die mit einem Rauschmuster
+     MASKIERT sind: dadurch fransen sie aus und sind stellenweise dichter,
+     statt ein gleichmaessig runder Fleck zu sein. Genau daran erkennt das
+     Auge Dunst statt Licht. Dasselbe feTurbulence-Rauschen benutzt die Seite
+     ohnehin schon als Frost-Koernung im Glas. */
   .canopy .band {
-    position: absolute; top: -35%; left: -50%; width: 40%; height: 170%;
-    transform: rotate(13deg) translateX(-60%);
-    background: linear-gradient(90deg, transparent, rgba(198, 240, 255, .045) 28%,
-      rgba(214, 245, 255, .10) 50%, rgba(198, 240, 255, .04) 72%, transparent);
+    position: absolute; top: -40%; left: -80%; width: 120%; height: 180%;
+    transform: rotate(9deg) translateX(-50%);
+    background: radial-gradient(60% 50% at 50% 50%, rgba(214, 245, 255, .16) 0%,
+      rgba(198, 240, 255, .08) 44%, transparent 76%);
+    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
+    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
+    -webkit-mask-size: 1400px 900px; mask-size: 1400px 900px;
+    filter: blur(14px);
   }
-  /* Zweiter, schmalerer Streifen: eine Kanzel hat mehrere Scheiben, das Licht
-     bricht sich mehrfach. */
+  /* Zweite Schwade, schmaler und feiner gerauscht: eine Kanzel hat mehrere
+     Scheiben, der Dunst dahinter ist nicht eine einzige Schicht. */
   .canopy .band.thin {
-    width: 13%; transform: rotate(13deg) translateX(-260%);
-    background: linear-gradient(90deg, transparent, rgba(214, 245, 255, .07) 50%, transparent);
+    width: 60%; transform: rotate(9deg) translateX(-180%);
+    background: radial-gradient(60% 50% at 50% 50%, rgba(214, 245, 255, .10) 0%, transparent 74%);
+    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
+    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
+    -webkit-mask-size: 900px 700px; mask-size: 900px 700px;
+    filter: blur(10px);
   }
   .canopy .grime {
     position: absolute; inset: 0;
@@ -2029,15 +2062,18 @@ GLASS_CSS = """
     background: radial-gradient(82% 74% at 50% 44%, transparent 52%, rgba(4, 7, 10, .58) 100%);
   }
   @media (prefers-reduced-motion: no-preference) {
+    /* Deutlich langsamer als die frueheren 26s: Nebel zieht, er fegt nicht.
+       Die beiden Schwaden laufen unterschiedlich schnell, damit sich das
+       Bild nicht periodisch wiederholt. */
     .canopy .band { animation: sweep __SWEEP__s linear infinite; }
-    .canopy .band.thin { animation: sweep-thin __SWEEP__s linear infinite; }
+    .canopy .band.thin { animation: sweep-thin __SWEEP_THIN__s linear infinite; }
   }
   @keyframes sweep {
-    from { transform: rotate(13deg) translateX(-60%); }
-    to   { transform: rotate(13deg) translateX(340%); } }
+    from { transform: rotate(9deg) translateX(-60%); }
+    to   { transform: rotate(9deg) translateX(180%); } }
   @keyframes sweep-thin {
-    from { transform: rotate(13deg) translateX(-260%); }
-    to   { transform: rotate(13deg) translateX(1010%); } }
+    from { transform: rotate(9deg) translateX(-190%); }
+    to   { transform: rotate(9deg) translateX(400%); } }
 
   /* ---- Glasplatten: Telemetriezellen, Schema, Protokoll, Kacheln ----
      Drei Dinge machen aus der getoenten Flaeche eine Scheibe mit Dicke:
@@ -2137,6 +2173,13 @@ GLASS_CSS = """
     text-shadow: 0 0 12px rgba(127, 240, 228, .45), -.6px 0 rgba(255, 70, 120, .30),
       .6px 0 rgba(90, 220, 255, .30);
   }
+  /* Staerker als in den Kacheln: dort traegt die Platte den Kontrast mit,
+     hier steht die Zahl frei auf dem Muster. */
+  .pylon .val {
+    text-shadow: 0 0 22px rgba(127, 240, 228, .55), 0 1px 12px rgba(0, 0, 0, .9),
+      -.6px 0 rgba(255, 70, 120, .30), .6px 0 rgba(90, 220, 255, .30);
+  }
+  .pylon .label, .pylon .fuss { text-shadow: 0 1px 8px rgba(0, 0, 0, .85); }
   .panel .subhead, .mini-chart-label, .readouts .rl { text-shadow: 0 0 8px rgba(127, 240, 228, .22); }
   .chip.nominal { text-shadow: 0 0 9px rgba(127, 240, 228, .5); }
   .chip.failover { text-shadow: 0 0 9px rgba(255, 106, 88, .6); }
@@ -2222,7 +2265,7 @@ GLASS_CSS = """
   .snode .bulb { border-radius: 0;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
 
-""".replace("__SWEEP__", str(CANOPY_SWEEP_S))
+""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S))
 
 # Die Scheibe als Markup - eine einzige Ebene ueber dem GESAMTEN Bild
 # (Nutzerwunsch: nicht je Kachel). Rein dekorativ, deshalb aria-hidden.
@@ -2242,12 +2285,16 @@ CANOPY_HTML = """<div class="canopy" aria-hidden="true">
 </div>
 <script>
 (function () {
-  var phase = (Date.now() / 1000) % __SWEEP__;
+  // Jedes Band bekommt seine EIGENE Phase: die zweite Schwade laeuft
+  // langsamer als die erste, eine gemeinsame Phase wuerde sie beim
+  // minuetlichen Neuladen der Seite jedes Mal springen lassen.
+  var jetzt = Date.now() / 1000;
   document.querySelectorAll('.canopy .band').forEach(function (el) {
-    el.style.animationDelay = (-phase).toFixed(2) + 's';
+    var dauer = parseFloat(getComputedStyle(el).animationDuration) || __SWEEP__;
+    el.style.animationDelay = (-(jetzt % dauer)).toFixed(2) + 's';
   });
 })();
-</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S))
+</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S))
 
 
 def render_overview_html(consoles, start, now, events=(), latency=None):
