@@ -1942,30 +1942,55 @@ HUD_CSS = """
   .subhead { color: var(--dim); font-size: 12.5px; letter-spacing: .05em; }
   .subhead b { color: var(--text); font-weight: 600; }
 
-  .telemetry-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px; margin-top: 12px; }
-  .telemetry-strip .cell { background: var(--panel); padding: 9px 14px 8px;
-    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%); }
-  .telemetry-strip .label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
-  .telemetry-strip .label .lfoot { color: var(--phosphor-dim); }
-  .telemetry-strip .val { font-size: 19px; font-weight: 600; color: var(--text); margin-top: 2px; }
-  .telemetry-strip .val .unit { font-size: 12px; color: var(--dim); margin-left: 3px; }
-  .telemetry-strip .val.alert { color: var(--alert); }
+  /* Statuspylon: die beiden Kennzahlen stehen OHNE Kasten auf dem Seiten-
+     grund, damit sie nicht wie eine dritte Kachel neben Schema und Protokoll
+     wirken. Sie sind Ableseinstrumente, keine Panele. */
+  .pylon { display: flex; gap: 14px; padding: 2px 0 0; min-width: 0; }
+  .pylon .werte { display: flex; flex-direction: column; justify-content: space-between;
+    gap: 10px; min-width: 0; }
+  .pylon .label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  .pylon .label .lfoot { color: var(--phosphor-dim); }
+  .pylon .val { font-family: "Rajdhani", sans-serif; font-size: 33px; font-weight: 600;
+    line-height: 1.02; color: var(--text); }
+  .pylon .val .unit { font-size: 14px; color: var(--dim); margin-left: 3px; }
+  .pylon .val.alert { color: var(--alert); }
+  .pylon .fuss { font-size: 10px; color: var(--phosphor-dim); letter-spacing: .08em;
+    text-transform: uppercase; margin-top: 2px; }
 
   .mlabel { font-size: 10px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
-  .month-meter { margin-top: 10px; }
-  .month-meter .mlabel { margin-bottom: 4px; }
   .segments { display: flex; gap: 3px; height: 9px; }
   .segments i { flex: 1; background: var(--hull-2); border-top: 1px solid var(--line); }
+  /* Monatsfortschritt senkrecht: unten der Monatsanfang, oben das Monatsende.
+     Bewusst gedreht und nicht als weiteres waagerechtes Band - sonst waere es
+     der dritte Querbalken untereinander, und genau die sollten weg. Der
+     senkrechte Strich ist ausserdem der einzige auf der Seite und deshalb
+     sofort zu finden. Gilt NUR hier, die Kachelmesser bleiben waagerecht. */
+  .pylon .saeule { flex: 0 0 9px; }
+  .pylon .saeule .segments { flex-direction: column-reverse; height: 100%; width: 9px; gap: 3px; }
+  .pylon .saeule .segments i { border-top: none; border-right: 1px solid var(--line); }
+  .pylon .saeule .segments i.lit { border-right-color: var(--down); }
+  .pylon .saeule .segments i.lit.warn { border-right-color: var(--warn); }
+  .pylon .saeule .segments i.lit.crit { border-right-color: var(--alert); }
   .segments i.lit { background: var(--down); box-shadow: 0 0 5px var(--phosphor-dim); border-top-color: var(--down); }
   .segments i.lit.warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); border-top-color: var(--warn); }
   .segments i.lit.crit { background: var(--alert); box-shadow: 0 0 4px var(--alert); border-top-color: var(--alert); }
 
-  /* Schema und Protokoll teilen sich EINE Zeile - untereinander waren sie
-     zusammen ~340px hoch und sprengten die Bildschirmhoehe. */
-  .deck { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  /* Konsolenbank: Pylon, Schema und Protokoll in EINER Zeile. Vorher waren
+     das drei gestapelte Baender mit drei verschiedenen Schnitten - keine
+     senkrechte Kante ging durch. Als ein Band gibt es keine zweite Zeile
+     mehr, an der etwas nicht fluchten koennte, und der Kopfbereich schrumpft
+     von 365 auf 249px (gemessen bei 1600x950); die gewonnene Hoehe geht an
+     die Konsolenkacheln, wo die Flow-Kurven sitzen. */
+  .bank { display: grid; grid-template-columns: minmax(175px, .62fr) minmax(0, 1.45fr) minmax(0, 1.6fr);
     gap: 20px; margin-top: 14px; flex: 0 0 auto; }
-  @media (max-width: 900px) { .deck { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) {
+    .bank { grid-template-columns: 1fr; }
+    /* Senkrecht ergibt der Balken nur neben zwei uebereinanderstehenden
+       Zahlen Sinn; einspaltig stehen sie nebeneinander. */
+    .pylon { display: block; }
+    .pylon .saeule { display: none; }
+    .pylon .werte { flex-direction: row; justify-content: flex-start; gap: 34px; }
+  }
 
   /* Systemschema (HTML/CSS statt SVG, siehe _schema_html) */
   .schema { background: var(--panel); border: 1px solid var(--line); padding: 10px 16px 12px; }
@@ -2161,7 +2186,7 @@ HUD_CSS = """
   .mini-chart-label .dot { width: 7px; height: 7px; border-radius: 0; margin: 0 3px 0 5px; }
   .chart .flow-down-line { filter: drop-shadow(0 0 2px var(--phosphor-dim)); }
 
-  /* Ereignisprotokoll - sitzt neben dem Schema (siehe .deck) */
+  /* Ereignisprotokoll - sitzt neben dem Schema (siehe .bank) */
   .log { background: var(--panel); border: 1px solid var(--line); padding: 0 0 2px;
     display: flex; flex-direction: column; min-height: 0; }
   .log .log-head { display: flex; justify-content: space-between; align-items: center;
@@ -2186,16 +2211,13 @@ HUD_CSS = """
     line-height: 1.5; flex: 0 0 auto; }
 
   /* Niedrige Fenster (kleine Notebooks, Browser mit vielen Leisten): die
-     sechs Konsolenkacheln haben Vorrang. Erst wird das Beiwerk gestaucht,
-     dann faellt der Monatsbalken weg - die Tagesangabe steht ohnehin auch
-     in der Telemetrie-Kachel "Aktueller Monat". Ziel bleibt: kein
-     Scrollbalken. */
+     sechs Konsolenkacheln haben Vorrang, also wird zuerst die Bank gestaucht.
+     Ziel bleibt: kein Scrollbalken. */
   @media (max-height: 820px) {
     body { padding: 10px 16px 8px; }
-    .deck { max-height: 104px; margin-top: 10px; }
-    .month-meter { display: none; }
-    .telemetry-strip .cell { padding: 6px 12px 5px; }
-    .telemetry-strip .val { font-size: 16px; }
+    .bank { max-height: 104px; margin-top: 10px; }
+    .pylon .val { font-size: 25px; }
+    .pylon .fuss { display: none; }
     .overview-grid { margin-top: 10px; gap: 14px; }
     .panel { padding: 10px 14px 9px; gap: 6px; }
     .mini-chart-col .chart { min-height: 48px; }
@@ -2203,9 +2225,14 @@ HUD_CSS = """
   }
   /* Noch niedriger: Schema und Protokoll weichen ganz. Beides ist eine
      Zusammenfassung dessen, was die Kacheln darunter ohnehin zeigen - lieber
-     weglassen als die Kacheln in einen Scrollbalken draengen. */
+     weglassen als die Kacheln in einen Scrollbalken draengen. Der Pylon
+     BLEIBT stehen: seine beiden Zahlen stehen sonst nirgends auf der Seite. */
   @media (max-height: 700px) {
-    .deck { display: none; }
+    .bank { grid-template-columns: 1fr; max-height: none; }
+    .bank .schema, .bank .log { display: none; }
+    .pylon { display: block; }
+    .pylon .saeule { display: none; }
+    .pylon .werte { flex-direction: row; justify-content: flex-start; gap: 34px; }
     .mini-chart-col .chart { min-height: 40px; }
     footer { font-size: 10px; }
   }
@@ -2217,8 +2244,10 @@ HUD_CSS = """
      faelschlich die Stauch-Variante fuer flache Fenster greifen. */
   @media (max-width: 900px) {
     body { padding: 16px 20px 12px; }
-    .deck { display: grid; max-height: none; }
-    .month-meter { display: block; }
+    .bank { max-height: none; }
+    .bank .schema, .bank .log { display: block; }
+    .pylon .val { font-size: 33px; }
+    .pylon .fuss { display: block; }
     .overview-grid { margin-top: 16px; gap: 20px; }
     .panel { padding: 14px 18px 12px; gap: 8px; }
     .mini-chart-col .chart { height: 140px; min-height: 0; max-height: none; flex: 0 0 auto; }
@@ -2336,7 +2365,7 @@ GLASS_CSS = """
      Die Mattierung selbst (backdrop-filter) traegt weniger als man denkt,
      seit die Streben im Hintergrund weg sind: sie braucht harte Kanten zum
      Verschleifen, und die gibt es dahinter nicht mehr. */
-  .telemetry-strip .cell, .schema, .log, .panel {
+  .schema, .log, .panel {
     -webkit-backdrop-filter: blur(13px) saturate(1.42) brightness(1.05);
     backdrop-filter: blur(13px) saturate(1.42) brightness(1.05);
     background:
@@ -2359,14 +2388,14 @@ GLASS_CSS = """
   /* Abgeschraegte Ecken und Eckklammern des HUD-Themes entfallen: eine
      Glasplatte hat eine durchgehende, angeleuchtete Kante - das Motiv ersetzt
      die Klammern, statt mit ihnen zu konkurrieren. */
-  .telemetry-strip .cell, .panel { clip-path: none; }
+  .panel { clip-path: none; }
   .bracketed::before, .bracketed::after,
   .bracketed .bk-tr, .bracketed .bk-bl { display: none; }
 
   /* Streulicht-Pfuetze: Licht blutet unter der Platte aus. Bleibt bewusst AN
      DER KACHEL (nicht auf der Scheibe) - es entsteht ja dort, wo das Licht
      auf die Platte trifft. */
-  .telemetry-strip .cell::after, .schema::after, .log::after, .panel::after {
+  .schema::after, .log::after, .panel::after {
     content: ""; position: absolute; left: 6%; right: 6%; bottom: -15px; height: 22px;
     background: radial-gradient(58% 100% at 50% 0%, rgba(127, 240, 228, .26), transparent 74%);
     pointer-events: none;
@@ -2399,7 +2428,7 @@ GLASS_CSS = """
 
   /* Farbsaum an den Ziffern, wie aus einer billigen Projektionsoptik. Per
      Selektor statt per Zusatzklasse, damit am erzeugten HTML nichts haengt. */
-  .telemetry-strip .val, .panel-head .fn, .readouts .rv {
+  .pylon .val, .panel-head .fn, .readouts .rv {
     text-shadow: -.6px 0 rgba(255, 70, 120, .28), .6px 0 rgba(90, 220, 255, .28),
       0 0 15px rgba(127, 240, 228, .26);
   }
@@ -2468,23 +2497,27 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
     total_month_all = sum(c["total_month"] for c in consoles)
     n_failover = sum(1 for c in consoles if c["is_failover"])
 
-    def cell(label, text, alert=False, foot=""):
-        val, unit = _split_unit(text)
-        # foot steht im Label mit, nicht als eigene Zeile: eine zusaetzliche
-        # Zeile in der Telemetrie-Leiste kostet direkt Seitenhoehe.
-        label_html = (f'{label} <span class="lfoot">{foot}</span>' if foot else label)
-        return (f'<div class="cell bracketed"><div class="bk-tr"></div><div class="bk-bl"></div>'
-                f'<div class="label">{label_html}</div>'
-                f'<div class="val num{" alert" if alert else ""}">{val}<span class="unit">{unit}</span></div></div>')
+    def instrument(label, text, alert=False, foot=""):
+        """Eine Kennzahl im Statuspylon - ohne Kasten, bewusst gross.
 
-    telemetry = "\n      ".join([
-        # "Gesamt diesen Monat" (Nutzerwunsch) steht auf DIESER Kachel, weil sie
-        # den Monatswert bereits fuehrt. Die frueher dritte Kachel "Gesamt seit
-        # Start" ist entfallen: haette sie die Beschriftung bekommen, stuenden
-        # dort 494 GB ueber zwei Kalendermonate unter einem Monats-Label - und
-        # mit dem Monatswert waere sie ein exaktes Duplikat dieser hier.
-        cell("Gesamt diesen Monat", human_bytes(total_month_all), foot=f"Tag {day_of_month}/{days_in_month}"),
-        cell("Aktive Failover", f"{n_failover} / {len(consoles)}", alert=n_failover > 0),
+        Die beiden Zahlen sassen frueher in eigenen Kacheln in einer
+        Telemetrie-Leiste ueber dem Deck. Als Instrumente auf dem Seitengrund
+        konkurrieren sie nicht mehr optisch mit Schema und Protokoll, neben
+        denen sie jetzt stehen."""
+        val, unit = _split_unit(text)
+        fuss = f'<div class="fuss">{foot}</div>' if foot else ""
+        return (f'<div class="p-zahl"><div class="label">{label}</div>'
+                f'<div class="val num{" alert" if alert else ""}">{val}'
+                f'<span class="unit">{unit}</span></div>{fuss}</div>')
+
+    # "Gesamt diesen Monat" (Nutzerwunsch) steht auf DIESEM Instrument, weil es
+    # den Monatswert bereits fuehrt. Ein frueheres drittes "Gesamt seit Start"
+    # ist entfallen: dort stuenden 494 GB ueber zwei Kalendermonate unter einem
+    # Monats-Label - und mit dem Monatswert waere es ein exaktes Duplikat.
+    pylon = "\n        ".join([
+        instrument("Gesamt diesen Monat", human_bytes(total_month_all),
+                   foot=f"Tag {day_of_month}/{days_in_month}"),
+        instrument("Aktive Failover", f"{n_failover} / {len(consoles)}", alert=n_failover > 0),
     ])
 
     cards = []
@@ -2565,17 +2598,18 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
       {_logo_html()}
     </div>
 
-    <div class="telemetry-strip">
-      {telemetry}
-    </div>
-
-    <div class="month-meter">
-      <div class="mlabel">Kalendermonat &middot; Tag {day_of_month} von {days_in_month}</div>
-      {_segments_html(days_in_month, day_of_month)}
-    </div>
   </header>
 
-  <div class="deck">
+  <div class="bank">
+    <div class="pylon">
+      <div class="saeule" title="Kalendermonat &middot; Tag {day_of_month} von {days_in_month}">
+        {_segments_html(days_in_month, day_of_month)}
+      </div>
+      <div class="werte">
+        {pylon}
+      </div>
+    </div>
+
     <div class="schema bracketed">
       <div class="bk-tr"></div><div class="bk-bl"></div>
       <div class="mlabel">Systemschema &middot; Site-Manager-Bus</div>
