@@ -2004,7 +2004,13 @@ GLASS_CSS = """
     background: radial-gradient(58% 100% at 50% 0%, rgba(127, 240, 228, .26), transparent 74%);
     pointer-events: none;
   }
-  .panel.failover::after { background: radial-gradient(60% 100% at 50% 0%, rgba(255, 106, 88, .24), transparent 72%); }
+  /* Die Failover-Pfuetze ist breiter, hoeher und doppelt so kraeftig wie die
+     normale: sie ist das Hauptsignal, an dem eine rote Kachel aus der
+     Entfernung erkannt wird. */
+  .panel.failover::after {
+    left: 2%; right: 2%; bottom: -20px; height: 34px;
+    background: radial-gradient(62% 100% at 50% 0%, rgba(255, 106, 88, .52), transparent 74%);
+  }
   .panel.offline::after { display: none; }
 
   /* Die Failover-Platte bleibt eine Glasplatte: Frost-Koernung und Reflexion
@@ -2016,16 +2022,22 @@ GLASS_CSS = """
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
       linear-gradient(115deg, rgba(255,232,228,.10) 0%, transparent 34%, transparent 62%, rgba(255,200,190,.04) 100%),
       linear-gradient(158deg, rgba(255,130,115,.085), rgba(255,106,88,.025) 45%, rgba(255,120,105,.06));
-    border-color: rgba(255, 106, 88, .28);
-    border-top-color: rgba(255, 186, 175, .46);
-    border-left-color: rgba(255, 160, 148, .26);
+    /* Kante und Licht tragen das Signal, nicht die Flaeche: die Toenung
+       oben bleibt schwach, damit die Flow-Kurven ihren neutralen Untergrund
+       behalten und voll lesbar bleiben. */
+    border-color: rgba(255, 106, 88, .62);
+    border-top-color: rgba(255, 200, 190, .85);
+    border-left-color: rgba(255, 170, 158, .45);
     border-bottom-color: rgba(20, 6, 4, .55);
     box-shadow:
-      inset 0 1px 0 rgba(255, 214, 206, .34),
+      inset 0 1px 0 rgba(255, 214, 206, .40),
       inset 1px 0 0 rgba(255, 180, 170, .14),
       inset 0 -1px 0 rgba(0,0,0,.40),
       inset -1px 0 0 rgba(0,0,0,.25),
+      inset 0 0 26px rgba(255, 106, 88, .22),
       inset 0 18px 30px -22px rgba(255, 214, 206, .28),
+      0 0 0 1px rgba(255, 106, 88, .30),
+      0 0 22px rgba(255, 106, 88, .30),
       0 20px 42px -26px rgba(0,0,0,.92);
   }
   .panel.offline { opacity: .55; }
