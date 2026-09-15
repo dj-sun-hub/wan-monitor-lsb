@@ -1961,20 +1961,47 @@ GLASS_CSS = """
      Einzige mit harten Kanten und damit das, woran die Mattierung am besten
      ablesbar war - den Glaseindruck tragen jetzt Kantenbevel, Reflexion und
      Frost-Koernung der Platten selbst. */
+  /* Zwei Wabenebenen hintereinander: eine feine, naehere und eine grosse,
+     sehr blasse, gegeneinander versetzt. Tiefe entsteht dadurch, dass das
+     Auge zwei Entfernungen liest - nicht dadurch, dass mehr Ornament da
+     waere. 64 zu 148px ist bewusst kein glattes Vielfaches, sonst entsteht
+     ein Moire.
+
+     Das Muster liegt HIER und nicht in den Kacheln: nur so laeuft es unter
+     den Platten weiter, statt an ihrer Kante abzureissen - und nur so hat
+     der backdrop-filter der Platten ueberhaupt etwas zum Verschleifen. Im
+     Spalt zwischen zwei Kacheln steht es scharf, darunter weich. Genau
+     dieser Kontrast macht aus einer dunklen Flaeche eine Scheibe. */
   .depth {
     position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background:
+      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='55' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.8' stroke-opacity='0.28'/></svg>\"),
+      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='148' height='127' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.6' stroke-opacity='0.12'/></svg>\"),
       radial-gradient(18% 22% at 73% 16%, var(--lamp-a) 0%, transparent 72%),
       radial-gradient(15% 19% at 26% 84%, var(--lamp-b) 0%, transparent 72%),
       radial-gradient(62% 52% at 14% 8%, var(--nebula) 0%, transparent 62%),
       radial-gradient(52% 48% at 92% 88%, var(--hull-far) 0%, transparent 58%),
       var(--ink);
+    background-size: 64px 55px, 148px 127px, auto, auto, auto, auto, auto;
+    background-position: 0 0, 18px 12px, 0 0, 0 0, 0 0, 0 0, 0 0;
   }
   .wrap { position: relative; z-index: 1; }
 
   /* Die Scheibe. z-index ueber allem, pointer-events:none - sie faengt keine
      Klicks ab und stoert die Chart-Tooltips nicht. */
   .canopy { position: fixed; inset: 0; z-index: 50; pointer-events: none; overflow: hidden; }
+  /* Scanlinien und Lichtkegel: das Bild kommt sichtbar von einem Projektor
+     statt aus dem Bildschirm. Bewusst ENG (3px) und schwach - je feiner das
+     Raster, desto weniger liest es sich als Streifen und desto mehr als
+     Materialstruktur. Ein groberer Abstand kippt sofort ins Retro-Roehren-
+     hafte. Die Linien binden Kacheln und Hintergrund zu EINER
+     Projektionsflaeche zusammen; ohne sie wirken die Platten aufgelegt. */
+  .canopy::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(127,240,228,.020) 0 1px, transparent 1px 3px),
+      radial-gradient(70% 55% at 50% -12%, rgba(127, 240, 228, .09), transparent 72%);
+  }
   .canopy .band {
     position: absolute; top: -35%; left: -50%; width: 40%; height: 170%;
     transform: rotate(13deg) translateX(-60%);
@@ -2024,13 +2051,17 @@ GLASS_CSS = """
      Die Mattierung selbst (backdrop-filter) traegt weniger als man denkt,
      seit die Streben im Hintergrund weg sind: sie braucht harte Kanten zum
      Verschleifen, und die gibt es dahinter nicht mehr. */
+  /* Deutlich weniger Deckkraft als frueher und ein schwaecherer Blur: die
+     Platte soll das Muster dahinter DURCHLASSEN, nicht verdecken. Mit den
+     alten Werten (dreifache Deckkraft, blur 13px) blieb vom Hintergrund
+     nichts uebrig und die Kachel las sich als eigenes Objekt. */
   .schema, .log, .panel {
-    -webkit-backdrop-filter: blur(13px) saturate(1.42) brightness(1.05);
-    backdrop-filter: blur(13px) saturate(1.42) brightness(1.05);
+    -webkit-backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
+    backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
     background:
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
-      linear-gradient(115deg, rgba(232,253,255,.11) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.045) 100%),
-      linear-gradient(158deg, rgba(140,205,220,.085), rgba(96,170,190,.025) 45%, rgba(120,195,210,.06));
+      linear-gradient(115deg, rgba(232,253,255,.06) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.025) 100%),
+      linear-gradient(158deg, rgba(140,205,220,.042), rgba(96,170,190,.010) 45%, rgba(120,195,210,.028));
     border: 1px solid rgba(150,210,230,.15);
     border-top-color: rgba(216,250,255,.42);
     border-left-color: rgba(198,240,255,.24);
@@ -2075,8 +2106,8 @@ GLASS_CSS = """
   .panel.failover {
     background:
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
-      linear-gradient(115deg, rgba(255,232,228,.10) 0%, transparent 34%, transparent 62%, rgba(255,200,190,.04) 100%),
-      linear-gradient(158deg, rgba(255,130,115,.085), rgba(255,106,88,.025) 45%, rgba(255,120,105,.06));
+      linear-gradient(115deg, rgba(255,232,228,.07) 0%, transparent 34%, transparent 62%, rgba(255,200,190,.03) 100%),
+      linear-gradient(158deg, rgba(255,130,115,.065), rgba(255,106,88,.018) 45%, rgba(255,120,105,.045));
     /* Kante und Licht tragen das Signal, nicht die Flaeche: die Toenung
        oben bleibt schwach, damit die Flow-Kurven ihren neutralen Untergrund
        behalten und voll lesbar bleiben. */
@@ -2099,10 +2130,16 @@ GLASS_CSS = """
 
   /* Farbsaum an den Ziffern, wie aus einer billigen Projektionsoptik. Per
      Selektor statt per Zusatzklasse, damit am erzeugten HTML nichts haengt. */
-  .pylon .val, .panel-head .fn, .readouts .rv {
-    text-shadow: -.6px 0 rgba(255, 70, 120, .28), .6px 0 rgba(90, 220, 255, .28),
-      0 0 15px rgba(127, 240, 228, .26);
+  /* Eine Projektion strahlt selbst, sie wird nicht angestrahlt: die Schrift
+     bekommt einen echten Lichthof, nicht nur Farbe. Der Farbsaum daneben
+     bleibt - eine billige Projektionsoptik trennt die Farben leicht auf. */
+  .pylon .val, .panel-head .fn, .readouts .rv, .log li .fn {
+    text-shadow: 0 0 12px rgba(127, 240, 228, .45), -.6px 0 rgba(255, 70, 120, .30),
+      .6px 0 rgba(90, 220, 255, .30);
   }
+  .panel .subhead, .mini-chart-label, .readouts .rl { text-shadow: 0 0 8px rgba(127, 240, 228, .22); }
+  .chip.nominal { text-shadow: 0 0 9px rgba(127, 240, 228, .5); }
+  .chip.failover { text-shadow: 0 0 9px rgba(255, 106, 88, .6); }
 
   /* Schema-Knoten leuchten wie Lichtpunkte auf der Scheibe */
   .bus .hub { background: rgba(127, 240, 228, .06); border-color: rgba(127, 240, 228, .35);
@@ -2141,18 +2178,10 @@ GLASS_CSS = """
      (die Eckklammern) bzw. im Glas-Thema display:none. Kaskadiert wird pro
      Eigenschaft - ohne das Zuruecksetzen bleibt das Muster unsichtbar oder
      14px gross. */
-  .panel::before, .schema::before, .log::before {
-    content: ""; display: block; position: absolute; inset: 0;
-    width: auto; height: auto; border: none; opacity: 1;
-    pointer-events: none; z-index: 0;
-    background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.9' stroke-opacity='0.38'/></svg>\"),
-      repeating-linear-gradient(45deg, rgba(127,240,228,.15) 0 1px, transparent 1px 15px);
-    background-size: 56px 48px, auto;
-    -webkit-mask-image: linear-gradient(162deg, #000 0%, rgba(0,0,0,.30) 34%, transparent 64%);
-    mask-image: linear-gradient(162deg, #000 0%, rgba(0,0,0,.30) 34%, transparent 64%);
-  }
-  .panel.failover::before { background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='48' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%23ff6a58' stroke-width='0.9' stroke-opacity='0.38'/></svg>\"),
-      repeating-linear-gradient(45deg, rgba(255,106,88,.24) 0 1px, transparent 1px 15px); }
+  /* Das Muster liegt jetzt im Hintergrund (siehe .depth), nicht mehr in der
+     Kachel - sonst riss es an jeder Kachelkante ab und fing an der naechsten
+     wieder an, was die Platten als aufgelegte Objekte lesbar machte. */
+  .panel::before, .schema::before, .log::before { content: none; }
 
   /* Messskala an der Kachel-Oberkante */
   .panel::after {
