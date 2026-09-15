@@ -1617,28 +1617,42 @@ HUD_CSS = """
   /* Latenz-Radar im Pylon (siehe _radar_html). Der senkrechte Monatsbalken,
      der hier vorher stand, ist dafuer gewichen: die Tagesangabe steht
      ohnehin im Label der Monatszahl. */
-  .radar { position: relative; flex: 0 0 auto; width: 118px; height: 118px;
+  /* Kontrast wie beim Pylon daneben: das Radar steht ebenfalls frei auf dem
+     gemusterten Hintergrund, nicht auf einer Platte. Die Werte, mit denen es
+     gebaut war, stammen aus dem Inneren einer Glaskachel und gingen hier
+     unter - die Standortkuerzel (7,5px in --dim) waren praktisch nicht zu
+     lesen. Eine eigene dunkle Scheibe im Radarfeld hebt den Untergrund ab,
+     ohne dass das Radar zur Kachel wird. */
+  .radar { position: relative; flex: 0 0 auto; width: 122px; height: 122px;
     border-radius: 50%; align-self: center; overflow: hidden;
-    border: 1px solid rgba(127, 240, 228, .40);
+    border: 1px solid rgba(127, 240, 228, .58);
+    box-shadow: 0 0 16px rgba(127, 240, 228, .16), inset 0 0 22px rgba(4, 9, 13, .75);
     background:
-      linear-gradient(0deg, transparent calc(50% - .5px), rgba(127,240,228,.20) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
-      linear-gradient(90deg, transparent calc(50% - .5px), rgba(127,240,228,.20) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
-      radial-gradient(circle at 50% 50%, rgba(127,240,228,.10), transparent 74%); }
+      linear-gradient(0deg, transparent calc(50% - .5px), rgba(127,240,228,.32) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
+      linear-gradient(90deg, transparent calc(50% - .5px), rgba(127,240,228,.32) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)),
+      radial-gradient(circle at 50% 50%, rgba(127,240,228,.13), transparent 74%),
+      radial-gradient(circle at 50% 50%, rgba(4, 9, 13, .82), rgba(4, 9, 13, .62) 78%); }
   .radar .ring { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    border: 1px solid rgba(127,240,228,.22); border-radius: 50%; pointer-events: none; }
+    border: 1px solid rgba(127,240,228,.36); border-radius: 50%; pointer-events: none; }
   .radar .sweep { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
-    background: conic-gradient(from 0deg, rgba(127,240,228,.50) 0deg, rgba(127,240,228,.16) 28deg, transparent 60deg, transparent 360deg);
+    background: conic-gradient(from 0deg, rgba(127,240,228,.62) 0deg, rgba(127,240,228,.20) 28deg, transparent 60deg, transparent 360deg);
     animation: radar-sweep 4.2s linear infinite; }
   @keyframes radar-sweep { to { transform: rotate(360deg); } }
-  .radar .blip { position: absolute; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
-    border-radius: 50%; background: var(--down); box-shadow: 0 0 7px var(--down); }
-  .radar .blip.alert { background: var(--alert); box-shadow: 0 0 9px var(--alert); }
+  .radar .blip { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    border-radius: 50%; background: var(--strong);
+    box-shadow: 0 0 4px var(--down), 0 0 11px var(--down); }
+  .radar .blip.alert { background: #fff;
+    box-shadow: 0 0 4px var(--alert), 0 0 13px var(--alert); }
   .radar .blip.lost { background: var(--dim); box-shadow: none; }
-  .radar .blip b { position: absolute; left: 7px; top: -6px; font-size: 7.5px; font-weight: 500;
-    letter-spacing: .06em; color: var(--dim); }
+  /* Die Kuerzel sind der eigentliche Grund, warum das Radar schwer zu lesen
+     war: heller, eine Spur groesser und mit dunklem Saum gegen das Muster. */
+  .radar .blip b { position: absolute; left: 8px; top: -6px; font-size: 8.5px; font-weight: 600;
+    letter-spacing: .06em; color: var(--text);
+    text-shadow: 0 0 7px rgba(4, 9, 13, .95), 0 1px 3px rgba(4, 9, 13, .95); }
   .radar .blip.alert b { color: var(--alert); }
-  .radar .rlabel { position: absolute; right: 4px; bottom: 3px; font-size: 7.5px;
-    letter-spacing: .06em; color: var(--phosphor-dim); font-weight: 400; }
+  .radar .rlabel { position: absolute; right: 5px; bottom: 4px; font-size: 8.5px;
+    letter-spacing: .06em; color: var(--down); opacity: .85; font-weight: 500;
+    text-shadow: 0 0 7px rgba(4, 9, 13, .95); }
   .segments i.lit { background: var(--down); box-shadow: 0 0 5px var(--phosphor-dim); border-top-color: var(--down); }
   .segments i.lit.warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); border-top-color: var(--warn); }
   .segments i.lit.crit { background: var(--alert); box-shadow: 0 0 4px var(--alert); border-top-color: var(--alert); }
