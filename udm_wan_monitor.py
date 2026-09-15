@@ -2826,20 +2826,39 @@ def main():
         print(f"Übersicht geschrieben: {index_path}")
         return
 
-    targets = []
-    for name, host_id in targets_cfg:
-        # Wie in poll(): eine einzelne offline Konsole darf nicht verhindern,
-        # dass die restigen Konsolen ueberhaupt erst Daten bekommen.
+    # Zielermittlung parallel, aus demselben Grund wie in poll(): je Konsole
+    # sind das ZWEI HTTP-Anfragen (/sites und die Geraeteliste), bei sechs
+    # Konsolen also zwoelf nacheinander. Der Schritt laeuft bei jedem
+    # Workflow-Lauf neu, weil --once jedes Mal einen neuen Prozess startet.
+    # Waehrend ein Thread auf die Antwort wartet, gibt Python das GIL frei -
+    # ein einfacher Thread-Pool genuegt.
+    def _ziel(eintrag):
+        name, host_id = eintrag
         try:
             sites = connector_get(host_id, "/sites")
             site_id = sites["data"][0]["id"]
             site_name = sites["data"][0]["internalReference"]
-            lte_mac = find_lte_modem(host_id, site_id)
+            return name, (name, host_id, site_name, find_lte_modem(host_id, site_id)), None
         except Exception as exc:
+            return name, None, exc
+
+    # Reihenfolge der Ausgabe bleibt die der Konfiguration, nicht die des
+    # Antworteingangs - sonst wechselt die Log-Reihenfolge bei jedem Lauf.
+    ergebnisse = {}
+    with ThreadPoolExecutor(max_workers=len(targets_cfg) or 1) as executor:
+        for name, ziel, exc in executor.map(_ziel, targets_cfg):
+            ergebnisse[name] = (ziel, exc)
+
+    targets = []
+    for name, _host_id in targets_cfg:
+        ziel, exc = ergebnisse.get(name, (None, None))
+        if ziel is None:
+            # Wie in poll(): eine einzelne offline Konsole darf nicht
+            # verhindern, dass die restlichen ueberhaupt Daten bekommen.
             print(f"Ziel: {name}: uebersprungen, nicht erreichbar - {exc}")
             continue
-        targets.append((name, host_id, site_name, lte_mac))
-        print(f"Ziel: {name} (site={site_name}, lte_mac={lte_mac})")
+        targets.append(ziel)
+        print(f"Ziel: {name} (site={ziel[2]}, lte_mac={ziel[3]})")
 
     rows = load_rows()
     while True:
