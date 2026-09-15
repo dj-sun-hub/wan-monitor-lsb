@@ -493,9 +493,9 @@ def _rollup_old_rows(rows, now):
     sie einzeln pro Poll fuer immer mitzuschleppen. Haelt wan_traffic.csv
     langfristig beschraenkt statt unbegrenzt zu wachsen.
 
-    Verfaelscht keine Kennzahl: Stundenchart/Flow-Chart (CHART_WINDOW_DAYS),
-    Tageswerte-Tabelle (TABLE_WINDOW_DAYS) und die Failover-Erkennung
-    schauen alle nur auf die letzten paar Tage/Minuten. 'Aktueller Monat'
+    Verfaelscht keine Kennzahl: Flow-Chart (CHART_WINDOW_DAYS) und die
+    Failover-Erkennung schauen nur auf die letzten paar Tage/Minuten.
+    'Aktueller Monat'
     bleibt korrekt, da er nur die SUMME braucht, keine Einzelzeilen - die
     Aggregation ist reine Summenbildung.
 
@@ -603,6 +603,13 @@ WARN_THRESHOLD_FACTOR = 0.8
 # zeigte, dass ein Routing-/Failover-Problem sich vor allem als massiver
 # Upload ueber die LTE-Leitung aeussert.
 FAILOVER_THRESHOLD_KBPS = 150.0
+# Einzelne Standorte haben im Normalbetrieb eine deutlich hoehere Grundlast
+# und loesten mit den globalen 150 kbps laufend Fehlalarme aus (WTB meldete
+# an einem Vormittag vier Failover bei 178-602 kbps). Hier steht deshalb die
+# eigene Schwelle, sonst gilt FAILOVER_THRESHOLD_KBPS.
+FAILOVER_THRESHOLD_KBPS_BY_CONSOLE = {
+    "WTB--UDM-1": 1500.0,   # 1,5 Mbps (Nutzervorgabe)
+}
 # Einzelne kurze Ausschlaege (Speedtest, Firmware-/Signatur-Download) sollen
 # keinen Fehlalarm ausloesen. Erst wenn die letzten FAILOVER_CONSECUTIVE Polls
 # IN FOLGE ueber dem Schwellwert liegen, gilt Failover als bestaetigt - bei
@@ -654,11 +661,10 @@ EVENT_LOG_SHOW = 4
 LATENCY_REFRESH_S = 240
 LATENCY_POINTS = 30
 
-# Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
-# ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
-# unbrauchbar gross. Die Monatskennzahl ist davon unabhaengig.
-CHART_WINDOW_DAYS = 1  # Stunden-/Flow-Chart (Detail + Uebersichtskacheln): 24 Stunden
-TABLE_WINDOW_DAYS = 30
+# Dauerbetrieb: der Flow-Chart bleibt auf ein recentes Fenster begrenzt, sonst
+# wird er nach Wochen/Monaten Laufzeit unbrauchbar gross. Die Monatskennzahl
+# ist davon unabhaengig.
+CHART_WINDOW_DAYS = 1  # Flow-Chart der Uebersichtskacheln: 24 Stunden
 ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Flow-Chart
 
 # Ohne Rotation waechst wan_traffic.csv unbegrenzt und merge_rows() schreibt
@@ -681,18 +687,30 @@ ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Fl
 # Preis: poll-genaue Forensik ("was genau passierte im KNZ-Vorfall") reicht
 # nur noch 7 Tage zurueck - bewusst so gewaehlt (Nutzerentscheidung), damit
 # auch eine Nachfrage "was war da letzte Woche" noch minutengenau
-# beantwortbar bleibt und nicht nur als Tagessumme. Die Tageswerte-Tabelle der manuellen
-# Einzelkonsolen-Diagnose (--site, TABLE_WINDOW_DAYS) zeigt jenseits davon
-# die zusammengefassten Tageszeilen statt Stundenauswertung.
+# beantwortbar bleibt und nicht nur als Tagessumme.
 ROLLUP_AFTER_DAYS = 7
+
+
+def _console_failover_threshold(console_name):
+    """Loest die Failover-Schwelle einer Konsole auf (kbps Upload-Durchschnitt).
+
+    Substring-Match wie bei _console_alert_threshold(), damit auch eine
+    Kurzform dieselbe Schwelle bekommt statt still auf den globalen Wert
+    zurueckzufallen."""
+    if console_name:
+        needle = console_name.lower()
+        for name, limit in FAILOVER_THRESHOLD_KBPS_BY_CONSOLE.items():
+            if needle in name.lower() or name.lower() in needle:
+                return limit
+    return FAILOVER_THRESHOLD_KBPS
 
 
 def _console_alert_threshold(console_name):
     """Loest die Rot-Schwelle einer Konsole auf - per Substring-Match (wie
     in_site() in compute_stats()), nicht per exaktem dict-Key-Vergleich, damit
-    z.B. '--site lsb' (Kleinschreibung/Kurzform) dieselbe Schwelle bekommt wie
-    die kanonische Konsole 'LSB--UDM-1', statt still auf den generischen
-    Default zurueckzufallen."""
+    auch eine Kurzform wie 'lsb' dieselbe Schwelle bekommt wie die kanonische
+    Konsole 'LSB--UDM-1', statt still auf den generischen Default
+    zurueckzufallen."""
     if console_name:
         needle = console_name.lower()
         for name, threshold in ALERT_THRESHOLD_BYTES_BY_CONSOLE.items():
@@ -719,26 +737,21 @@ def alert_threshold_label(console_name):
     return human_bytes(_console_alert_threshold(console_name))
 
 
-def compute_stats(rows, start, site_filter=None, include_hover_data=False,
-                  rows_prefiltered=False):
+def compute_stats(rows, start, site_filter=None, rows_prefiltered=False):
     """Berechnet alle Kennzahlen fuer eine Konsole (oder alle, falls site_filter
-    leer) und liefert sie als dict zurueck - roh, ohne HTML. Wird fuer Karten
-    der Übersichtsseite (render_overview_html) genutzt, und optional (siehe
-    include_hover_data) fuer die manuelle Einzelkonsolen-Diagnose (--site,
-    render_html) - eigene Detailseiten werden im Dauerbetrieb nicht mehr
-    veroeffentlicht (Nutzerwunsch: reine Uebersichtskacheln reichen). Die
-    Uebersichtskacheln (Stunden- UND Flow-Mini-Chart) verzichten bewusst auf
-    Hover-Tooltips UND die dafuer noetigen eingebetteten Rohdaten (Nutzer-
-    wunsch: weder gebraucht noch gewuenscht) - spart neben den 6 vollen
-    Detailseiten-HTMLs auch nochmal Groesse/Rechenzeit auf der
-    Uebersichtsseite selbst, die bei jedem Poll neu committet/gepusht wird.
+    leer) und liefert sie als dict zurueck - roh, ohne HTML. Einziger Abnehmer
+    ist die Uebersichtsseite (render_overview_html).
+
+    Die Kacheln verzichten bewusst auf Hover-Tooltips und die dafuer noetigen
+    eingebetteten Rohdaten (Nutzerwunsch: weder gebraucht noch gewuenscht) -
+    das spart Groesse und Rechenzeit auf der Seite, die bei jedem Poll neu
+    committet und gepusht wird.
 
     Dauerbetrieb (kein festes Messende mehr): start ist der einmalige
     Messbeginn, es gibt kein "end". Einzige Volumenkennzahl ist der aktuelle
-    Kalendermonat, aufgeteilt in Download und Upload. Stundenchart/
-    Flow-Chart/Tageswerte bleiben auf ein kuerzeres, recentes Fenster
-    begrenzt (CHART_WINDOW_DAYS / TABLE_WINDOW_DAYS), sonst wuerden sie nach
-    Wochen/Monaten Laufzeit riesig und unbrauchbar.
+    Kalendermonat, aufgeteilt in Download und Upload. Der Flow-Chart bleibt
+    auf ein kuerzeres, recentes Fenster begrenzt (CHART_WINDOW_DAYS), sonst
+    wuerde er nach Wochen/Monaten Laufzeit riesig und unbrauchbar.
 
     "Aktueller Monat" wird IMMER strikt aus den CSV-Deltas seit dem 1. des
     Kalendermonats summiert - NICHT aus dem rohen absoluten SIM-Zaehlerstand.
@@ -761,8 +774,9 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
     # rows_prefiltered: im Dauerbetrieb hat _group_by_console() die Zeilen
     # bereits exakt nach Konsole aufgeteilt - sie hier per Substring ERNEUT
     # zu pruefen war reine Doppelarbeit (284.657 in_site-Aufrufe mit 569.314
-    # .lower()-Allokationen je Bericht, ~0,16s). Der Filter bleibt fuer die
-    # manuelle Diagnose (--site auf der vollen Zeilenliste) erhalten.
+    # .lower()-Allokationen je Bericht, ~0,16s). Der Filter selbst bleibt
+    # erhalten: compute_stats() muss auch mit einer ungefilterten Zeilenliste
+    # umgehen koennen (rows_prefiltered=False).
     if rows_prefiltered and site_filter and rows:
         # Billige Plausibilitaetspruefung (erste und letzte Zeile), denn ein
         # falsches rows_prefiltered=True faellt sonst NICHT auf: es wuerde
@@ -839,7 +853,7 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
         if rates:
             last_rate_kbps = sum(rates) / len(rates)
         if len(rates) == FAILOVER_CONSECUTIVE:
-            is_failover = last_rate_kbps > FAILOVER_THRESHOLD_KBPS
+            is_failover = last_rate_kbps > _console_failover_threshold(site_filter)
 
     # Offline/nicht erreichbar (z.B. von poll() uebersprungen, siehe dortige
     # Fehlerbehandlung): der letzte BEKANNTE Wert kann veraltet sein und
@@ -872,152 +886,23 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
 
     peak = max((d + u for _, d, u in series), default=0.0) or 1.0
 
-    # Tageswerte-Tabelle, Ausreisserliste und 24h-Einzelauflistung gibt es NUR
-    # noch fuer die manuelle Einzelkonsolen-Diagnose (--site). Die Uebersicht
-    # zeigt nichts davon an - berechnet wurden sie trotzdem bei jedem Poll,
-    # und die Tabelle war mit Abstand der teuerste Einzelposten des ganzen
-    # Berichts: sie laeuft ueber TABLE_WINDOW_DAYS (30 Tage) Zeilen und macht
-    # dabei je Zeile ein astimezone() + strftime(). Gemessen 255.000 solcher
-    # Aufrufe und ~0,92s der 1,31s Gesamtlaufzeit von compute_stats - fuer
-    # Werte, die niemand zu sehen bekam.
-    if include_hover_data:
-        table_start = max(start, now - timedelta(days=TABLE_WINDOW_DAYS))
-        table_rows = [r for r in all_rows if r["ts"] >= table_start]
-        days = {}
-        hours_by_day = {}
-        for row in table_rows:
-            local_day = row["ts"].astimezone().strftime("%d.%m.%Y")
-            entry = days.setdefault(local_day, [0.0, 0.0, 0])
-            entry[0] += row["down_bytes"]
-            entry[1] += row["up_bytes"]
-            hours_by_day.setdefault(local_day, set()).add(
-                row["ts"].replace(minute=0, second=0, microsecond=0))
-        for day, hset in hours_by_day.items():
-            days[day][2] = len(hset)
-
-        # Ausreisser (innerhalb des Chart-Fensters)
-        spikes = sorted(series, key=lambda item: item[1] + item[2], reverse=True)[:5]
-        spikes = [s for s in spikes if (s[1] + s[2]) > 0]
-
-        # Letzte 24 Stunden, Einzelauflistung
-        last24_start = now - timedelta(hours=24)
-        last24 = [s for s in series if last24_start <= s[0] <= now]
-    else:
-        days, spikes, last24 = {}, [], []
-
-    # Uebersichtskacheln (Dauerbetrieb) verzichten bewusst auf Hover-Tooltips
-    # UND die dafuer noetigen eingebetteten Rohdaten (Nutzerwunsch) - sowohl
-    # beim Stunden- als auch beim Flow-Chart. Volle, interaktive Varianten nur
-    # noch fuer die manuelle Einzelkonsolen-Diagnose (--site) berechnet, nicht
-    # mehr im Dauerbetrieb (write_reports) - seit es dort keine eigenen
-    # Detailseiten mehr gibt (spart Groesse/Rechenzeit bei jedem Poll).
-    #
-    # Der Stundenchart wird auf der Uebersicht nicht mehr gezeigt (der
-    # Flow-Chart hat seinen Platz bekommen), also auch nicht mehr gezeichnet.
+    # Die Kacheln kommen bewusst ohne Hover-Tooltips aus (Nutzerwunsch) und
+    # brauchen deshalb auch die dafuer noetigen eingebetteten Rohdaten nicht.
     # Die Stundenwerte selbst (series/peak) bleiben - sie kosten fast nichts,
     # laufen nur ueber das 1-Tage-Chartfenster, und "Spitze X/h" steht
     # weiterhin an der Kachel.
-    chart = (render_chart(series, peak, chart_start_hour, include_bars=True)
-             if include_hover_data else "")
-    flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, include_samples=False,
-                                        max_points=200, include_area=False)
-    flow_chart = (render_flow_chart(chart_rows, chart_start, now)
-                  if include_hover_data else flow_chart_mini)
-    flow_points = len(chart_rows)
-    flow_intervals = sorted({r["interval_s"] for r in chart_rows if r["interval_s"]})
-    flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
+    flow_chart_mini = render_flow_chart(chart_rows, chart_start, now, max_points=200)
     device = site_filter or (all_rows[0]["site"] if all_rows else (rows[0]["site"] if rows else "unbekannt"))
     return dict(
         window=all_rows, month_down=month_down, month_up=month_up,
         total_month=total_month, per_day_month=per_day_month, projected_month=projected_month,
         days_elapsed_month=days_elapsed_month, days_in_month=days_in_month,
         days_elapsed_month_calendar=days_elapsed_month_calendar,
-        days=days, spikes=spikes,
-        chart=chart, start=start, now=now, peak=peak, device=device,
-        flow_chart=flow_chart, flow_chart_mini=flow_chart_mini,
-        flow_points=flow_points, flow_interval_min=flow_interval_min,
-        last24=last24, is_failover=is_failover, last_rate_kbps=last_rate_kbps, is_offline=is_offline,
+        start=start, now=now, peak=peak, device=device,
+        flow_chart_mini=flow_chart_mini,
+        is_failover=is_failover, last_rate_kbps=last_rate_kbps, is_offline=is_offline,
         last_seen=last_seen,
     )
-
-
-def build_report(rows, start, site_filter=None):
-    """Nur noch fuer die manuelle Einzelkonsolen-Diagnose (--site), nicht mehr
-    im Dauerbetrieb aufgerufen - deshalb hier bewusst die vollen,
-    interaktiven Chart-Varianten (mit Hover-Tooltips) anfordern."""
-    stats = compute_stats(rows, start, site_filter, include_hover_data=True)
-    return render_html(**stats)
-
-
-def render_chart(series, peak, start, include_bars=True):
-    """include_bars=False laesst die Hover-Tooltip-Rohdaten (data-bars) weg -
-    fuer die Uebersichtskacheln (siehe compute_stats()), die bewusst ohne
-    Hover-Interaktivitaet auskommen (Nutzerwunsch)."""
-    width, height = 960, 220
-    left, bottom = 54, 28
-    plot_w = width - left - 12
-    plot_h = height - bottom - 12
-    n = max(len(series), 1)
-    slot = plot_w / n
-    bar_w = max(slot * 0.72, 1.2)
-
-    # Logarithmische Hoehen-Skalierung (log1p) statt linear: bei Konsolen mit
-    # wenig Grundlast (z.B. LSB) und nur seltenen, dafuer hohen Ausschlaegen
-    # (Failover) verschluckt eine lineare Skala die Grundlast komplett - sie
-    # bleibt bei ein paar Pixeln Hoehe unsichtbar, waehrend der seltene
-    # Ausschlag den gesamten Balken fuellt. log1p(0) = 0 (Nullwerte bleiben
-    # exakt auf der Grundlinie), waechst aber anfangs viel steiler als linear,
-    # sodass auch kleine Werte sichtbare Balkenhoehe bekommen. Gilt fuer alle
-    # Konsolen gleichermassen (dieselbe Render-Funktion).
-    peak_scaled = math.log1p(peak) or 1.0
-
-    parts = []
-    for i in range(1, 4):
-        y = 12 + plot_h * (1 - i / 4.0)
-        label_value = math.expm1((i / 4.0) * peak_scaled)
-        label = human_bytes(label_value)
-        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" class="grid"/>')
-        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="axis" text-anchor="end">{label}</text>')
-
-    bars_data = []
-    for i, (bucket, down, up) in enumerate(series):
-        x = left + i * slot + (slot - bar_w) / 2
-        x_center = x + bar_w / 2
-        total = down + up
-        # Gesamthoehe des Balkens folgt der Log-Skala; die Aufteilung in
-        # Down-/Up-Anteil bleibt linear-proportional zum tatsaechlichen
-        # Verhaeltnis (sonst waere log(down)+log(up) != log(down+up) und die
-        # Stapelhoehe wuerde nicht mehr zur Achsenbeschriftung passen).
-        total_h = plot_h * (math.log1p(total) / peak_scaled) if total > 0 else 0.0
-        h_down = total_h * (down / total) if total > 0 else 0.0
-        h_up = total_h * (up / total) if total > 0 else 0.0
-        y_down = 12 + plot_h - h_down
-        y_up = y_down - h_up
-        if down:
-            parts.append(f'<rect x="{x:.1f}" y="{y_down:.1f}" width="{bar_w:.1f}" height="{h_down:.1f}" class="down"/>')
-        if up:
-            parts.append(f'<rect x="{x:.1f}" y="{y_up:.1f}" width="{bar_w:.1f}" height="{h_up:.1f}" class="up"/>')
-        local = bucket.astimezone()
-        if local.hour == 0 or i == 0:
-            parts.append(f'<line x1="{x:.1f}" y1="12" x2="{x:.1f}" y2="{12 + plot_h}" class="daymark"/>')
-            parts.append(f'<text x="{x + 4:.1f}" y="{height - 8}" class="axis">{local.strftime("%d.%m. %H:%M")}</text>')
-        if include_bars:
-            # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel
-            # der Stunde, Down/Up in Bytes, exakte x-Pixel-Position des Balkens.
-            bars_data.append([bucket.isoformat(), round(down), round(up), round(x_center, 1)])
-
-    parts.append(f'<line x1="{left}" y1="{12 + plot_h}" x2="{left + plot_w}" y2="{12 + plot_h}" class="baseline"/>')
-    if include_bars:
-        # Hover-Linie: unsichtbar per Default, wird von flow_tooltip_script beim
-        # Hovern an die x-Position des naechstgelegenen Balkens verschoben und
-        # eingeblendet.
-        parts.append(f'<line class="hover-line" x1="0" y1="12" x2="0" y2="{12 + plot_h}"/>')
-        bars_attr = html.escape(json.dumps(bars_data), quote=True)
-        data_bars_part = f'data-bars="{bars_attr}" '
-    else:
-        data_bars_part = ""
-    return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart hour-chart" '
-            f'role="img" aria-label="Stundenvolumen" {data_bars_part}>{"".join(parts)}</svg>')
 
 
 def _thin_keeping_peaks(samples, max_points):
@@ -1049,27 +934,26 @@ def _thin_keeping_peaks(samples, max_points):
     return out
 
 
-def render_flow_chart(window, start, end, include_samples=True, max_points=None,
-                      include_area=True):
-    """Feinkoerniger Traffic-Flow-Graph: Rate (kbps) je Poll-Punkt ueber die Zeit,
-    im Gegensatz zum Stundenchart nicht zu Stundensummen aggregiert.
+def render_flow_chart(window, start, end, max_points=None):
+    """Feinkoerniger Traffic-Flow-Graph: Rate (kbps) je Poll-Punkt ueber die Zeit.
 
-    include_samples/max_points: fuer die Mini-Vorschau auf der Uebersichtsseite
-    (siehe compute_stats()) bewusst abschaltbar/reduzierbar. Bei
-    CHART_WINDOW_DAYS=1 und 1-Minuten-Poll-Takt sind das bis zu ~1440 Punkte
-    PRO Konsole - eingebettet als Hover-Tooltip-JSON (data-samples) UND als
-    SVG-Pfadkoordinaten (5 Polylines/Polygon). Bislang wurde dieselbe volle
-    Version auf der Detailseite UND (redundant, fuer alle 6 Konsolen
-    gleichzeitig) auf der Uebersichtsseite eingebettet - das war ein
-    Haupttreiber dafuer, dass wan_report.html auf ueber 1 MB wuchs und der
-    poll-Job dadurch beim Committen/Pushen zunehmend laenger brauchte (bis an
-    den Rand des 1-Minuten-Poll-Takts). Die Detailseite bekommt weiterhin die
-    volle, interaktive Version; die Mini-Vorschau eine leichtgewichtige ohne
+    max_points: bei CHART_WINDOW_DAYS=1 und 1-Minuten-Poll-Takt waeren das bis
+    zu ~1440 Punkte PRO Konsole, eingebettet als SVG-Pfadkoordinaten (5
+    Polylines/Polygon). Das war ein Haupttreiber dafuer, dass
+    wan_report.html auf ueber 1 MB wuchs und der poll-Job dadurch beim
+    Committen/Pushen zunehmend laenger brauchte (bis an den Rand des
+    1-Minuten-Poll-Takts). Deshalb eine leichtgewichtige Fassung ohne
     Hover-Daten und mit deutlich weniger Punkten."""
     width, height = 960, 200
-    left, bottom = 54, 28
+    # bottom/top waren 28 und 12: unten fuer eine Datumszeile, oben als Rand.
+    # Damit blieben der Kurve nur 160 von 200 Einheiten. Die Datumszeile ist
+    # entfallen (bei 24 Stunden Fenster steht dort hoechstens ein Datum, und
+    # die Kachelbeschriftung sagt "Flow - 24 h"), der obere Rand reicht mit 8
+    # - die Kurve beruehrt ihn nur im Punkt der Spitze. Jetzt 184 von 200,
+    # also 15 % mehr Kurvenhoehe bei gleicher Anzeigehoehe.
+    left, bottom, top = 54, 8, 8
     plot_w = width - left - 12
-    plot_h = height - bottom - 12
+    plot_h = height - bottom - top
 
     pts = sorted((r for r in window if r["interval_s"]), key=lambda r: r["ts"])
     if len(pts) < 2:
@@ -1085,23 +969,22 @@ def render_flow_chart(window, start, end, include_samples=True, max_points=None,
                 rate_kbps(r["up_bytes"], r["interval_s"])) for r in pts]
     samples = _thin_keeping_peaks(samples, max_points)
     peak = max((max(d, u) for _, d, u in samples), default=0.0) or 1.0
-    # Logarithmische Hoehen-Skalierung (log1p), siehe render_chart() fuer die
-    # Begruendung: sonst verschwindet die Grundlast ruhiger Konsolen (LSB,
+    # Logarithmische Hoehen-Skalierung (log1p): linear verschwindet die
+    # Grundlast ruhiger Konsolen (LSB,
     # HAN, KLO, NID) neben seltenen hohen Failover-Ausschlaegen komplett.
     peak_scaled = math.log1p(peak) or 1.0
 
     def xy(ts, value):
         x = left + (ts - start).total_seconds() / span_s * plot_w
         scaled = math.log1p(max(value, 0.0)) / peak_scaled if peak_scaled else 0.0
-        y = 12 + plot_h - scaled * plot_h
+        y = top + plot_h - scaled * plot_h
         return x, y
 
-    baseline_y = 12 + plot_h
+    baseline_y = top + plot_h
     down_line = [xy(ts, d) for ts, d, u in samples]
     up_line = [xy(ts, u) for ts, d, u in samples]
     down_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in down_line)
     up_pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in up_line)
-    down_area = f"{down_line[0][0]:.1f},{baseline_y:.1f} {down_pts_str} {down_line[-1][0]:.1f},{baseline_y:.1f}"
 
     # Gleitender Durchschnitt ueber die letzten ROLLING_AVG_MINUTES Minuten -
     # NICHT der kumulative Mittelwert seit Fensterbeginn (der wurde bei
@@ -1130,7 +1013,7 @@ def render_flow_chart(window, start, end, include_samples=True, max_points=None,
 
     parts = []
     for i in range(1, 4):
-        y = 12 + plot_h * (1 - i / 4.0)
+        y = top + plot_h * (1 - i / 4.0)
         label_value = math.expm1((i / 4.0) * peak_scaled)
         label = f"{label_value:,.0f} kbps".replace(",", ".")
         parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" class="grid"/>')
@@ -1140,43 +1023,23 @@ def render_flow_chart(window, start, end, include_samples=True, max_points=None,
     end_local = end.astimezone()
     while day_cursor < end_local:
         x, _ = xy(day_cursor.astimezone(timezone.utc), 0)
-        parts.append(f'<line x1="{x:.1f}" y1="12" x2="{x:.1f}" y2="{baseline_y:.1f}" class="daymark"/>')
-        parts.append(f'<text x="{x + 4:.1f}" y="{height - 8}" class="axis">{day_cursor.strftime("%d.%m.")}</text>')
+        # Nur die senkrechte Mitternachtslinie, ohne Datumstext darunter -
+        # der kostete 28 der 200 viewBox-Einheiten Kurvenhoehe.
+        parts.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{baseline_y:.1f}" class="daymark"/>')
         day_cursor += timedelta(days=1)
 
-    # Die Flaeche unter der Download-Linie entfaellt auf der Uebersicht
-    # (Nutzerwunsch: zwei leuchtende Linien auf Glas wirken passender als
-    # gefuellte Masse). Sie wird dort nicht nur unsichtbar geschaltet, sondern
-    # gar nicht erst erzeugt - das Polygon wiederholt saemtliche Punkte der
-    # Linie und macht rund ein Fuenftel des Chart-Markups aus. Die
-    # Einzelkonsolen-Diagnose (--site) nutzt nur BASE_CSS und behaelt sie.
-    if include_area:
-        parts.append(f'<polygon points="{down_area}" class="flow-down-fill"/>')
+    # Ohne Flaeche unter der Download-Linie (Nutzerwunsch: zwei leuchtende
+    # Linien auf Glas wirken passender als gefuellte Masse). Das Polygon wird
+    # gar nicht erst erzeugt statt nur unsichtbar geschaltet - es wiederholt
+    # saemtliche Punkte der Linie und machte rund ein Fuenftel des
+    # Chart-Markups aus.
     parts.append(f'<polyline points="{down_pts_str}" class="flow-down-line"/>')
     parts.append(f'<polyline points="{up_pts_str}" class="flow-up-line"/>')
     parts.append(f'<polyline points="{avg_down_pts_str}" class="flow-avg-down-line"/>')
     parts.append(f'<polyline points="{avg_up_pts_str}" class="flow-avg-up-line"/>')
     parts.append(f'<line x1="{left}" y1="{baseline_y:.1f}" x2="{left + plot_w}" y2="{baseline_y:.1f}" class="baseline"/>')
-    # Hover-Linie: unsichtbar per Default, wird von flow_tooltip_script beim Hovern
-    # an die x-Position des naechstgelegenen Messpunkts verschoben und eingeblendet.
-    parts.append(f'<line class="hover-line" x1="0" y1="12" x2="0" y2="{baseline_y:.1f}"/>')
-
-    # Rohdaten fuer den Hover-Tooltip (siehe flow_tooltip_script): Zeitstempel, Rate,
-    # laufender Durchschnitt und die exakte x-Pixel-Position je Punkt (fuer die
-    # Hover-Linie). Nur eingebettet, wenn include_samples=True - die Mini-
-    # Vorschau (siehe Docstring) verzichtet bewusst darauf.
-    if include_samples:
-        samples_json = json.dumps([
-            [ts.isoformat(), round(d, 1), round(u, 1), round(x, 1), round(avg_d, 1), round(avg_u, 1)]
-            for (ts, d, u), (x, _y), (avg_d, avg_u) in zip(samples, down_line, avgs)
-        ])
-        samples_attr = html.escape(samples_json, quote=True)
-        data_samples_part = f'data-samples="{samples_attr}" '
-    else:
-        data_samples_part = ""
     return (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="chart flow-chart" '
-            f'role="img" aria-label="Traffic-Flow" '
-            f'{data_samples_part}data-left="{left}" data-plot-w="{plot_w:.2f}">'
+            f'role="img" aria-label="Traffic-Flow">'
             f'{"".join(parts)}</svg>')
 
 
@@ -1322,15 +1185,7 @@ BASE_CSS = _root_css_vars(COLOR_THEME) + """
   .header-info { flex: 1 1 auto; min-width: 0; }
   .brand-logo { flex: 0 0 auto; height: 42px; width: auto; }
   h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -.01em; font-weight: 600; }
-  .sub { color: var(--dim); font-size: 13.5px; }
   #refresh-cd { color: var(--warn); font-weight: 600; font-family: ui-monospace, monospace; }
-  .bar { height: 5px; background: var(--line); border-radius: 3px; margin-top: 16px; overflow: hidden; }
-  .bar span { display: block; height: 100%; background: var(--down); }
-  .grid-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 30px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
-  .card .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; }
-  .card .value { font: 600 26px/1.25 ui-monospace, "SFMono-Regular", Consolas, monospace; margin-top: 8px; }
-  .card .foot { color: var(--dim); font-size: 12.5px; margin-top: 4px; }
   .threshold-ref { font-size: .55em; font-weight: 500; color: var(--dim); }
   h2 { display: inline-block; background: var(--h2-bg); color: var(--h2-color);
     padding: var(--h2-padding); border-radius: var(--h2-radius);
@@ -1342,49 +1197,22 @@ BASE_CSS = _root_css_vars(COLOR_THEME) + """
   .chart .baseline { stroke: var(--dim); stroke-width: 1; }
   .chart .daymark { stroke: var(--line); stroke-dasharray: 3 4; }
   .chart .axis { fill: var(--dim); font: 10.5px ui-monospace, monospace; }
-  .chart .down { fill: var(--down); }
-  .chart .up { fill: var(--up); }
-  .chart .flow-down-fill { fill: var(--down); opacity: .16; stroke: none; }
   .chart .flow-down-line { fill: none; stroke: var(--down); stroke-width: 1.6; }
   .chart .flow-up-line { fill: none; stroke: var(--up); stroke-width: 1.6; }
   .chart .flow-avg-down-line { fill: none; stroke: var(--down); stroke-width: 1.1;
     stroke-dasharray: 5 3; opacity: .8; }
   .chart .flow-avg-up-line { fill: none; stroke: var(--up); stroke-width: 1.1;
     stroke-dasharray: 5 3; opacity: .8; }
-  .legend { display: flex; gap: 20px; color: var(--dim); font-size: 12.5px; margin-top: 10px; flex-wrap: wrap; }
-  .legend.small { font-size: 11.5px; gap: 12px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th { text-align: left; color: var(--dim); font-weight: 500; font-size: 12px;
     text-transform: uppercase; letter-spacing: .07em; padding: 0 10px 10px; }
-  td { padding: 9px 10px; border-top: 1px solid var(--line); }
   .num { text-align: right; font-family: ui-monospace, monospace; }
   .strong { color: var(--strong); }
   .dim { color: var(--dim); }
   .value-warn { color: var(--warn); }
   .value-alert { color: var(--alert); }
-  .flow-chart .hover-line, .hour-chart .hover-line { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3;
-    opacity: 0; pointer-events: none; }
-  .flow-tooltip { position: fixed; display: none; z-index: 50; pointer-events: none;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
-    padding: 7px 11px; font-size: 12px; line-height: 1.5; color: var(--text);
-    box-shadow: 0 4px 14px rgba(0,0,0,.45); white-space: nowrap; }
-  .flow-tooltip b { color: var(--strong); }
-  .flow-tooltip-avg { color: var(--dim); display: inline-block; margin-top: 3px;
-    padding-top: 3px; border-top: 1px dashed var(--line); }
-  .live-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: .06em; color: var(--down); border: 1px solid var(--down);
-    border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
-  .failover-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: .06em; color: #fff; background: var(--alert); border: 1px solid var(--alert);
-    border-radius: 3px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; font-weight: 600; }
-  .offline-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: .06em; color: var(--dim); border: 1px solid var(--dim);
-    border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   footer { color: var(--dim); font-size: 12.5px; margin-top: 34px;
     border-top: 1px solid var(--line); padding-top: 14px; }
-  a { color: inherit; }
-  @media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
 """
 
 
@@ -1446,236 +1274,6 @@ def refresh_countdown_script(now):
   tick();
 }})();
 </script>"""
-
-
-def flow_tooltip_script():
-    """Hover-Tooltip fuer alle Traffic-Flow-Charts (svg.flow-chart) UND
-    Stundencharts (svg.hour-chart) der Seite. Liest die in data-samples bzw.
-    data-bars eingebetteten Rohdaten, mappt die Maus-X-Position ueber die
-    SVG-CTM (funktioniert auch mit preserveAspectRatio="none") auf den
-    naechstgelegenen Punkt/Balken und zeigt eine kleine, dem Cursor folgende
-    Box mit den Werten."""
-    return """<script>
-(function() {
-  var tip = document.createElement('div');
-  tip.className = 'flow-tooltip';
-  document.body.appendChild(tip);
-
-  function fmtKbps(v) {
-    if (v >= 1000) return (v / 1000).toFixed(2).replace('.', ',') + ' Mbps';
-    return v.toFixed(1).replace('.', ',') + ' kbps';
-  }
-  function fmtBytes(v) {
-    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var i = 0;
-    while (Math.abs(v) >= 1000 && i < units.length - 1) { v /= 1000; i++; }
-    return v.toFixed(1).replace('.', ',') + ' ' + units[i];
-  }
-
-  // Gemeinsame Hover-Logik fuer beide Chart-Typen: samples/bars ist eine nach
-  // x aufsteigend sortierte Liste, xIndex das Feld mit der Pixel-Position
-  // (NICHT der Index selbst - die Punkte/Balken liegen wegen wechselnder
-  // Poll-Intervalle bzw. variabler Bucket-Breite nicht gleichmaessig auf der
-  // x-Achse). Binaersuche zum naechstgelegenen Eintrag.
-  function attachHover(svg, entries, xIndex, buildHtml) {
-    var hoverLine = svg.querySelector('.hover-line');
-    function nearest(svgX) {
-      var lo = 0, hi = entries.length - 1;
-      while (lo < hi) {
-        var mid = (lo + hi) >> 1;
-        if (entries[mid][xIndex] < svgX) lo = mid + 1; else hi = mid;
-      }
-      if (lo > 0 && Math.abs(entries[lo - 1][xIndex] - svgX) < Math.abs(entries[lo][xIndex] - svgX)) {
-        lo -= 1;
-      }
-      return entries[lo];
-    }
-    svg.addEventListener('mousemove', function (ev) {
-      var pt = svg.createSVGPoint();
-      pt.x = ev.clientX; pt.y = ev.clientY;
-      var svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
-      var s = nearest(svgP.x);
-      tip.innerHTML = buildHtml(s);
-      var x = ev.clientX + 16, y = ev.clientY + 16;
-      if (x + 170 > window.innerWidth) x = ev.clientX - 186;
-      if (y + 92 > window.innerHeight) y = ev.clientY - 108;
-      tip.style.left = x + 'px';
-      tip.style.top = y + 'px';
-      tip.style.display = 'block';
-      if (hoverLine) {
-        hoverLine.setAttribute('x1', s[xIndex]);
-        hoverLine.setAttribute('x2', s[xIndex]);
-        hoverLine.style.opacity = '1';
-      }
-    });
-    svg.addEventListener('mouseleave', function () {
-      tip.style.display = 'none';
-      if (hoverLine) hoverLine.style.opacity = '0';
-    });
-  }
-
-  document.querySelectorAll('svg.flow-chart').forEach(function (svg) {
-    var samples;
-    try { samples = JSON.parse(svg.getAttribute('data-samples')); } catch (e) { return; }
-    if (!samples || !samples.length) return;
-    attachHover(svg, samples, 3, function (s) {
-      var d = new Date(s[0]);
-      var timeStr = d.toLocaleString('de-DE', {
-        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-      });
-      return '<b>' + timeStr + '</b><br>Down: ' + fmtKbps(s[1]) +
-        '<br>Up: ' + fmtKbps(s[2]) +
-        '<br><span class="flow-tooltip-avg">Ø Down: ' + fmtKbps(s[4]) +
-        '<br>Ø Up: ' + fmtKbps(s[5]) + '</span>';
-    });
-  });
-
-  document.querySelectorAll('svg.hour-chart').forEach(function (svg) {
-    var bars;
-    try { bars = JSON.parse(svg.getAttribute('data-bars')); } catch (e) { return; }
-    if (!bars || !bars.length) return;
-    attachHover(svg, bars, 3, function (s) {
-      var d = new Date(s[0]);
-      var timeStr = d.toLocaleString('de-DE', {
-        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-      });
-      return '<b>' + timeStr + ' Uhr</b><br>Down: ' + fmtBytes(s[1]) +
-        '<br>Up: ' + fmtBytes(s[2]) +
-        '<br><span class="flow-tooltip-avg">Gesamt: ' + fmtBytes(s[1] + s[2]) + '</span>';
-    });
-  });
-})();
-</script>"""
-
-
-def render_html(**c):
-    start, now = c["start"], c["now"]
-    pct = min(c["days_elapsed_month_calendar"] / max(c["days_in_month"], 0.001), 1.0)
-    running_days = max((now - start).days, 0)
-
-    day_rows = "".join(
-        f"<tr><td>{day}</td><td class='num'>{human_bytes(v[0])}</td>"
-        f"<td class='num'>{human_bytes(v[1])}</td>"
-        f"<td class='num strong'>{human_bytes(v[0] + v[1])}</td>"
-        f"<td class='num dim'>{v[2]} h</td></tr>"
-        for day, v in sorted(c["days"].items())
-    ) or "<tr><td colspan='5' class='dim'>Noch keine Daten im Messfenster.</td></tr>"
-
-    spike_rows = "".join(
-        f"<tr><td>{b.astimezone().strftime('%d.%m. %H:%M')}</td>"
-        f"<td class='num'>{human_bytes(d)}</td><td class='num'>{human_bytes(u)}</td>"
-        f"<td class='num strong'>{human_bytes(d + u)}</td></tr>"
-        for b, d, u in c["spikes"]
-    ) or "<tr><td colspan='4' class='dim'>Noch keine Auffälligkeiten.</td></tr>"
-
-    current_hour = now.replace(minute=0, second=0, microsecond=0)
-    last24_rows = "".join(
-        f"<tr><td>{b.astimezone().strftime('%d.%m. %H:%M')}"
-        + (' <span class="live-tag">läuft</span>' if b == current_hour else '') + "</td>"
-        f"<td class='num'>{human_bytes(d)}</td><td class='num'>{human_bytes(u)}</td>"
-        f"<td class='num strong'>{human_bytes(d + u)}</td></tr>"
-        for b, d, u in sorted(c["last24"], key=lambda item: item[0], reverse=True)
-    ) or "<tr><td colspan='4' class='dim'>Noch keine Daten in den letzten 24 Stunden.</td></tr>"
-
-    return f"""<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WAN-Failover {c['device']}</title>
-<style>
-{BASE_CSS}
-  .detail-link {{ font-size: 13px; color: var(--down); text-decoration: none; }}
-  .detail-link:hover {{ text-decoration: underline; }}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div class="header-top">
-      <div class="header-info">
-        <h1>WAN-Failover {c['device']}{' <span class="failover-tag">FAILOVER VERMUTET</span>' if c['is_failover'] else ''}</h1>
-        <div class="sub"><a class="detail-link" href="index.html">&larr; Übersicht aller Konsolen</a> &nbsp;&middot;&nbsp;
-          Dauerbetrieb, läuft seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} ({running_days} Tage) &nbsp;&middot;&nbsp;
-          Stand {now.astimezone().strftime('%d.%m.%Y %H:%M')} &nbsp;&middot;&nbsp;
-          nächster Refresh in <span id="refresh-cd">{REPORT_REFRESH_S // 60}:00</span></div>
-      </div>
-      {_logo_html()}
-    </div>
-    <div class="bar"><span style="width:{pct * 100:.1f}%"></span></div>
-    <div class="dim" style="font-size:11.5px;margin-top:3px">Balken: Fortschritt im aktuellen Kalendermonat
-      (Tag {int(c['days_elapsed_month_calendar']) + 1} von {c['days_in_month']})</div>
-  </header>
-
-  <div class="grid-cards">
-    <div class="card"><div class="label">Aktueller Monat</div>
-      <div class="value{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])} <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div>
-      <div class="foot">Hochrechnung Monatsende: {human_bytes(c['projected_month'])}</div></div>
-    <div class="card"><div class="label">Verhältnis (diesen Monat)</div>
-      <div class="value">{human_bytes(c['month_down'])}</div>
-      <div class="foot">Download, dazu {human_bytes(c['month_up'])} Upload</div></div>
-  </div>
-
-  <h2>Stundenvolumen (letzte {int(CHART_WINDOW_DAYS * 24)} Stunden)</h2>
-  <div class="panel">
-    {c['chart']}
-    <div class="legend">
-      <span><span class="dot" style="background:var(--down)"></span>Download</span>
-      <span><span class="dot" style="background:var(--up)"></span>Upload</span>
-      <span>Spitze {human_bytes(c['peak'])} pro Stunde</span>
-      <span class="dim">Achse logarithmisch (Grundlast bleibt neben Ausschlägen sichtbar)</span>
-    </div>
-  </div>
-
-  <h2>Traffic-Flow (Rate je Messpunkt)</h2>
-  <div class="panel">
-    {c['flow_chart']}
-    <div class="legend">
-      <span><span class="dot" style="background:var(--down)"></span>Download (kbps)</span>
-      <span><span class="dot" style="background:var(--up)"></span>Upload (kbps)</span>
-      <span class="dim">- - - Ø letzte {ROLLING_AVG_MINUTES} Min</span>
-      <span>{c['flow_points']} Messpunkte, Pollintervall ~{c['flow_interval_min']} Min</span>
-      <span class="dim">Achse logarithmisch</span>
-    </div>
-  </div>
-
-  <h2>Tageswerte (letzte {TABLE_WINDOW_DAYS} Tage)</h2>
-  <div class="panel">
-    <table>
-      <thead><tr><th>Tag</th><th class="num">Download</th><th class="num">Upload</th>
-        <th class="num">Gesamt</th><th class="num">Abdeckung</th></tr></thead>
-      <tbody>{day_rows}</tbody>
-    </table>
-  </div>
-
-  <h2>Letzte 24 Stunden</h2>
-  <div class="panel">
-    <table>
-      <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
-        <th class="num">Gesamt</th></tr></thead>
-      <tbody>{last24_rows}</tbody>
-    </table>
-  </div>
-
-  <h2>Größte Stunden</h2>
-  <div class="panel">
-    <table>
-      <thead><tr><th>Stunde</th><th class="num">Download</th><th class="num">Upload</th>
-        <th class="num">Gesamt</th></tr></thead>
-      <tbody>{spike_rows}</tbody>
-    </table>
-    <p class="dim" style="margin:14px 0 0;font-size:13px">Ausschläge deutlich über der Grundlast
-      stammen erfahrungsgemäß von Speedtests, Firmware- oder Signatur-Downloads. Für die reine
-      Management-Grundlast diese Stunden abziehen.</p>
-  </div>
-
-  <footer>Datenquelle: SIM-Datenzähler des LTE-Modems (via Site-Manager-Connector-Proxy),
-    {len(c['window'])} Messpunkte seit Start. Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst.</footer>
-</div>
-{refresh_countdown_script(now)}
-{flow_tooltip_script()}
-</body>
-</html>"""
 
 
 def _console_status(c):
@@ -1833,8 +1431,10 @@ def _update_event_log(state, consoles, now):
             if old == status:
                 continue
             if status == "failover":
-                add(name, "crit", f"UPLOAD-Ø {human_kbps(c['last_rate_kbps'])} > {FAILOVER_THRESHOLD_KBPS:.0f} KBPS "
-                                  f"({FAILOVER_CONSECUTIVE} POLLS) — FAILOVER BESTÄTIGT")
+                add(name, "crit",
+                    f"UPLOAD-Ø {human_kbps(c['last_rate_kbps'])} > "
+                    f"{_console_failover_threshold(name):.0f} KBPS "
+                    f"({FAILOVER_CONSECUTIVE} POLLS) — FAILOVER BESTÄTIGT")
             elif status == "offline":
                 add(name, "warn", f"KEIN POLL SEIT > {OFFLINE_THRESHOLD_S} S — STATUS: LINK LOST")
             elif old == "failover":
@@ -2138,12 +1738,13 @@ HUD_CSS = """
   /* Einzeilig halten: bricht die Statuszeile um, wird die ganze Kachelreihe
      hoeher und die Hoehe fehlt den Charts. Voller Text im title-Attribut. */
   .panel .subhead { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hairline { border: none; border-top: 1px dashed var(--line); margin: 0; }
   /* Seit nur noch der Monatswert hier steht (30 Tage und Gesamt sind
      entfallen), braucht es keine Spaltenaufteilung mehr - der Wert nimmt
      seine natuerliche Breite. */
+  /* Label und Wert nebeneinander statt uebereinander: die eingesparte
+     Zeile geht direkt an den Flow-Chart darunter (gemessen 14px je Kachel). */
   .readouts { display: flex; gap: 18px; }
-  .readouts .r { min-width: 0; }
+  .readouts .r { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
   .readouts .rl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .09em; }
   /* Einzeilig halten wie Statuszeile und Protokoll: bricht ein Messwert um
      (typisch "11.5GB / 9.0 GB" bei schmalen Kacheln), wird die ganze
@@ -2153,7 +1754,7 @@ HUD_CSS = """
      zuerst der Schwellwert-Zusatz; die eigentliche Zahl bleibt stehen.
      Zusammen mit min-width:0 unten und minmax(0,1fr) am Raster, sonst
      wuerde das nowrap die Spalten aufblaehen. */
-  .readouts .rv { font-size: 16px; font-weight: 600; margin-top: 3px; color: var(--text);
+  .readouts .rv { font-size: 16px; font-weight: 600; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .readouts .rv .unit { font-size: 11px; }
   /* Ohne diese zwei Regeln verlieren die Schwellwert-Farben: '.value-alert'
@@ -2171,10 +1772,13 @@ HUD_CSS = """
   .mini-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
     flex: 1 1 auto; min-height: 0; }
   .mini-chart-col { display: flex; flex-direction: column; min-height: 0; }
-  /* Zeichenflaeche bleibt bei den bisherigen 140px, sobald der Bildschirm
-     hoch genug ist (max-height); auf niedrigeren Fenstern schrumpft sie,
-     statt die Seite in einen Scrollbalken laufen zu lassen. */
-  .mini-chart-col .chart { flex: 1 1 auto; height: auto; min-height: 64px; max-height: 140px; }
+  /* Die Zeichenflaeche nimmt die volle Resthoehe der Kachel. Frueher stand
+     hier ein Deckel von 140px - seit der Kopfbereich zur Konsolenbank
+     geschrumpft ist, wurden die Kacheln hoeher, der Chart aber nicht: unter
+     der Kurve stand einfach leerer Raum. Kein max-height mehr; nach unten
+     bleibt min-height als Schutz, damit auf flachen Fenstern nicht die Seite
+     in einen Scrollbalken laeuft. */
+  .mini-chart-col .chart { flex: 1 1 auto; height: auto; min-height: 64px; }
   /* Legende sitzt in der Chart-Beschriftungszeile statt in einer eigenen
      Zeile darunter - eine Zeile weniger je Kachel spart ueber zwei
      Kachelreihen rund 50px Seitenhoehe. */
@@ -2250,7 +1854,7 @@ HUD_CSS = """
     .pylon .fuss { display: block; }
     .overview-grid { margin-top: 16px; gap: 20px; }
     .panel { padding: 14px 18px 12px; gap: 8px; }
-    .mini-chart-col .chart { height: 140px; min-height: 0; max-height: none; flex: 0 0 auto; }
+    .mini-chart-col .chart { height: 140px; min-height: 0; flex: 0 0 auto; }
   }
   @keyframes blink { 50% { opacity: .15; } }
   @media (prefers-reduced-motion: reduce) {
@@ -2454,9 +2058,6 @@ GLASS_CSS = """
   .chart .grid { stroke: rgba(150, 210, 220, .09); }
   .chart .baseline { stroke: rgba(150, 210, 220, .2); }
 
-  /* Tooltip bleibt bewusst undurchsichtig: er muss ueber wechselndem
-     Untergrund lesbar sein, Transparenz macht ihn dort unbrauchbar. */
-  .flow-tooltip { background: #0b1218; border-color: rgba(160, 220, 235, .22); }
 """.replace("__SWEEP__", str(CANOPY_SWEEP_S))
 
 # Die Scheibe als Markup - eine einzige Ebene ueber dem GESAMTEN Bild
@@ -2532,7 +2133,7 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
         if status == "failover":
             chip = '<span class="chip failover">Failover</span>'
             sub = (f'Upload-Ø {human_kbps(c["last_rate_kbps"])} &middot; Schwelle '
-                   f'{FAILOVER_THRESHOLD_KBPS:.0f} kbps &middot; LTE trägt Last')
+                   f'{_console_failover_threshold(c["device"]):.0f} kbps &middot; LTE trägt Last')
             sub_cls = " alert"
         elif status == "offline":
             chip = '<span class="chip lost">Link Lost</span>'
@@ -2632,20 +2233,14 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
   <footer>Dauerbetrieb seit {start.astimezone().strftime('%d.%m.%Y %H:%M')} &middot;
     Datenquelle: SIM-Datenzähler der LTE-Modems (via Site-Manager-Connector-Proxy), {len(consoles)} Konsolen &middot;
     Seite aktualisiert sich alle {REPORT_REFRESH_S // 60} Minute{'n' if REPORT_REFRESH_S // 60 != 1 else ''} selbst &middot;
-    Failover ab Upload-Ø &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps über {FAILOVER_CONSECUTIVE} Polls &middot;
+    Failover ab Upload-Ø &gt; {FAILOVER_THRESHOLD_KBPS:.0f} kbps über {FAILOVER_CONSECUTIVE} Polls
+    ({", ".join(f"{n.split('--')[0]} {v:.0f}" for n, v in FAILOVER_THRESHOLD_KBPS_BY_CONSOLE.items())}) &middot;
     Link Lost ab {OFFLINE_THRESHOLD_S // 60} Min ohne Messpunkt.</footer>
 </div>
 {CANOPY_HTML if COLOR_THEME == "glas" else ""}
 {refresh_countdown_script(now)}
-{flow_tooltip_script()}
 </body>
 </html>"""
-
-
-def write_report(rows, start, site_filter=None):
-    html = build_report(rows, start, site_filter)
-    _atomic_write(HTML_PATH, lambda handle: handle.write(html))
-    return HTML_PATH
 
 
 def _group_by_console(rows, console_names):
@@ -2665,11 +2260,10 @@ def _group_by_console(rows, console_names):
 
 
 def write_reports(rows, start, console_names, state=None, record_events=True):
-    """Schreibt die Übersichtsseite (wan_report.html) - reine Übersichtskacheln,
-    keine eigenen Detailseiten mehr (Nutzerwunsch: spart pro Poll 6 volle
-    HTML-Seiten samt teurem Flow-Chart-Hoverdaten, war ein Haupttreiber fuer
-    immer laengere poll-Laufzeiten). Fuer Einzelkonsolen-Diagnose weiterhin
-    per --site moeglich (siehe write_report()/build_report()).
+    """Schreibt die Übersichtsseite (wan_report.html) - reine Übersichtskacheln.
+    Einzelkonsolen-Detailseiten gab es frueher zusaetzlich; sie waren von der
+    Uebersicht nie verlinkt, wurden nicht genutzt und sind mitsamt ihrem Code
+    entfernt (Nutzerwunsch).
 
     Performance: compute_stats() ist mit wachsender CSV der teuerste Teil
     (scannt Zeilen je Konsole fuer Monatssumme und Charts). rows wird VORAB
@@ -2854,7 +2448,7 @@ def main():
     parser.add_argument("--start", help="Messbeginn, z.B. 2026-08-07T12:00 (lokale Zeit). "
                                          "Nur beim allerersten Lauf relevant, danach aus monitor_state.json.")
     parser.add_argument("--interval", type=int, default=60, help="Pollintervall in Sekunden")
-    parser.add_argument("--site", help="Bericht auf einen einzelnen Konsolennamen beschränken")
+
     parser.add_argument("--host-id", default=None,
                          help="Nur diese eine Konsole pollen/berichten (Site-Manager hostId). "
                               "Ohne Angabe: alle Konsolen aus MONITORED_HOSTS (Übersicht + Details).")
@@ -2921,16 +2515,11 @@ def main():
         if name not in ALERT_THRESHOLD_BYTES_BY_CONSOLE:
             print(f"Hinweis: {name} hat keine eigene Schwelle in ALERT_THRESHOLD_BYTES_BY_CONSOLE, "
                   f"nutzt Standard ({human_bytes(DEFAULT_ALERT_THRESHOLD_BYTES)}).")
-    single = args.site or (len(console_names) == 1 and console_names[0])
-
     if args.report:
         rows = load_rows()
-        if single:
-            print(f"Bericht geschrieben: {write_report(rows, start, single)}")
-        else:
-            index_path = write_reports(rows, start, console_names,
-                                       state=state, record_events=False)
-            print(f"Übersicht geschrieben: {index_path}")
+        index_path = write_reports(rows, start, console_names,
+                                   state=state, record_events=False)
+        print(f"Übersicht geschrieben: {index_path}")
         return
 
     targets = []
@@ -2959,16 +2548,12 @@ def main():
         # waere der frisch geholte SIM-Zaehlerstand sonst verloren und der
         # naechste Lauf muesste neu baselinen (ein Intervall ohne Delta).
         save_state()
-        if single:
-            path = write_report(rows, start, single)
-        else:
-            # write_reports() ergaenzt state um die Ereignisprotokoll-
-            # Eintraege - die brauchen ein ZWEITES save_state() danach, sonst
-            # waeren die Statuswechsel beim naechsten Prozessstart wieder weg
-            # (--once startet je Poll einen neuen Prozess) und wuerden endlos
-            # neu gemeldet.
-            path = write_reports(rows, start, console_names, state=state)
-            save_state()
+        # write_reports() ergaenzt state um die Ereignisprotokoll-Eintraege -
+        # die brauchen ein ZWEITES save_state() danach, sonst waeren die
+        # Statuswechsel beim naechsten Prozessstart wieder weg (--once startet
+        # je Poll einen neuen Prozess) und wuerden endlos neu gemeldet.
+        path = write_reports(rows, start, console_names, state=state)
+        save_state()
         stamp = datetime.now().astimezone().strftime("%H:%M:%S")
         print(f"[{stamp}] {added} neue Messpunkte, {len(rows)} gesamt -> {path}")
         if args.once:
