@@ -5,9 +5,10 @@ UDM Pro WAN-Traffic-Monitor
 
 Holt WAN-Kennzahlen ueber die UniFi Site Manager API (api.ui.com), schreibt sie
 fortlaufend in eine CSV und erzeugt nach jedem Durchlauf einen aktuellen
-HTML-Bericht. Dauerbetrieb ohne festes Messende: Kennzahlen sind aktueller
-Kalendermonat, rollierende letzte 30 Tage, und Gesamt seit dem einmaligen
-Messbeginn.
+HTML-Bericht. Dauerbetrieb ohne festes Messende: EINZIGE Volumenkennzahl ist
+der aktuelle Kalendermonat (1. bis Letzter). "Letzte 30 Tage" und "Gesamt
+seit Start" gab es frueher zusaetzlich - sie sind entfallen, weil drei
+Volumenzahlen nebeneinander mehr Verwirrung stifteten als Erkenntnis.
 
 Nur Standardbibliothek, keine Installation noetig.
 
@@ -494,11 +495,9 @@ def _rollup_old_rows(rows, now):
 
     Verfaelscht keine Kennzahl: Stundenchart/Flow-Chart (CHART_WINDOW_DAYS),
     Tageswerte-Tabelle (TABLE_WINDOW_DAYS) und die Failover-Erkennung
-    schauen alle nur auf die letzten paar Tage/Minuten - mit dem
-    Sicherheitsabstand von ROLLUP_AFTER_DAYS gegenueber TABLE_WINDOW_DAYS
-    treffen sie nie auf bereits aggregierte Zeilen. 'Aktueller Monat'/
-    '30 Tage'/'Gesamt seit Start' bleiben korrekt, da sie nur die SUMME
-    brauchen, keine Einzelzeilen - die Aggregation ist reine Summenbildung.
+    schauen alle nur auf die letzten paar Tage/Minuten. 'Aktueller Monat'
+    bleibt korrekt, da er nur die SUMME braucht, keine Einzelzeilen - die
+    Aggregation ist reine Summenbildung.
 
     Idempotent: laeuft bei jedem Poll erneut ueber alle 'alten' Zeilen
     (auch bereits aggregierte Tageszeilen aus frueheren Laeufen) - eine
@@ -657,7 +656,7 @@ LATENCY_POINTS = 30
 
 # Dauerbetrieb: Stundenchart/Flow-Chart und die Tageswerte-Tabelle bleiben auf
 # ein recentes Fenster begrenzt, sonst werden sie nach Wochen/Monaten Laufzeit
-# unbrauchbar gross. Kennzahlen (Monat/30 Tage/Gesamt) sind davon unabhaengig.
+# unbrauchbar gross. Die Monatskennzahl ist davon unabhaengig.
 CHART_WINDOW_DAYS = 1  # Stunden-/Flow-Chart (Detail + Uebersichtskacheln): 24 Stunden
 TABLE_WINDOW_DAYS = 30
 ROLLING_AVG_MINUTES = 60  # Gleitendes Fenster fuer die Durchschnittslinie im Flow-Chart
@@ -735,12 +734,11 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
     Uebersichtsseite selbst, die bei jedem Poll neu committet/gepusht wird.
 
     Dauerbetrieb (kein festes Messende mehr): start ist der einmalige
-    Messbeginn, es gibt kein "end". Statt einem einzelnen Gesamtfenster gibt
-    es drei Kennzahlen nebeneinander - aktueller Kalendermonat, rollierende
-    letzte 30 Tage, und Gesamt seit Start. Stundenchart/Flow-Chart/Tageswerte
-    bleiben auf ein kuerzeres, recentes Fenster begrenzt (CHART_WINDOW_DAYS /
-    TABLE_WINDOW_DAYS), sonst wuerden sie nach Wochen/Monaten Laufzeit riesig
-    und unbrauchbar.
+    Messbeginn, es gibt kein "end". Einzige Volumenkennzahl ist der aktuelle
+    Kalendermonat, aufgeteilt in Download und Upload. Stundenchart/
+    Flow-Chart/Tageswerte bleiben auf ein kuerzeres, recentes Fenster
+    begrenzt (CHART_WINDOW_DAYS / TABLE_WINDOW_DAYS), sonst wuerden sie nach
+    Wochen/Monaten Laufzeit riesig und unbrauchbar.
 
     "Aktueller Monat" wird IMMER strikt aus den CSV-Deltas seit dem 1. des
     Kalendermonats summiert - NICHT aus dem rohen absoluten SIM-Zaehlerstand.
@@ -792,9 +790,6 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
 
         all_rows = [r for r in rows if r["ts"] >= start and in_site(r)]
 
-    total_down = sum(r["down_bytes"] for r in all_rows)
-    total_up = sum(r["up_bytes"] for r in all_rows)
-    total = total_down + total_up
 
     # Aktueller Kalendermonat (lokale Zeit, damit "Monat" dem echten
     # Kalendermonat entspricht, nicht UTC).
@@ -810,37 +805,13 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
     # Docstring oben, warum der rohe SIM-Zaehlerstand dafuer NICHT mehr
     # verwendet wird.
     month_rows = [r for r in all_rows if r["ts"] >= month_start]
-    total_month = sum(r["down_bytes"] + r["up_bytes"] for r in month_rows)
+    month_down = sum(r["down_bytes"] for r in month_rows)
+    month_up = sum(r["up_bytes"] for r in month_rows)
+    total_month = month_down + month_up
     month_data_start = max(month_start, start)
     days_elapsed_month = max((now - month_data_start).total_seconds() / 86400.0, 0.001)
     per_day_month = total_month / days_elapsed_month
     projected_month = per_day_month * days_in_month
-
-    # Rollierende letzte 30 Tage: sobald wirklich 30 Tage Messhistorie
-    # vorliegen, die echte gemessene Summe. Vorher (erste 30 Tage nach
-    # Messbeginn) waere die "rollierende" Summe nur ein unvollstaendiger
-    # Ausschnitt und faelschlich identisch zum Monatswert - stattdessen wird
-    # anhand der Tagesrate im aktuellen Monat auf 30 Tage hochgerechnet.
-    #
-    # Der Schnitt liegt auf einer KALENDERTAGS-Grenze, nicht auf "jetzt minus
-    # 720 Stunden". Grund: Zeilen aelter als ROLLUP_AFTER_DAYS existieren nur
-    # noch als eine Tageszeile je Konsole (siehe _rollup_old_rows), die auf
-    # 12:00 lokal gestempelt ist. Gegen einen taggenauen Schnitt verglichen
-    # faellt der Randtag dadurch je nach Uhrzeit KOMPLETT rein oder KOMPLETT
-    # raus - die Zahl sprang dadurch einmal taeglich um einen ganzen
-    # Tagesverbrauch (gemessen: 375,3 -> 374,3 GB in Summe, bei KNZ allein
-    # 785 MB), was auf dem Dashboard wie ein Datenfehler aussieht. Mit dem
-    # Tagesschnitt ist der Randtag immer vollstaendig enthalten und die Zahl
-    # bleibt ueber den Tag stabil. Das Fenster ist damit "heute plus die 29
-    # vorherigen Kalendertage".
-    now_local_day = now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
-    d30_start = (now_local_day - timedelta(days=29)).astimezone(timezone.utc)
-    if start > d30_start:
-        total_30d = per_day_month * 30.0
-    else:
-        d30_rows = [r for r in all_rows if r["ts"] >= d30_start]
-        total_30d = sum(r["down_bytes"] + r["up_bytes"] for r in d30_rows)
-    per_day_30d = total_30d / 30.0
 
     # Failover-Verdacht: der Durchschnitt der letzten FAILOVER_CONSECUTIVE
     # Messpunkte ueber dem Schwellwert (kbps UPLOAD, nicht kombiniert - siehe
@@ -957,11 +928,10 @@ def compute_stats(rows, start, site_filter=None, include_hover_data=False,
     flow_interval_min = round(flow_intervals[0] / 60) if flow_intervals else 15
     device = site_filter or (all_rows[0]["site"] if all_rows else (rows[0]["site"] if rows else "unbekannt"))
     return dict(
-        window=all_rows, total=total, total_down=total_down, total_up=total_up,
+        window=all_rows, month_down=month_down, month_up=month_up,
         total_month=total_month, per_day_month=per_day_month, projected_month=projected_month,
         days_elapsed_month=days_elapsed_month, days_in_month=days_in_month,
         days_elapsed_month_calendar=days_elapsed_month_calendar,
-        total_30d=total_30d, per_day_30d=per_day_30d,
         days=days, spikes=spikes,
         chart=chart, start=start, now=now, peak=peak, device=device,
         flow_chart=flow_chart, flow_chart_mini=flow_chart_mini,
@@ -1641,15 +1611,9 @@ def render_html(**c):
     <div class="card"><div class="label">Aktueller Monat</div>
       <div class="value{total_alert_class(c['total_month'], c['device'])}">{human_bytes(c['total_month'])} <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div>
       <div class="foot">Hochrechnung Monatsende: {human_bytes(c['projected_month'])}</div></div>
-    <div class="card"><div class="label">Letzte 30 Tage</div>
-      <div class="value">{human_bytes(c['total_30d'])}</div>
-      <div class="foot">Ø {human_bytes(c['per_day_30d'])}/Tag</div></div>
-    <div class="card"><div class="label">Gesamt seit Start (nur Failover-Traffic)</div>
-      <div class="value">{human_bytes(c['total'])}</div>
-      <div class="foot">seit {start.astimezone().strftime('%d.%m.%Y')}</div></div>
-    <div class="card"><div class="label">Verhältnis (gesamt)</div>
-      <div class="value">{human_bytes(c['total_down'])}</div>
-      <div class="foot">Download, dazu {human_bytes(c['total_up'])} Upload</div></div>
+    <div class="card"><div class="label">Verhältnis (diesen Monat)</div>
+      <div class="value">{human_bytes(c['month_down'])}</div>
+      <div class="foot">Download, dazu {human_bytes(c['month_up'])} Upload</div></div>
   </div>
 
   <h2>Stundenvolumen (letzte {int(CHART_WINDOW_DAYS * 24)} Stunden)</h2>
@@ -2144,8 +2108,11 @@ HUD_CSS = """
      hoeher und die Hoehe fehlt den Charts. Voller Text im title-Attribut. */
   .panel .subhead { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hairline { border: none; border-top: 1px dashed var(--line); margin: 0; }
+  /* Seit nur noch der Monatswert hier steht (30 Tage und Gesamt sind
+     entfallen), braucht es keine Spaltenaufteilung mehr - der Wert nimmt
+     seine natuerliche Breite. */
   .readouts { display: flex; gap: 18px; }
-  .readouts .r { flex: 1; min-width: 0; }
+  .readouts .r { min-width: 0; }
   .readouts .rl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .09em; }
   /* Einzeilig halten wie Statuszeile und Protokoll: bricht ein Messwert um
      (typisch "11.5GB / 9.0 GB" bei schmalen Kacheln), wird die ganze
@@ -2493,7 +2460,6 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
     day_of_month = min(int(days_elapsed_month_calendar) + 1, days_in_month)
 
     total_month_all = sum(c["total_month"] for c in consoles)
-    total_30d_all = sum(c["total_30d"] for c in consoles)
     n_failover = sum(1 for c in consoles if c["is_failover"])
 
     def cell(label, text, alert=False, foot=""):
@@ -2512,7 +2478,6 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
         # dort 494 GB ueber zwei Kalendermonate unter einem Monats-Label - und
         # mit dem Monatswert waere sie ein exaktes Duplikat dieser hier.
         cell("Gesamt diesen Monat", human_bytes(total_month_all), foot=f"Tag {day_of_month}/{days_in_month}"),
-        cell("Letzte 30 Tage", human_bytes(total_30d_all)),
         cell("Aktive Failover", f"{n_failover} / {len(consoles)}", alert=n_failover > 0),
     ])
 
@@ -2543,8 +2508,6 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
             sub = f'Akt. Upload {human_kbps(c["last_rate_kbps"])} &middot; unter Schwelle'
             sub_cls = ""
         month_val, month_unit = _split_unit(human_bytes(c["total_month"]))
-        d30_val, d30_unit = _split_unit(human_bytes(c["total_30d"]))
-        total_val, total_unit = _split_unit(human_bytes(c["total"]))
         panel_cls = {"failover": " failover", "offline": " offline"}.get(status, "")
         cards.append(f"""<div class="panel bracketed{panel_cls}">
       <div class="bk-tr"></div><div class="bk-bl"></div>
@@ -2552,8 +2515,6 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
       <div class="subhead{sub_cls}" title="{html.escape(sub.replace('&middot;', '·').replace('&gt;', '>').replace('&Oslash;', 'Ø'))}">{sub}</div>
       <div class="readouts">
         <div class="r"><div class="rl">Monat</div><div class="rv num{total_alert_class(c['total_month'], c['device'])}">{month_val}<span class="unit">{month_unit}</span> <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
-        <div class="r"><div class="rl">30 Tage</div><div class="rv num">{d30_val}<span class="unit">{d30_unit}</span></div></div>
-        <div class="r"><div class="rl">Gesamt</div><div class="rv num">{total_val}<span class="unit">{total_unit}</span></div></div>
       </div>
       <div class="mini-meter" title="Monatsvolumen im Verhältnis zur Rot-Schwelle ({alert_threshold_label(c['device'])})">{_segments_html(12, round(min(ratio, 1.0) * 12), meter_mode)}</div>
       <div class="mini-charts">
@@ -2671,7 +2632,7 @@ def write_reports(rows, start, console_names, state=None, record_events=True):
     per --site moeglich (siehe write_report()/build_report()).
 
     Performance: compute_stats() ist mit wachsender CSV der teuerste Teil
-    (scannt Zeilen je Konsole fuer Monat/30-Tage/Charts). rows wird VORAB
+    (scannt Zeilen je Konsole fuer Monatssumme und Charts). rows wird VORAB
     einmal per _group_by_console() aufgeteilt, statt dass jeder der 6
     compute_stats()-Aufrufe die komplette Liste erneut scannt.
 
