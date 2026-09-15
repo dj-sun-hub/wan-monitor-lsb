@@ -1533,10 +1533,28 @@ HUD_CSS = """
      Bildschirmgroesse des Betrachters.
      --------------------------------------------------------------------- */
   body { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 15px;
-    padding: 16px 20px 12px;
+    /* Der Geraeterahmen (siehe .canopy::before) liegt ueber der Seite und
+       verdeckt, was unter ihm sitzt - die Seite haelt deshalb genau seine
+       Staerke plus etwas Luft Abstand. Diese Hoehe fehlt den Kacheln:
+       gemessen 310 -> 304px je Kachel. */
+    padding: 24px 30px 20px;
     background-image: repeating-linear-gradient(180deg, rgba(95,224,209,.025) 0px,
       rgba(95,224,209,.025) 1px, transparent 1px, transparent 3px); }
-  .wrap { max-width: 1840px; width: 100%; }
+  .wrap { max-width: 1840px; width: 100%; position: relative; }
+  /* EINE Glasflaeche unter allem statt neun einzelnen. Sie traegt
+     Kopfbereich, Bank und Kachelraster gemeinsam - laesst man den Kopf aus,
+     ist es gerade keine durchgehende Flaeche mehr. */
+  .wrap::before {
+    content: ""; position: absolute; inset: -12px -18px -10px -18px; z-index: 0;
+    pointer-events: none;
+    -webkit-backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
+    backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
+    background:
+      linear-gradient(115deg, rgba(232,253,255,.055) 0%, transparent 38%, transparent 62%, rgba(198,240,255,.022) 100%),
+      linear-gradient(158deg, rgba(140,205,220,.040), rgba(96,170,190,.010) 45%, rgba(120,195,210,.026));
+    border-top: 1px solid rgba(216, 250, 255, .38);
+  }
+  header, .bank, .overview-grid, footer { position: relative; z-index: 1; }
   /* Nur bei dreispaltigem Raster (zwei Kachelreihen) auf Bildschirmhoehe
      einpassen. Bei zwei oder einer Spalte sind es drei bzw. sechs Reihen -
      die in die Fensterhoehe zu zwingen wuerde die Kacheln zu Streifen
@@ -1905,7 +1923,11 @@ HUD_CSS = """
      sechs Konsolenkacheln haben Vorrang, also wird zuerst die Bank gestaucht.
      Ziel bleibt: kein Scrollbalken. */
   @media (max-height: 820px) {
-    body { padding: 10px 16px 8px; }
+    /* Nicht unter die Rahmenstaerke (20px) gehen: der Rahmen liegt ueber
+       der Seite und verdeckt sonst Inhalt, und die Traegerflaeche ragt
+       seitlich 18px ueber .wrap hinaus - zu wenig Polster erzeugt einen
+       Querlauf. */
+    body { padding: 24px 26px 20px; }
     .bank { max-height: 104px; margin-top: 10px; }
     .pylon .val { font-size: 25px; }
     .pylon .fuss { display: none; }
@@ -1934,7 +1956,7 @@ HUD_CSS = """
      sonst wuerde auf einem hochkant gehaltenen Telefon (Fensterhoehe < 820px)
      faelschlich die Stauch-Variante fuer flache Fenster greifen. */
   @media (max-width: 900px) {
-    body { padding: 16px 20px 12px; }
+    body { padding: 24px 26px 20px; }
     .bank { max-height: none; }
     .bank .schema, .bank .log { display: block; }
     .pylon .val { font-size: 33px; }
@@ -2223,6 +2245,60 @@ GLASS_CSS = """
   .chart .flow-down-line { filter: drop-shadow(0 0 4px rgba(127, 240, 228, .5)); }
   .chart .grid { stroke: rgba(150, 210, 220, .09); }
   .chart .baseline { stroke: rgba(150, 210, 220, .2); }
+
+  /* ------------------------------------------------------------------
+     Eine Flaeche statt neun (siehe .wrap::before): die Bloecke brauchen
+     jetzt keine eigene Glasflaeche, keinen Rahmen und keine eigene
+     Lichtpfuetze mehr. Gegliedert wird nur noch durch Haarlinien, Abstand
+     und die helle Lichtkante oben.
+     ------------------------------------------------------------------ */
+  .panel, .schema, .log {
+    background: none; box-shadow: none; filter: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-color: transparent;
+    border-top-color: rgba(216, 250, 255, .42);
+  }
+  .panel::after, .schema::after, .log::after { content: none; }
+  .panel.failover { border-top-color: rgba(255, 180, 168, .75); }
+
+  /* Kacheln als Felder EINES Instruments: 1px Fuge statt 20px Abstand, und
+     die Trennlinien enden am Rasterrand statt jede Kachel zu umschliessen. */
+  .overview-grid { gap: 1px; }
+  .panel {
+    border-right: 1px solid rgba(160, 220, 235, .10);
+    border-bottom: 1px solid rgba(160, 220, 235, .10);
+    padding: 16px 20px 14px;
+  }
+  .panel:nth-child(3n) { border-right: none; }
+  .panel:nth-child(n+4) { border-bottom: none; }
+  /* Die Failover-Kachel kann keinen roten Rahmen mehr haben - sie bekommt
+     stattdessen einen roten Lichtschein von oben und faellt dadurch eher
+     mehr auf als vorher. */
+  .panel.failover {
+    background: radial-gradient(120% 90% at 50% 0%, rgba(255, 106, 88, .17), transparent 72%);
+  }
+  .panel .bk-tr, .panel .bk-bl { display: none; }
+  .bank { gap: 16px; }
+  .schema, .log { border-left: 1px solid rgba(160, 220, 235, .10); padding-left: 16px; }
+  /* Der Pylon brauchte eine lokale Abdunklung, solange er als einziges
+     Element frei auf dem gemusterten Hintergrund stand. Jetzt liegt er auf
+     derselben Flaeche wie alles andere. */
+  .pylon::before { content: none; }
+
+  /* Geraeterahmen: fasst die Anzeige ein, statt sie am Monitorrand einfach
+     aufhoeren zu lassen. Liegt als Auflage UEBER der Seite (fixed auf der
+     Scheiben-Ebene) - so verhaelt sich auch ein echter Rahmen. Der
+     Innenabstand der Seite ist an seine Staerke gekoppelt, siehe body. */
+  .canopy::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 55;
+    border: 20px solid rgba(12, 22, 29, .96);
+    border-radius: 24px;
+    box-shadow:
+      inset 0 0 0 1px rgba(150, 205, 220, .34),
+      inset 0 1px 0 1px rgba(216, 250, 255, .26),
+      inset 0 0 40px rgba(4, 9, 13, .55),
+      0 0 0 100vmax rgba(2, 4, 6, .96);
+  }
 
   /* ------------------------------------------------------------------
      HUD-Struktur in der Flaeche (Nutzerwunsch: gerastert, diagonal,
