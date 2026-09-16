@@ -69,6 +69,9 @@ jobs:
           git config user.email "wan-monitor@users.noreply.github.com"
           mkdir -p public
           cp wan_report.html public/index.html
+          # Winzige Standdatei: die Seite fragt nur sie ab und laedt sich erst
+          # neu, wenn dort ein neuerer Zeitpunkt steht (siehe STAND_PATH).
+          cp wan_stand.txt public/wan_stand.txt
 
           T_ADD_START=$(date +%s)
           # wan_report.html/public/index.html werden bewusst NICHT (mehr)

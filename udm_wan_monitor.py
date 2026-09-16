@@ -68,6 +68,10 @@ MONITORED_HOSTS = [
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(DATA_DIR, "wan_traffic.csv")
 HTML_PATH = os.path.join(DATA_DIR, "wan_report.html")
+# Winzige Datei neben dem Bericht, die nur den Erzeugungszeitpunkt enthaelt.
+# Die Seite fragt sie im Sekundentakt ab, statt sich blind neu zu laden -
+# siehe refresh_countdown_script(). 30 Byte statt 130 KB je Abfrage.
+STAND_PATH = os.path.join(DATA_DIR, "wan_stand.txt")
 RAW_PATH = os.path.join(DATA_DIR, "raw_sample.json")
 STATE_PATH = os.path.join(DATA_DIR, "monitor_state.json")
 
@@ -675,6 +679,13 @@ LATENCY_POINTS = 30
 LOSS_MIN_PUNKTE = 2      # mindestens so viele betroffene Messpunkte, ODER
 LOSS_MIN_ANTEIL = 0.01   # mehr als dieser Anteil aller Messpunkte
 
+# Umlaufdauern der Dauerbewegungen im Bild. Sie stehen als Konstanten hier,
+# weil das Phasen-Skript (CANOPY_HTML) und das CSS denselben Wert brauchen -
+# laufen sie auseinander, springt die Bewegung bei jedem Neuladen der Seite,
+# statt durchzulaufen.
+RADAR_SWEEP_S = 4.2      # Suchstrahl des Latenz-Radars, ein Umlauf
+PULSE_TRAVEL_S = 2.6     # Tropfen auf den Abzweigleitungen im Bus
+
 # Dauerbetrieb: der Flow-Chart bleibt auf ein recentes Fenster begrenzt, sonst
 # wird er nach Wochen/Monaten Laufzeit unbrauchbar gross. Die Monatskennzahl
 # ist davon unabhaengig.
@@ -1251,7 +1262,10 @@ def refresh_countdown_script(now):
   var generatedAtMs = new Date("{now.isoformat()}").getTime();
   var refreshS = {REPORT_REFRESH_S};
   var freshWarnS = {FRESH_WARN_S}, freshStaleS = {FRESH_STALE_S};
-  var minRetryMs = 10000;
+  // Wie oft bei der Standdatei nachgefragt wird. Sie ist rund 30 Byte gross,
+  // ein kurzer Takt kostet also praktisch nichts - und die Seite zeigt einen
+  // neuen Stand dadurch frueher als der alte 60-Sekunden-Countdown.
+  var standPruefMs = 5000;
   var el = document.getElementById('refresh-cd');
   var syncVal = document.getElementById('sync-val');
   var syncDot = document.querySelector('.sync-dot');
@@ -1272,20 +1286,32 @@ def refresh_countdown_script(now):
     var remaining = Math.max(refreshS - elapsedS, 0);
     var m = Math.floor(remaining / 60), s = remaining % 60;
     el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
-    if (remaining <= 0) {{
-      var lastTry = parseInt(sessionStorage.getItem('wanmon_last_reload') || '0', 10);
-      var nowMs = Date.now();
-      if (nowMs - lastTry > minRetryMs) {{
-        sessionStorage.setItem('wanmon_last_reload', String(nowMs));
-        window.location.href = window.location.pathname + '?_=' + nowMs;
-      }} else {{
-        setTimeout(tick, 2000);
-      }}
-      return;
-    }}
     setTimeout(tick, 1000);
   }}
   tick();
+
+  // Reload nur bei WIRKLICH neuem Stand. Frueher lief er an einem Countdown:
+  // 60 Sekunden nach dem Erzeugungszeitpunkt der angezeigten Seite. Weil
+  // zwischen Erzeugung und Sichtbarkeit aber rund 25 Sekunden liegen
+  // (Workflow + Pages-Deploy), war die frisch geladene Seite oft schon
+  // ueberfaellig - der Countdown stand sofort wieder auf 0 und loeste den
+  // naechsten Reload aus. Gemessen waren das 3 Ladevorgaenge pro Minute,
+  // sichtbar als Ruckeln in allen Dauerbewegungen.
+  function standPruefen() {{
+    fetch('wan_stand.txt?_=' + Date.now(), {{ cache: 'no-store' }})
+      .then(function (r) {{ return r.ok ? r.text() : null; }})
+      .then(function (text) {{
+        if (!text) return;
+        var standMs = new Date(text.trim()).getTime();
+        // Nur bei ECHT neuerem Stand neu laden. Ein aelterer Wert kann aus
+        // einem CDN-Zwischenspeicher kommen und darf nichts ausloesen.
+        if (standMs > generatedAtMs) {{
+          window.location.href = window.location.pathname + '?_=' + Date.now();
+        }}
+      }})
+      .catch(function () {{ /* Netz weg: einfach beim naechsten Versuch wieder */ }});
+  }}
+  setInterval(standPruefen, standPruefMs);
 }})();
 </script>"""
 
@@ -1684,7 +1710,7 @@ HUD_CSS = """
     border: 1px solid rgba(127,240,228,.36); border-radius: 50%; pointer-events: none; }
   .radar .sweep { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
     background: conic-gradient(from 0deg, rgba(127,240,228,.62) 0deg, rgba(127,240,228,.20) 28deg, transparent 60deg, transparent 360deg);
-    animation: radar-sweep 4.2s linear infinite; }
+    animation: radar-sweep __RADAR__s linear infinite; }
   /* GEGEN den Uhrzeigersinn: der helle Keil des Suchstrahls liegt bei 0-60
      Grad, laeuft also dem verblassenden Schweif hinterher. Bei Drehung im
      Uhrzeigersinn kaeme dadurch der Schweif zuerst und der Strahl danach -
@@ -1833,7 +1859,7 @@ HUD_CSS = """
      konkurrieren. */
   .snode.lost .name { opacity: .55; }
   @media (prefers-reduced-motion: no-preference) {
-    .snode.ok .pulse { animation: pulse-travel 2.6s linear infinite; } }
+    .snode.ok .pulse { animation: pulse-travel __PULSE__s linear infinite; } }
   @keyframes pulse-travel {
     0% { transform: translateY(0); opacity: 0; }
     12% { opacity: 1; }
@@ -1999,7 +2025,7 @@ HUD_CSS = """
   @media (prefers-reduced-motion: reduce) {
     .boot-line .dot, .sync-dot.stale, .bracketed.failover::before, .bracketed.failover::after,
     .bracketed.failover .bk-tr, .bracketed.failover .bk-bl { animation: none; } }
-"""
+""".replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S))
 
 
 # Glasprojektion - setzt auf HUD_CSS auf und wird NACH ihm eingebunden (gleiche
@@ -2410,16 +2436,38 @@ CANOPY_HTML = """<div class="canopy" aria-hidden="true">
 </div>
 <script>
 (function () {
-  // Jedes Band bekommt seine EIGENE Phase: die zweite Schwade laeuft
-  // langsamer als die erste, eine gemeinsame Phase wuerde sie beim
-  // minuetlichen Neuladen der Seite jedes Mal springen lassen.
+  // Alle Dauerbewegungen der Seite bekommen ihre Phase aus der UHRZEIT, per
+  // negativem animation-delay. Ohne das beginnt jede Bewegung bei jedem
+  // Neuladen (einmal pro Minute) wieder von vorn - der Suchstrahl des Radars
+  // springt zurueck, die Tropfen im Bus setzen neu an. Mit Phase laeuft
+  // alles durch, als waere die Seite nie neu geladen worden.
   var jetzt = Date.now() / 1000;
+
+  function phase(el, dauer, versatz) {
+    if (!dauer) return;
+    // versatz: die Staffelung, die das Element schon mitbringt (die Tropfen
+    // starten je Knoten 0,35s spaeter). Sie muss erhalten bleiben, deshalb
+    // wird sie zur Uhrzeit-Phase addiert statt sie zu ersetzen.
+    el.style.animationDelay = (-((jetzt + (versatz || 0)) % dauer)).toFixed(2) + 's';
+  }
+
+  // Die beiden Nebelschwaden laufen unterschiedlich schnell - jede braucht
+  // deshalb ihre eigene Phase, aus ihrer eigenen Dauer.
   document.querySelectorAll('.canopy .band').forEach(function (el) {
-    var dauer = parseFloat(getComputedStyle(el).animationDuration) || __SWEEP__;
-    el.style.animationDelay = (-(jetzt % dauer)).toFixed(2) + 's';
+    phase(el, parseFloat(getComputedStyle(el).animationDuration) || __SWEEP__);
+  });
+
+  var radar = document.querySelector('.radar .sweep');
+  if (radar) phase(radar, __RADAR__);
+
+  document.querySelectorAll('.snode .pulse').forEach(function (el) {
+    // Die Staffelung steht als inline-Style im Markup (siehe _schema_html)
+    // und wird hier durch den berechneten Wert ersetzt - vorher auslesen.
+    var versatz = parseFloat(getComputedStyle(el).animationDelay) || 0;
+    phase(el, __PULSE__, versatz);
   });
 })();
-</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S))
+</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S)).replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S))
 
 
 def render_overview_html(consoles, start, now, events=(), latency=None):
@@ -2632,6 +2680,8 @@ def write_reports(rows, start, console_names, state=None, record_events=True):
     overview_html = render_overview_html(consoles=consoles, start=start, now=now,
                                          events=events, latency=latency)
     _atomic_write(HTML_PATH, lambda handle: handle.write(overview_html))
+    # Standdatei fuer die Reload-Pruefung der Seite (siehe STAND_PATH).
+    _atomic_write(STAND_PATH, lambda handle: handle.write(now.isoformat()))
     return HTML_PATH
 
 

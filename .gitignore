@@ -11,4 +11,6 @@ failover_status.html
 # der Inhalt (eingebettete Chart-Daten/Zeitstempel) bei praktisch jedem Lauf
 # fast vollstaendig aendert und kaum delta-komprimierbar ist.
 wan_report.html
+wan_stand.txt
 public/index.html
+public/wan_stand.txt
