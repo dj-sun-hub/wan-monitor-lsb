@@ -2129,9 +2129,16 @@ GLASS_CSS = """
     transform: rotate(9deg) translateX(-50%);
     background: radial-gradient(60% 50% at 50% 50%, rgba(214, 245, 255, .16) 0%,
       rgba(198, 240, 255, .08) 44%, transparent 76%);
-    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
-    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
-    -webkit-mask-size: 1400px 900px; mask-size: 1400px 900px;
+    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
+    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
+    /* Die Maske deckt das Band GENAU EINMAL ab. Vorher stand sie auf
+       1400x900px bei einem Band von 2164x1989px, und mask-repeat gilt per
+       Vorgabe als "repeat" - das Rauschen kachelte, und feTurbulence ist an
+       den Kachelgrenzen nicht nahtlos. Dort lief eine harte Kante durch den
+       Nebel. Gestreckt statt gekachelt faellt nichts auf: die Schwade ist
+       ohnehin um 14px weichgezeichnet. */
+    -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
     filter: blur(14px);
   }
   /* Zweite Schwade, schmaler und feiner gerauscht: eine Kanzel hat mehrere
@@ -2139,9 +2146,10 @@ GLASS_CSS = """
   .canopy .band.thin {
     width: 60%; transform: rotate(9deg) translateX(-180%);
     background: radial-gradient(60% 50% at 50% 50%, rgba(214, 245, 255, .10) 0%, transparent 74%);
-    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
-    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1400' height='900'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
-    -webkit-mask-size: 900px 700px; mask-size: 900px 700px;
+    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
+    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
+    -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
     filter: blur(10px);
   }
   .canopy .grime {
