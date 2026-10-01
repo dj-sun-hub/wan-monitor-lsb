@@ -41,6 +41,7 @@ import html
 import json
 import math
 import os
+import random
 import re
 import sys
 import time
@@ -638,7 +639,7 @@ FAILOVER_EXCLUDED_DEVICES = set()
 #
 # Zum Aufheben hier auf False setzen. Die Datenerfassung laeuft in beiden
 # Faellen unveraendert weiter - betroffen ist nur die Anzeige, nicht die CSV.
-ALLE_AUSGEFALLEN = True
+ALLE_AUSGEFALLEN = False
 # Ab wann eine Konsole als "offline/nicht erreichbar" statt nur "kurz kein
 # Update" gilt (5x der 1-Minuten-Pollintervall Toleranz fuer vereinzelt
 # uebersprungene Laeufe, siehe poll() Fehlerbehandlung).
@@ -2112,6 +2113,11 @@ GLASS_CSS = """
     --glass: rgba(120, 195, 210, .085); --glass-2: rgba(96, 170, 190, .03);
     --glass-edge: rgba(198, 240, 255, .20);
     --phosphor-dim: #2a7d75; --hull-2: rgba(120, 195, 210, .10); --alert-dim: rgba(255, 106, 88, .18);
+    /* Grundton der Glasplatten: neutral kuehl. Die Konsolenkacheln
+       ueberschreiben ihn weiter unten mit einem Gruenstich. */
+    --ton-a: rgba(140,205,220,.05); --ton-b: rgba(96,170,190,.012);
+    --ton-c: rgba(120,195,210,.034);
+    --ton-kante: rgba(150,210,230,.15); --ton-licht: rgba(216,250,255,.42);
   }
 
   /* Scanlinien des HUD-Themes weichen der Tiefenebene */
@@ -2248,9 +2254,9 @@ GLASS_CSS = """
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
       linear-gradient(115deg, rgba(232,253,255,.07) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.03) 100%),
       linear-gradient(180deg, rgba(6,14,19,.55), rgba(6,14,19,.62)),
-      linear-gradient(158deg, rgba(140,205,220,.05), rgba(96,170,190,.012) 45%, rgba(120,195,210,.034));
-    border: 1px solid rgba(150,210,230,.15);
-    border-top-color: rgba(216,250,255,.42);
+      linear-gradient(158deg, var(--ton-a), var(--ton-b) 45%, var(--ton-c));
+    border: 1px solid var(--ton-kante);
+    border-top-color: var(--ton-licht);
     border-left-color: rgba(198,240,255,.24);
     border-bottom-color: rgba(6,14,20,.55);
     box-shadow:
@@ -2313,6 +2319,23 @@ GLASS_CSS = """
       0 0 22px rgba(255, 106, 88, .30),
       0 20px 42px -26px rgba(0,0,0,.92);
   }
+  /* Ganz leichter Gruenstich auf den Konsolenkacheln. Aufgebaut wie die
+     rote Failover-Kachel - Flaechenton und Kanten bekommen Farbe, Koernung
+     und Reflexion bleiben - aber deutlich schwaecher und ohne Bewegung: das
+     Rot ist ein Alarmsignal und darf auffallen, das Gruen sagt nur "laeuft"
+     und soll im Hintergrund bleiben.
+
+     Die Toenung bleibt bewusst unter der Staerke des Failover-Rots (.038
+     statt .065 in der obersten Stufe). Teal ist auf dieser Seite die Farbe
+     des Downloads; ein kraeftiger gruener Grund wuerde die Flow-Kurven
+     mitfaerben und ihre Ablesbarkeit kosten. Die Failover-Kachel setzt ihren
+     Hintergrund komplett neu und bleibt davon unberuehrt. */
+  .panel {
+    --ton-a: rgba(120,230,150,.058); --ton-b: rgba(90,195,125,.014);
+    --ton-c: rgba(108,218,142,.040);
+    --ton-kante: rgba(140,226,172,.19); --ton-licht: rgba(222,255,232,.44);
+  }
+
   /* Etwas weniger abgeblendet als frueher (.55): der LINK-LOST-Schriftzug
      ueber der Zeichenflaeche soll auch aus der Entfernung tragen. */
   .panel.offline { opacity: .72; }
@@ -2481,6 +2504,213 @@ GLASS_CSS = """
 
 """.replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S))
 
+
+# ---------------------------------------------------------------------------
+# Gesprungenes Glas: wie eine erloschene Kachel aussieht
+# ---------------------------------------------------------------------------
+# Ein grosser Riss, kein Splittern. Entscheidend ist dabei NICHT die Linie,
+# sondern dass die Kachel an der Bruchstelle tatsaechlich versetzt ist:
+# unterhalb des Risses liegen Schrift, Linien und Kurve um einige Pixel
+# verschoben. Genau daran erkennt das Auge einen Bruch in dickem Glas. Eine
+# aufgemalte Linie auf einer unveraenderten Flaeche liest sich dagegen als
+# Zeichnung - das war die erste, verworfene Fassung.
+#
+# Der naheliegende Weg zum Versatz funktioniert nicht: zwei per clip-path
+# geteilte Haelften mit backdrop-filter und transform. Nachgemessen tastet
+# backdrop-filter den Untergrund im Koordinatensystem der Wurzel ab, die
+# eigene transform des Elements geht dabei nicht ein - der Hintergrund lief
+# ungebrochen durch die Trennlinie, nur die Helligkeit sprang.
+#
+# Was funktioniert, ist eine echte Brechung: feDisplacementMap verschiebt die
+# tatsaechlich gezeichneten Bildpunkte. Die Karte dazu ist ein zweiter
+# SVG-Schnipsel, in dem die Flaeche unterhalb der Risslinie einen anderen
+# Farbwert traegt als die darueber - Rotkanal waagerecht, Gruenkanal
+# senkrecht, 128 ist Ruhe.
+#
+# Achtung bei spaeteren Vorschauen: in einem Rahmen (iframe) mit
+# "transform: scale()" wendet Chrome den Filter nicht mehr an - der Versatz
+# faellt dann still aus, obwohl Filter und Karte geladen sind. Zum
+# Verkleinern dort "zoom" nehmen.
+RISS_VIEW = (400.0, 240.0)   # Koordinatensystem der Zeichnung
+RISS_SCALE = 60.0            # Skala des feDisplacementMap; daraus wird Pixel
+RISS_VERSATZ = (7.5, 5.5)    # wie weit die untere Scherbe abrutscht, in px
+RISS_DICKE = 3.0             # Breite der Bruchflaeche im obigen Koordinatensystem
+# Startpunkt, Endpunkt und Saatwert der ausgewaehlten Fassung ("R2": Einschlag
+# von der oberen rechten Ecke weg). Die Enden liegen bewusst ausserhalb der
+# Kachel, damit der Riss nicht sichtbar im Nichts beginnt.
+RISS_LINIE = (408.0, 20.0, -8.0, 206.0, 23)
+# Abspaltungen als (Anteil am Hauptriss, Laenge, Winkel).
+RISS_ZWEIGE = ((.22, 48, 36), (.46, 64, -40), (.72, 50, 30))
+
+
+def _riss_punkte(x0, y0, x1, y1, segmente, streuung, seed):
+    """Eine Risslinie aus vielen kurzen, quer ausgelenkten Segmenten.
+
+    Ein Linienzug aus wenigen langen Strecken liest sich als Diagramm, nicht
+    als Bruch - erst die Kleinteiligkeit macht daraus einen Riss."""
+    r = random.Random(seed)
+    punkte = []
+    for i in range(segmente + 1):
+        t = i / segmente
+        x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+        if 0 < i < segmente:
+            dx, dy = x1 - x0, y1 - y0
+            laenge = math.hypot(dx, dy) or 1
+            a = r.uniform(-streuung, streuung)
+            x += -dy / laenge * a
+            y += dx / laenge * a
+        punkte.append((x, y))
+    return punkte
+
+
+def _riss_d(punkte, zu=False):
+    return ("M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in punkte)
+            + (" Z" if zu else ""))
+
+
+def _riss_normalen(punkte):
+    """Zu jedem Punkt die Senkrechte auf den Linienverlauf."""
+    letzter = len(punkte) - 1
+    aus = []
+    for i, (x, y) in enumerate(punkte):
+        if i == 0:
+            dx, dy = punkte[1][0] - x, punkte[1][1] - y
+        elif i == letzter:
+            dx, dy = x - punkte[-2][0], y - punkte[-2][1]
+        else:
+            dx, dy = punkte[i + 1][0] - punkte[i - 1][0], punkte[i + 1][1] - punkte[i - 1][1]
+        ln = math.hypot(dx, dy) or 1
+        aus.append((-dy / ln, dx / ln))
+    return aus
+
+
+def _riss_zweig(punkte, anteil, laenge, winkel, seed):
+    """Eine Abspaltung, die vom Hauptriss weglaeuft."""
+    i = max(1, min(int(len(punkte) * anteil), len(punkte) - 2))
+    x, y = punkte[i]
+    dx, dy = punkte[i + 1][0] - punkte[i - 1][0], punkte[i + 1][1] - punkte[i - 1][1]
+    n = math.hypot(dx, dy) or 1
+    rad = math.radians(winkel)
+    rx = (-dy / n) * math.cos(rad) + (dx / n) * math.sin(rad)
+    ry = (dx / n) * math.cos(rad) + (dy / n) * math.sin(rad)
+    return _riss_punkte(x, y, x + rx * laenge, y + ry * laenge, 7, 2.5, seed)
+
+
+def _riss_versetzt(punkte, dicke):
+    """Die Risslinie um `dicke` zur Seite versetzt, in der Mitte am weitesten
+    und zu den Enden auslaufend - die aeussere Kante der Bruchflaeche."""
+    letzter = len(punkte) - 1
+    aus = []
+    for i, ((x, y), (nx, ny)) in enumerate(zip(punkte, _riss_normalen(punkte))):
+        d = dicke * math.sin(math.pi * i / letzter) ** .55
+        aus.append((x + nx * d, y + ny * d))
+    return aus
+
+
+def _riss_uri(svg):
+    """SVG als data-URI fuer einen Attributwert: spitze Klammern muessen raus,
+    sonst beisst sich der Schnipsel mit dem umgebenden Markup."""
+    return ("data:image/svg+xml;utf8,"
+            + svg.replace("<", "%3C").replace(">", "%3E")
+                 .replace("#", "%23").replace('"', "%22"))
+
+
+def _riss_bauen():
+    """Liefert (Markup des Filters, CSS). Laeuft einmal beim Import."""
+    breite, hoehe = RISS_VIEW
+    x0, y0, x1, y1, seed = RISS_LINIE
+    haupt = _riss_punkte(x0, y0, x1, y1, 22, 11, seed)
+    aeste = [_riss_zweig(haupt, a, l, w, seed + i * 7)
+             for i, (a, l, w) in enumerate(RISS_ZWEIGE)]
+    alle = [haupt] + aeste
+    paare = [(haupt, RISS_DICKE)] + [(a, RISS_DICKE * .5) for a in aeste]
+
+    # Die Verschiebungskarte. Der Kanalwert ergibt die Verschiebung als
+    # RISS_SCALE * (wert/255 - 0.5); hier zurueckgerechnet, damit oben in
+    # RISS_VERSATZ Pixel stehen koennen.
+    dx, dy = RISS_VERSATZ
+    kanal = lambda v: max(0, min(255, round(128 + v / RISS_SCALE * 255)))
+    unterhalb = _riss_d(haupt + [(haupt[-1][0], hoehe + 30), (haupt[0][0], hoehe + 30)], zu=True)
+    karte = (f"<svg xmlns='http://www.w3.org/2000/svg' "
+             f"viewBox='0 0 {breite:.0f} {hoehe:.0f}' preserveAspectRatio='none'>"
+             f"<rect width='{breite:.0f}' height='{hoehe:.0f}' fill='rgb(128,128,128)'/>"
+             f"<path d='{unterhalb}' fill='rgb({kanal(dx)},{kanal(dy)},128)'/>"
+             f"</svg>")
+
+    # Die Bruchflaeche liegt vollstaendig OBERHALB der Linie, nicht mittig
+    # darauf: dort ist die Karte neutral, die Zeichnung wird also nicht
+    # mitverschoben und zerreisst nicht an ihrer eigenen Bruchkante. Das ist
+    # zugleich das richtige Bild - zu sehen ist die Kante der oberen Scherbe,
+    # waehrend die untere darunter weggerutscht ist.
+    keile = "".join(
+        f"<path d='{_riss_d(_riss_versetzt(p, d) + p[::-1], zu=True)}'/>" for p, d in paare)
+    kanten = "".join(f"<path d='{_riss_d(_riss_versetzt(p, d))}'/>" for p, d in paare)
+    fuge = "".join(f"<path d='{_riss_d(p)}'/>" for p in alle)
+    zeichnung = (
+        f"<svg xmlns='http://www.w3.org/2000/svg' "
+        f"viewBox='0 0 {breite:.0f} {hoehe:.0f}' preserveAspectRatio='none'>"
+        f"<defs><linearGradient id='bf' x1='0' y1='0' x2='.2' y2='1'>"
+        f"<stop offset='0' stop-color='#cdeaf4' stop-opacity='.34'/>"
+        f"<stop offset='.45' stop-color='#20434e' stop-opacity='.40'/>"
+        f"<stop offset='1' stop-color='#000206' stop-opacity='.78'/>"
+        f"</linearGradient></defs>"
+        # die angeschraegte Bruchflaeche: oben vom Licht getroffen, nach unten
+        # verliert sie sich in der Glasdicke
+        f"<g fill='url(#bf)'>{keile}</g>"
+        # die aeussere Kante der Scherbe, an der sich das Licht bricht
+        f"<g fill='none' stroke='#dcf6ff' stroke-opacity='.38' stroke-width='.7' "
+        f"stroke-linecap='round' stroke-linejoin='round'>{kanten}</g>"
+        # der Fugengrund - dort, wo die untere Scherbe weggerutscht ist,
+        # bleibt es dunkel. Das Dunkelste im Bild, sonst liest sich der Riss
+        # als heller Kratzer.
+        f"<g fill='none' stroke='#000104' stroke-opacity='.95' stroke-width='2.0' "
+        f"stroke-linecap='round' stroke-linejoin='round'>{fuge}</g>"
+        f"</svg>")
+
+    # Der Filterbereich ist exakt die Kachel (0/0/100%/100% in
+    # objectBoundingBox-Einheiten) und feImage bekommt keine eigene Geometrie
+    # - dann deckt die Karte genau die Kachel ab, und zwar bei jeder Groesse.
+    # Mit einem groesseren Filterbereich saesse die Karte um dessen Ueberstand
+    # verschoben, die Zeichnung darueber aber nicht: der sichtbare Riss und
+    # die Bruchkante der Verschiebung liefen auseinander.
+    #
+    # sRGB, weil feDisplacementMap die Kanalwerte sonst durch die
+    # Linearisierung verzerrt bekommt.
+    u = _riss_uri(karte)
+    markup = (f'<svg class="riss-defs" aria-hidden="true" width="0" height="0" '
+              f'style="position:absolute">'
+              f'<filter id="rissglas" x="0%" y="0%" width="100%" height="100%" '
+              f'color-interpolation-filters="sRGB">'
+              f'<feImage href="{u}" xlink:href="{u}" preserveAspectRatio="none" '
+              f'result="karte"/>'
+              f'<feDisplacementMap in="SourceGraphic" in2="karte" '
+              f'scale="{RISS_SCALE:.0f}" xChannelSelector="R" yChannelSelector="G"/>'
+              f'</filter></svg>')
+
+    # .bk-bl ist eines der beiden leeren Divs, die jede Kachel ohnehin fuer
+    # ihre Schnittkanten mitbringt - die erloschene Kachel braucht die
+    # Lichtkante unten links nicht mehr und borgt sich das Element fuer die
+    # Risszeichnung. Deshalb hier alles zuruecksetzen, was die Kantenregel
+    # gesetzt hat (Groesse, Drehung, Verlauf).
+    css = (f"""
+  /* Gesprungenes Glas - siehe _riss_bauen(). Der Versatz von """
+           f"""{dx}/{dy} px kommt aus dem Filter, die Bruchflaeche darueber
+     aus der Zeichnung. */
+  .panel.offline {{ opacity: .82; filter: url(#rissglas); }}
+  .panel.offline > .bk-bl {{
+    display: block; position: absolute; inset: 0; width: auto; height: auto;
+    border: none; opacity: 1; z-index: 4; pointer-events: none;
+    transform: none; background-color: transparent;
+    background-image: url("{_riss_uri(zeichnung)}");
+    background-size: 100% 100%; background-repeat: no-repeat;
+  }}
+""")
+    return markup, css
+
+
+RISS_DEFS_HTML, RISS_CSS = _riss_bauen()
+
+
 # Die Scheibe als Markup - eine einzige Ebene ueber dem GESAMTEN Bild
 # (Nutzerwunsch: nicht je Kachel). Rein dekorativ, deshalb aria-hidden.
 #
@@ -2637,10 +2867,12 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
 {BASE_CSS}
 {HUD_CSS}
 {GLASS_CSS if COLOR_THEME == "glas" else ""}
+{RISS_CSS if COLOR_THEME == "glas" else ""}
 </style>
 </head>
 <body>
 {'<div class="depth"></div>' if COLOR_THEME == "glas" else ""}
+{RISS_DEFS_HTML if COLOR_THEME == "glas" else ""}
 <div class="wrap">
   <header>
     <div class="header-top">
