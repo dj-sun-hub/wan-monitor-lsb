@@ -1604,6 +1604,10 @@ HUD_CSS = """
      per Flexbox - ohne JavaScript, ohne feste Pixelannahmen ueber die
      Bildschirmgroesse des Betrachters.
      --------------------------------------------------------------------- */
+  /* Graustufen-Kantenglaettung: auf dunklem Grund laesst die
+     Subpixel-Glaettung helle Schrift aufgequollen und leicht farbig wirken -
+     genau der Eindruck, den wir hier gerade loswerden wollen. */
+  body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   body { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 15px;
     /* Der Geraeterahmen (siehe .canopy::before) liegt ueber der Seite und
        verdeckt, was unter ihm sitzt - die Seite haelt deshalb genau seine
@@ -1619,8 +1623,8 @@ HUD_CSS = """
   .wrap::before {
     content: ""; position: absolute; inset: -12px -18px -10px -18px; z-index: 0;
     pointer-events: none;
-    -webkit-backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
-    backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
+    -webkit-backdrop-filter: blur(4px) saturate(1.45) brightness(1.10);
+    backdrop-filter: blur(4px) saturate(1.45) brightness(1.10);
     background:
       linear-gradient(115deg, rgba(232,253,255,.055) 0%, transparent 38%, transparent 62%, rgba(198,240,255,.022) 100%),
       linear-gradient(158deg, rgba(140,205,220,.040), rgba(96,170,190,.010) 45%, rgba(120,195,210,.026));
@@ -2227,8 +2231,8 @@ GLASS_CSS = """
      alten Werten (dreifache Deckkraft, blur 13px) blieb vom Hintergrund
      nichts uebrig und die Kachel las sich als eigenes Objekt. */
   .schema, .log, .panel {
-    -webkit-backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
-    backdrop-filter: blur(7px) saturate(1.5) brightness(1.12);
+    -webkit-backdrop-filter: blur(4px) saturate(1.45) brightness(1.10);
+    backdrop-filter: blur(4px) saturate(1.45) brightness(1.10);
     background:
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
       linear-gradient(115deg, rgba(232,253,255,.06) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.025) 100%),
@@ -2306,20 +2310,27 @@ GLASS_CSS = """
   /* Eine Projektion strahlt selbst, sie wird nicht angestrahlt: die Schrift
      bekommt einen echten Lichthof, nicht nur Farbe. Der Farbsaum daneben
      bleibt - eine billige Projektionsoptik trennt die Farben leicht auf. */
+  /* Enger Lichthof statt breitem Schein, und ein deutlich zurueckgenommener
+     Farbsaum: 12px Radius legten sich wie ein Schleier ueber die
+     Buchstabenkanten, und 0,6px Versatz in zwei Farben verdoppelten jede
+     Kante sichtbar. Die Schrift leuchtet weiterhin, bleibt aber scharf. */
   .pylon .val, .panel-head .fn, .readouts .rv, .log li .fn {
-    text-shadow: 0 0 12px rgba(127, 240, 228, .45), -.6px 0 rgba(255, 70, 120, .30),
-      .6px 0 rgba(90, 220, 255, .30);
+    text-shadow: 0 0 6px rgba(127, 240, 228, .30), -.4px 0 rgba(255, 70, 120, .11),
+      .4px 0 rgba(90, 220, 255, .11);
   }
   /* Staerker als in den Kacheln: dort traegt die Platte den Kontrast mit,
      hier steht die Zahl frei auf dem Muster. */
+  /* Der Pylon steht frei auf dem gemusterten Hintergrund und braucht mehr
+     Eigenkontrast als Text in einer Kachel - aber ueber einen dunklen
+     Schatten, nicht ueber einen breiten Lichthof. */
   .pylon .val {
-    text-shadow: 0 0 22px rgba(127, 240, 228, .55), 0 1px 12px rgba(0, 0, 0, .9),
-      -.6px 0 rgba(255, 70, 120, .30), .6px 0 rgba(90, 220, 255, .30);
+    text-shadow: 0 0 10px rgba(127, 240, 228, .34), 0 1px 10px rgba(0, 0, 0, .95),
+      -.4px 0 rgba(255, 70, 120, .12), .4px 0 rgba(90, 220, 255, .12);
   }
   .pylon .label, .pylon .fuss { text-shadow: 0 1px 8px rgba(0, 0, 0, .85); }
-  .panel .subhead, .mini-chart-label, .readouts .rl { text-shadow: 0 0 8px rgba(127, 240, 228, .22); }
-  .chip.nominal { text-shadow: 0 0 9px rgba(127, 240, 228, .5); }
-  .chip.failover { text-shadow: 0 0 9px rgba(255, 106, 88, .6); }
+  .panel .subhead, .mini-chart-label, .readouts .rl { text-shadow: 0 0 4px rgba(127, 240, 228, .14); }
+  .chip.nominal { text-shadow: 0 0 5px rgba(127, 240, 228, .34); }
+  .chip.failover { text-shadow: 0 0 5px rgba(255, 106, 88, .42); }
 
   /* Schema-Knoten leuchten wie Lichtpunkte auf der Scheibe */
   .bus .hub { background: rgba(127, 240, 228, .06); border-color: rgba(127, 240, 228, .35);
