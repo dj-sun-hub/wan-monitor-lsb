@@ -696,6 +696,7 @@ LOSS_MIN_ANTEIL = 0.01   # mehr als dieser Anteil aller Messpunkte
 # statt durchzulaufen.
 RADAR_SWEEP_S = 4.2      # Suchstrahl des Latenz-Radars, ein Umlauf
 PULSE_TRAVEL_S = 2.6     # Tropfen auf den Abzweigleitungen im Bus
+LOST_PULSE_S = 1.4       # "Link Lost" ueber der Kachel, Takt wie bk-pulse
 
 # Dauerbetrieb: der Flow-Chart bleibt auf ein recentes Fenster begrenzt, sonst
 # wird er nach Wochen/Monaten Laufzeit unbrauchbar gross. Die Monatskennzahl
@@ -1963,10 +1964,20 @@ HUD_CSS = """
     display: flex; align-items: center; justify-content: center;
     font-family: "Rajdhani", sans-serif; font-size: clamp(20px, 2.2vw, 30px);
     font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
-    color: var(--alert); opacity: .92;
+    color: var(--alert);
     text-shadow: 0 0 18px rgba(255, 106, 88, .55), 0 2px 10px rgba(0, 0, 0, .9);
     pointer-events: none; z-index: 2;
+    /* Pulsiert wie die Eckklammern bei einem Failover - dasselbe Keyframe,
+       derselbe Takt. Die Phase kommt aus der Uhrzeit (siehe CANOPY_HTML),
+       sonst setzt der Puls bei jedem Neuladen der Seite neu an; weil ein
+       Pseudo-Element per Skript nicht direkt erreichbar ist, laeuft sie
+       ueber die Variable --puls-phase am Elternelement. */
+    opacity: .5;
+    animation: bk-pulse __LOSTPULSE__s ease-in-out infinite;
+    animation-delay: var(--puls-phase, 0s);
   }
+  @media (prefers-reduced-motion: reduce) {
+    .panel.offline .mini-chart-col::after { animation: none; opacity: .92; } }
   /* Die Zeichenflaeche nimmt die volle Resthoehe der Kachel. Frueher stand
      hier ein Deckel von 140px - seit der Kopfbereich zur Konsolenbank
      geschrumpft ist, wurden die Kacheln hoeher, der Chart aber nicht: unter
@@ -2059,7 +2070,7 @@ HUD_CSS = """
   @media (prefers-reduced-motion: reduce) {
     .boot-line .dot, .sync-dot.stale, .bracketed.failover::before, .bracketed.failover::after,
     .bracketed.failover .bk-tr, .bracketed.failover .bk-bl { animation: none; } }
-""".replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S))
+""".replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S)).replace("__LOSTPULSE__", str(LOST_PULSE_S))
 
 
 # Glasprojektion - setzt auf HUD_CSS auf und wird NACH ihm eingebunden (gleiche
@@ -2512,6 +2523,13 @@ CANOPY_HTML = """<div class="canopy" aria-hidden="true">
   var radar = document.querySelector('.radar .sweep');
   if (radar) phase(radar, __RADAR__);
 
+  // "Link Lost" ueber den erloschenen Kacheln: das Pseudo-Element selbst ist
+  // per Skript nicht erreichbar, die Phase geht deshalb ueber eine Variable
+  // am Elternelement (siehe --puls-phase im CSS).
+  document.querySelectorAll('.panel.offline .mini-chart-col').forEach(function (el) {
+    el.style.setProperty('--puls-phase', (-(jetzt % __LOSTPULSE__)).toFixed(2) + 's');
+  });
+
   document.querySelectorAll('.snode .pulse').forEach(function (el) {
     // Die Staffelung steht als inline-Style im Markup (siehe _schema_html)
     // und wird hier durch den berechneten Wert ersetzt - vorher auslesen.
@@ -2519,7 +2537,7 @@ CANOPY_HTML = """<div class="canopy" aria-hidden="true">
     phase(el, __PULSE__, versatz);
   });
 })();
-</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S)).replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S))
+</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S)).replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S)).replace("__LOSTPULSE__", str(LOST_PULSE_S))
 
 
 def render_overview_html(consoles, start, now, events=(), latency=None):
