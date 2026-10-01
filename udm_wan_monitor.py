@@ -628,6 +628,19 @@ FAILOVER_THRESHOLD_KBPS_BY_CONSOLE = {
 # vorher (1 Poll), aber deutlich weniger anfaellig fuer Einzel-Spitzen.
 FAILOVER_CONSECUTIVE = 2
 FAILOVER_EXCLUDED_DEVICES = set()
+# Manuelle Ausfallmarkierung: zeigt ALLE Standorte als erloschen an,
+# unabhaengig von der Messung. Fuer Stoerungen ausserhalb der UDM-Strecke -
+# die UDM misst nur ihre eigene LTE-Leitung und sieht einen Ausfall weiter
+# vorn im Netz gar nicht.
+#
+# Die Seite weist sichtbar darauf hin, solange der Schalter gesetzt ist:
+# eine Markierung, die man spaeter nicht mehr von einer Messung
+# unterscheiden kann, waere schlimmer als gar keine.
+#
+# Zum Aufheben hier auf False setzen. Die Datenerfassung laeuft in beiden
+# Faellen unveraendert weiter - betroffen ist nur die Anzeige, nicht die CSV.
+ALLE_AUSGEFALLEN = True
+AUSFALL_HINWEIS = "Stoerung ausserhalb der LTE-Strecke - alle Standorte manuell als ausgefallen markiert"
 # Ab wann eine Konsole als "offline/nicht erreichbar" statt nur "kurz kein
 # Update" gilt (5x der 1-Minuten-Pollintervall Toleranz fuer vereinzelt
 # uebersprungene Laeufe, siehe poll() Fehlerbehandlung).
@@ -1320,7 +1333,12 @@ def _console_status(c):
     """Einheitliche Status-Einstufung einer Konsole fuer Uebersicht, Schema
     und Ereignisprotokoll: 'failover' > 'offline' > 'nominal'. Failover hat
     Vorrang, is_offline setzt is_failover in compute_stats() aber ohnehin
-    schon zurueck, beides gleichzeitig kommt also nicht vor."""
+    schon zurueck, beides gleichzeitig kommt also nicht vor.
+
+    Die manuelle Ausfallmarkierung (ALLE_AUSGEFALLEN) sticht alles: sie
+    bildet eine Stoerung ab, die die UDM-Messung gar nicht sehen kann."""
+    if ALLE_AUSGEFALLEN:
+        return "offline"
     if c["is_failover"]:
         return "failover"
     if c["is_offline"]:
@@ -1684,6 +1702,17 @@ HUD_CSS = """
   .pylon .val.alert { color: var(--alert); }
   .pylon .fuss { font-size: 10.5px; color: var(--down); opacity: .8; letter-spacing: .08em;
     text-transform: uppercase; margin-top: 2px; }
+
+  /* Hinweisbalken der manuellen Ausfallmarkierung (siehe ALLE_AUSGEFALLEN).
+     Bewusst auffaellig und ganz oben: niemand soll die Markierung spaeter
+     fuer einen Messwert halten. */
+  .ausfall-hinweis { position: relative; z-index: 2;
+    margin: 0 0 10px; padding: 7px 14px;
+    border: 1px solid var(--alert); border-left-width: 4px;
+    background: rgba(255, 106, 88, .14);
+    color: var(--alert); font-size: 11.5px; letter-spacing: .08em;
+    text-transform: uppercase; font-weight: 600;
+    text-shadow: 0 0 10px rgba(255, 106, 88, .5); }
 
   .mlabel { font-size: 10px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
   .segments { display: flex; gap: 3px; height: 9px; }
@@ -2576,6 +2605,7 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
 <body>
 {'<div class="depth"></div>' if COLOR_THEME == "glas" else ""}
 <div class="wrap">
+  {'<div class="ausfall-hinweis">' + html.escape(AUSFALL_HINWEIS) + '</div>' if ALLE_AUSGEFALLEN else ''}
   <header>
     <div class="header-top">
       <div class="header-info">
