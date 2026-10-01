@@ -2393,13 +2393,23 @@ GLASS_CSS = """
      sie faerbten die Glasplatten-Regel weiter oben ein, deren Hintergrund
      hier ohnehin geloescht wird.
 
-     Staerke aus der Vorschau ausgewaehlt (Fassung "G3, deutlich"): .140 in
-     der obersten Stufe. Zahlenmaessig liegt das ueber dem Failover-Rot
-     (.065), optisch deutlich darunter - Rot auf dunkelblauem Grund hat einen
-     viel groesseren Farbabstand als ein gedaempftes Gruen, und das Rot
-     bekommt zusaetzlich Rahmen, Schlagschatten und Lichtpfuetze, die das
-     Gruen bewusst nicht hat. Das Rot bleibt damit klar das Alarmsignal, das
-     Gruen sagt nur "laeuft".
+     Fassung aus der Vorschau ausgewaehlt ("C4, Schacht"). Entscheidend ist
+     dabei nicht der Farbton, sondern die RICHTUNG: das Licht sammelt sich am
+     unteren Rand und laeuft nach oben aus, als stuende die Kachel in einem
+     beleuchteten Schacht. Eine gleichmaessig ueber die Flaeche gelegte
+     Toenung - der vorherige Stand - liest sich dagegen immer als
+     eingefaerbtes Rechteck, egal welches Gruen man nimmt.
+
+     Die zweite, diagonale Schicht ist nur noch ein schwacher Rest (.036) und
+     laeuft bei 60% aus: sie nimmt dem Schacht die Haerte, ohne wieder eine
+     flaechige Einfaerbung daraus zu machen.
+
+     Zahlenmaessig liegt die Spitze ueber dem Failover-Rot (.145 gegen .065),
+     optisch deutlich darunter: Rot auf dunkelblauem Grund hat einen viel
+     groesseren Farbabstand als ein gedaempftes Gruen, und das Rot bekommt
+     zusaetzlich Rahmen, Schlagschatten und Lichtpfuetze, die das Gruen
+     bewusst nicht hat. Das Rot bleibt damit klar das Alarmsignal, das Gruen
+     sagt nur "laeuft".
 
      Der Blauanteil bleibt unter dem Gruenanteil, sonst landet der Ton beim
      Teal der Download-Kurve und liest sich nicht mehr als eigener Stich.
@@ -2407,8 +2417,11 @@ GLASS_CSS = """
      Die erloschene Kachel bleibt aussen vor: ein gruener "laeuft"-Ton auf
      einem toten Standort waere ein falsches Signal. */
   .panel:not(.failover):not(.offline) {
-    background: linear-gradient(158deg,
-      rgba(116, 232, 128, .140), rgba(96, 200, 112, .062) 55%, rgba(108, 220, 124, .100));
+    background:
+      linear-gradient(0deg, rgba(110, 255, 170, .145) 0%,
+        rgba(92, 226, 148, .050) 26%, transparent 62%),
+      linear-gradient(158deg, rgba(100, 222, 146, .036), transparent 60%);
+    border-top-color: rgba(140, 250, 195, .62);
   }
 
   /* Kacheln als Felder EINES Instruments: 1px Fuge statt 20px Abstand, und
