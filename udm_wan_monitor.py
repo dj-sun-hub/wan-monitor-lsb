@@ -603,7 +603,7 @@ GB = 1000 ** 3
 # 80% der jeweiligen Rot-Schwelle.
 ALERT_THRESHOLD_BYTES_BY_CONSOLE = {
     "WTB--UDM-1": 24 * GB,
-    "KNZ--UDM-1": 9 * GB,
+    "KNZ--UDM-1": 24 * GB,   # auf WTB-Niveau angehoben (Nutzervorgabe)
     "LSB--UDM-1": 9 * GB,
     "KLO--UDM-1": 4 * GB,
     "NID--UDM-1": 4 * GB,
@@ -2113,15 +2113,6 @@ GLASS_CSS = """
     --glass: rgba(120, 195, 210, .085); --glass-2: rgba(96, 170, 190, .03);
     --glass-edge: rgba(198, 240, 255, .20);
     --phosphor-dim: #2a7d75; --hull-2: rgba(120, 195, 210, .10); --alert-dim: rgba(255, 106, 88, .18);
-    /* Grundton der Glasplatten: neutral kuehl. Die Konsolenkacheln
-       ueberschreiben ihn weiter unten mit einem Gruenstich. */
-    --ton-a: rgba(140,205,220,.05); --ton-b: rgba(96,170,190,.012);
-    --ton-c: rgba(120,195,210,.034);
-    --ton-kante: rgba(150,210,230,.15); --ton-licht: rgba(216,250,255,.42);
-    /* Die obere Tonschicht ist voreingestellt leer: Schema und Protokoll
-       behalten damit genau ihr bisheriges Aussehen. */
-    --ton-ueber-a: transparent; --ton-ueber-b: transparent;
-    --ton-ueber-c: transparent;
   }
 
   /* Scanlinien des HUD-Themes weichen der Tiefenebene */
@@ -2257,14 +2248,10 @@ GLASS_CSS = """
     background:
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
       linear-gradient(115deg, rgba(232,253,255,.07) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.03) 100%),
-      /* Tonschicht OBERHALB der Deckschicht. Ohne sie verschluckt die
-         dunkle Schicht darunter rund 60 Prozent jeder Einfaerbung - genau
-         daran ist der erste Anlauf des Gruenstichs gescheitert. */
-      linear-gradient(158deg, var(--ton-ueber-a), var(--ton-ueber-b) 55%, var(--ton-ueber-c)),
       linear-gradient(180deg, rgba(6,14,19,.55), rgba(6,14,19,.62)),
-      linear-gradient(158deg, var(--ton-a), var(--ton-b) 45%, var(--ton-c));
-    border: 1px solid var(--ton-kante);
-    border-top-color: var(--ton-licht);
+      linear-gradient(158deg, rgba(140,205,220,.05), rgba(96,170,190,.012) 45%, rgba(120,195,210,.034));
+    border: 1px solid rgba(150,210,230,.15);
+    border-top-color: rgba(216,250,255,.42);
     border-left-color: rgba(198,240,255,.24);
     border-bottom-color: rgba(6,14,20,.55);
     box-shadow:
@@ -2327,28 +2314,6 @@ GLASS_CSS = """
       0 0 22px rgba(255, 106, 88, .30),
       0 20px 42px -26px rgba(0,0,0,.92);
   }
-  /* Ganz leichter Gruenstich auf den Konsolenkacheln. Aufgebaut wie die
-     rote Failover-Kachel - Flaechenton und Kanten bekommen Farbe, Koernung
-     und Reflexion bleiben - aber deutlich schwaecher und ohne Bewegung: das
-     Rot ist ein Alarmsignal und darf auffallen, das Gruen sagt nur "laeuft"
-     und soll im Hintergrund bleiben.
-
-     Die Toenung bleibt bewusst unter der Staerke des Failover-Rots (.038
-     statt .065 in der obersten Stufe). Teal ist auf dieser Seite die Farbe
-     des Downloads; ein kraeftiger gruener Grund wuerde die Flow-Kurven
-     mitfaerben und ihre Ablesbarkeit kosten. Die Failover-Kachel setzt ihren
-     Hintergrund komplett neu und bleibt davon unberuehrt. */
-  .panel {
-    /* Gruen statt Blaugruen: der Blauanteil bleibt deutlich unter dem
-       Gruenanteil, sonst landet die Kachel beim Teal der Download-Kurve und
-       liest sich nicht mehr als eigener Farbstich. */
-    --ton-ueber-a: rgba(118,232,132,.075); --ton-ueber-b: rgba(94,198,112,.030);
-    --ton-ueber-c: rgba(108,220,124,.052);
-    --ton-a: rgba(120,230,150,.058); --ton-b: rgba(90,195,125,.014);
-    --ton-c: rgba(108,218,142,.040);
-    --ton-kante: rgba(140,226,172,.19); --ton-licht: rgba(222,255,232,.44);
-  }
-
   /* Etwas weniger abgeblendet als frueher (.55): der LINK-LOST-Schriftzug
      ueber der Zeichenflaeche soll auch aus der Entfernung tragen. */
   .panel.offline { opacity: .72; }
@@ -2415,6 +2380,36 @@ GLASS_CSS = """
   }
   .panel::after, .schema::after, .log::after { content: none; }
   .panel.failover { border-top-color: rgba(255, 180, 168, .75); }
+
+  /* Ganz leichter Gruenstich auf den Konsolenkacheln - dasselbe Mittel wie
+     beim roten Failover: eine eingefaerbte Flaeche, sonst nichts. Kein
+     Rahmen, kein Schatten, keine eigene Mattierung, keine Bewegung. Die
+     Kachel bleibt damit ein Feld auf der EINEN Scheibe und wird nicht
+     wieder zur eigenen Platte.
+
+     Diese Regel MUSS nach der Loeschregel darueber stehen: '.panel' hat
+     dieselbe Spezifitaet wie das '.panel' dort, es entscheidet die
+     Reihenfolge. Genau daran sind die ersten beiden Anlaeufe gescheitert -
+     sie faerbten die Glasplatten-Regel weiter oben ein, deren Hintergrund
+     hier ohnehin geloescht wird.
+
+     Staerke aus der Vorschau ausgewaehlt (Fassung "G3, deutlich"): .140 in
+     der obersten Stufe. Zahlenmaessig liegt das ueber dem Failover-Rot
+     (.065), optisch deutlich darunter - Rot auf dunkelblauem Grund hat einen
+     viel groesseren Farbabstand als ein gedaempftes Gruen, und das Rot
+     bekommt zusaetzlich Rahmen, Schlagschatten und Lichtpfuetze, die das
+     Gruen bewusst nicht hat. Das Rot bleibt damit klar das Alarmsignal, das
+     Gruen sagt nur "laeuft".
+
+     Der Blauanteil bleibt unter dem Gruenanteil, sonst landet der Ton beim
+     Teal der Download-Kurve und liest sich nicht mehr als eigener Stich.
+
+     Die erloschene Kachel bleibt aussen vor: ein gruener "laeuft"-Ton auf
+     einem toten Standort waere ein falsches Signal. */
+  .panel:not(.failover):not(.offline) {
+    background: linear-gradient(158deg,
+      rgba(116, 232, 128, .140), rgba(96, 200, 112, .062) 55%, rgba(108, 220, 124, .100));
+  }
 
   /* Kacheln als Felder EINES Instruments: 1px Fuge statt 20px Abstand, und
      die Trennlinien enden am Rasterrand statt jede Kachel zu umschliessen. */
