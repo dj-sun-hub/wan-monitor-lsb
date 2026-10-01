@@ -2504,7 +2504,11 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
     day_of_month = min(int(days_elapsed_month_calendar) + 1, days_in_month)
 
     total_month_all = sum(c["total_month"] for c in consoles)
-    n_failover = sum(1 for c in consoles if c["is_failover"])
+    # Ueber _console_status zaehlen, nicht direkt ueber is_failover: sonst
+    # geht die Zaehlung an der manuellen Ausfallmarkierung vorbei und meldet
+    # "1 / 6 aktive Failover", waehrend die Seite daneben sechs erloschene
+    # Standorte zeigt.
+    n_failover = sum(1 for c in consoles if _console_status(c) == "failover")
 
     def instrument(label, text, alert=False, foot=""):
         """Eine Kennzahl im Statuspylon - ohne Kasten, bewusst gross.
