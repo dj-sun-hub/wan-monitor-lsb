@@ -1948,7 +1948,21 @@ HUD_CSS = """
      verloren. */
   .mini-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
     flex: 1 1 auto; min-height: 0; }
-  .mini-chart-col { display: flex; flex-direction: column; min-height: 0; }
+  .mini-chart-col { display: flex; flex-direction: column; min-height: 0; position: relative; }
+  /* Bei erloschenem Standort "LINK LOST" quer ueber die Zeichenflaeche: der
+     kleine Chip oben rechts geht auf einem Wandmonitor unter, und die Kurve
+     darunter zeigt ohnehin nur noch eingefrorene Vergangenheit. Die Kurve
+     wird dafuer stark gedimmt, der Schriftzug liegt darueber. */
+  .panel.offline .chart.flow-chart { opacity: .18; }
+  .panel.offline .mini-chart-col::after {
+    content: "Link Lost"; position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Rajdhani", sans-serif; font-size: clamp(20px, 2.2vw, 30px);
+    font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--alert); opacity: .92;
+    text-shadow: 0 0 18px rgba(255, 106, 88, .55), 0 2px 10px rgba(0, 0, 0, .9);
+    pointer-events: none; z-index: 2;
+  }
   /* Die Zeichenflaeche nimmt die volle Resthoehe der Kachel. Frueher stand
      hier ein Deckel von 140px - seit der Kopfbereich zur Konsolenbank
      geschrumpft ist, wurden die Kacheln hoeher, der Chart aber nicht: unter
@@ -2283,7 +2297,9 @@ GLASS_CSS = """
       0 0 22px rgba(255, 106, 88, .30),
       0 20px 42px -26px rgba(0,0,0,.92);
   }
-  .panel.offline { opacity: .55; }
+  /* Etwas weniger abgeblendet als frueher (.55): der LINK-LOST-Schriftzug
+     ueber der Zeichenflaeche soll auch aus der Entfernung tragen. */
+  .panel.offline { opacity: .72; }
 
   /* Farbsaum an den Ziffern, wie aus einer billigen Projektionsoptik. Per
      Selektor statt per Zusatzklasse, damit am erzeugten HTML nichts haengt. */
