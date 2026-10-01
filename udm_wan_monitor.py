@@ -2124,8 +2124,8 @@ GLASS_CSS = """
   .depth {
     position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background:
-      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='55' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.8' stroke-opacity='0.28'/></svg>\"),
-      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='148' height='127' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.6' stroke-opacity='0.12'/></svg>\"),
+      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='55' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.8' stroke-opacity='0.11'/></svg>\"),
+      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='148' height='127' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.6' stroke-opacity='0.05'/></svg>\"),
       radial-gradient(18% 22% at 73% 16%, var(--lamp-a) 0%, transparent 72%),
       radial-gradient(15% 19% at 26% 84%, var(--lamp-b) 0%, transparent 72%),
       radial-gradient(62% 52% at 14% 8%, var(--nebula) 0%, transparent 62%),
@@ -2235,8 +2235,9 @@ GLASS_CSS = """
     backdrop-filter: blur(4px) saturate(1.45) brightness(1.10);
     background:
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
-      linear-gradient(115deg, rgba(232,253,255,.06) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.025) 100%),
-      linear-gradient(158deg, rgba(140,205,220,.042), rgba(96,170,190,.010) 45%, rgba(120,195,210,.028));
+      linear-gradient(115deg, rgba(232,253,255,.07) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.03) 100%),
+      linear-gradient(180deg, rgba(6,14,19,.55), rgba(6,14,19,.62)),
+      linear-gradient(158deg, rgba(140,205,220,.05), rgba(96,170,190,.012) 45%, rgba(120,195,210,.034));
     border: 1px solid rgba(150,210,230,.15);
     border-top-color: rgba(216,250,255,.42);
     border-left-color: rgba(198,240,255,.24);
