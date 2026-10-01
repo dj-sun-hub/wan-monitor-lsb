@@ -2118,6 +2118,10 @@ GLASS_CSS = """
     --ton-a: rgba(140,205,220,.05); --ton-b: rgba(96,170,190,.012);
     --ton-c: rgba(120,195,210,.034);
     --ton-kante: rgba(150,210,230,.15); --ton-licht: rgba(216,250,255,.42);
+    /* Die obere Tonschicht ist voreingestellt leer: Schema und Protokoll
+       behalten damit genau ihr bisheriges Aussehen. */
+    --ton-ueber-a: transparent; --ton-ueber-b: transparent;
+    --ton-ueber-c: transparent;
   }
 
   /* Scanlinien des HUD-Themes weichen der Tiefenebene */
@@ -2253,6 +2257,10 @@ GLASS_CSS = """
     background:
       url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>"),
       linear-gradient(115deg, rgba(232,253,255,.07) 0%, transparent 34%, transparent 62%, rgba(198,240,255,.03) 100%),
+      /* Tonschicht OBERHALB der Deckschicht. Ohne sie verschluckt die
+         dunkle Schicht darunter rund 60 Prozent jeder Einfaerbung - genau
+         daran ist der erste Anlauf des Gruenstichs gescheitert. */
+      linear-gradient(158deg, var(--ton-ueber-a), var(--ton-ueber-b) 55%, var(--ton-ueber-c)),
       linear-gradient(180deg, rgba(6,14,19,.55), rgba(6,14,19,.62)),
       linear-gradient(158deg, var(--ton-a), var(--ton-b) 45%, var(--ton-c));
     border: 1px solid var(--ton-kante);
@@ -2331,6 +2339,11 @@ GLASS_CSS = """
      mitfaerben und ihre Ablesbarkeit kosten. Die Failover-Kachel setzt ihren
      Hintergrund komplett neu und bleibt davon unberuehrt. */
   .panel {
+    /* Gruen statt Blaugruen: der Blauanteil bleibt deutlich unter dem
+       Gruenanteil, sonst landet die Kachel beim Teal der Download-Kurve und
+       liest sich nicht mehr als eigener Farbstich. */
+    --ton-ueber-a: rgba(118,232,132,.075); --ton-ueber-b: rgba(94,198,112,.030);
+    --ton-ueber-c: rgba(108,220,124,.052);
     --ton-a: rgba(120,230,150,.058); --ton-b: rgba(90,195,125,.014);
     --ton-c: rgba(108,218,142,.040);
     --ton-kante: rgba(140,226,172,.19); --ton-licht: rgba(222,255,232,.44);
