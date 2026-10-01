@@ -2393,18 +2393,19 @@ GLASS_CSS = """
      sie faerbten die Glasplatten-Regel weiter oben ein, deren Hintergrund
      hier ohnehin geloescht wird.
 
-     Fassung aus der Vorschau ausgewaehlt ("C4, Schacht"). Entscheidend ist
-     dabei nicht der Farbton, sondern die RICHTUNG: das Licht sammelt sich am
-     unteren Rand und laeuft nach oben aus, als stuende die Kachel in einem
-     beleuchteten Schacht. Eine gleichmaessig ueber die Flaeche gelegte
-     Toenung - der vorherige Stand - liest sich dagegen immer als
+     Fassung aus der Vorschau ausgewaehlt ("C3, Reaktorkante"). Entscheidend
+     ist dabei nicht der Farbton, sondern die RICHTUNG: die Farbe kommt aus
+     der angeleuchteten OBERKANTE und faellt darunter kurz ab, die Flaeche
+     selbst bleibt fast neutral. Eine gleichmaessig ueber die Kachel gelegte
+     Toenung - ein frueherer Stand - liest sich dagegen immer als
      eingefaerbtes Rechteck, egal welches Gruen man nimmt.
 
-     Die zweite, diagonale Schicht ist nur noch ein schwacher Rest (.036) und
-     laeuft bei 60% aus: sie nimmt dem Schacht die Haerte, ohne wieder eine
-     flaechige Einfaerbung daraus zu machen.
+     Oben statt unten, und das ist der Punkt: die Flow-Kurve sitzt im unteren
+     Drittel der Kachel. Licht, das sich dort sammelt, liegt genau auf den
+     Daten; an der Oberkante liegt es dort, wo nichts steht. Die Kurven
+     behalten damit ihren neutralen Untergrund.
 
-     Zahlenmaessig liegt die Spitze ueber dem Failover-Rot (.145 gegen .065),
+     Zahlenmaessig liegt die Spitze ueber dem Failover-Rot (.105 gegen .065),
      optisch deutlich darunter: Rot auf dunkelblauem Grund hat einen viel
      groesseren Farbabstand als ein gedaempftes Gruen, und das Rot bekommt
      zusaetzlich Rahmen, Schlagschatten und Lichtpfuetze, die das Gruen
@@ -2418,10 +2419,12 @@ GLASS_CSS = """
      einem toten Standort waere ein falsches Signal. */
   .panel:not(.failover):not(.offline) {
     background:
-      linear-gradient(0deg, rgba(110, 255, 170, .145) 0%,
-        rgba(92, 226, 148, .050) 26%, transparent 62%),
-      linear-gradient(158deg, rgba(100, 222, 146, .036), transparent 60%);
-    border-top-color: rgba(140, 250, 195, .62);
+      linear-gradient(180deg, rgba(120, 255, 180, .105) 0%,
+        rgba(96, 230, 160, .030) 22%, transparent 52%),
+      linear-gradient(158deg, rgba(104, 226, 150, .045),
+        rgba(88, 198, 128, .018) 55%, rgba(96, 214, 138, .034));
+    border-top-color: rgba(150, 255, 200, .80);
+    box-shadow: inset 0 14px 22px -18px rgba(150, 255, 200, .55);
   }
 
   /* Kacheln als Felder EINES Instruments: 1px Fuge statt 20px Abstand, und
