@@ -1369,6 +1369,11 @@ RADAR_MAX_MS = 40.0
 # dieselbe Logik wie beim Monatsvolumen.
 LATENZ_WARN_MS = 35.0
 LATENZ_ALERT_MS = 60.0
+# Paketverlust im 24-Stunden-Mittel. Unterhalb von 1 % faellt nichts auf -
+# einzelne verlorene Pakete sind auf einer LTE-Strecke normal und kein
+# Anlass, die Kachel einzufaerben. Rot soll "hinsehen" heissen.
+VERLUST_WARN_PCT = 1.0
+VERLUST_ALERT_PCT = 3.0
 RADAR_RINGE = 4
 
 
@@ -2779,11 +2784,15 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
         # stammt aus einem einzelnen Fuenf-Minuten-Eimer und liest sich wie
         # ein Dauerzustand. Nachgemessen an der API: NID hatte einen Eimer
         # mit 30 % bei einem 24-Stunden-Mittel von 0,2 %.
+        # Immer mit einer Nachkommastelle - sonst stuenden "0 %" und "0,0 %"
+        # fuer dieselbe Aussage nebeneinander. Die Haeufigkeitsschwelle
+        # (_loss_zeigen) greift hier nicht mehr: sie stammt aus der Zeit des
+        # Hoechstwerts, wo ein einzelner Ausreisser zu einem dauerhaften
+        # "1 %" wurde. Der Mittelwert mittelt genau das weg.
         _loss, _loss_max = _loss_werte(_lat)
-        if not _loss_zeigen(_lat):
-            _loss = None
-        loss_val = f"{_loss:.1f}" if _loss else "0"
-        loss_cls = " value-alert" if _loss else ""
+        loss_val = f"{_loss:.1f}"
+        loss_cls = (" value-alert" if _loss >= VERLUST_ALERT_PCT else
+                    (" value-warn" if _loss >= VERLUST_WARN_PCT else ""))
         loss_titel = (f"Paketverlust im Mittel ueber 24 h; Spitze {_loss_max:.1f} %"
                       if _loss_max else "Kein Paketverlust in den letzten 24 h")
         panel_cls = {"failover": " failover", "offline": " offline"}.get(status, "")
