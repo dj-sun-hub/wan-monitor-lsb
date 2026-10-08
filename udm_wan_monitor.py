@@ -1477,7 +1477,7 @@ def _plan_html(consoles, latency=None):
     verlaesslich ausdruecken."""
     latency = latency or {}
     W, HO = 420.0, 150.0
-    x_kurz, x_start, x_max = 62.0, 96.0, 366.0   # Kuerzel | Strichanfang | Ende
+    x_kurz, x_start, x_max = 90.0, 102.0, 366.0  # Kuerzel | Strichanfang | Ende
     l_min = 26.0
     zeile_h = 20.0
     oben = HO / 2 - (len(consoles) or 1) * zeile_h / 2 + zeile_h / 2
@@ -1887,7 +1887,8 @@ HUD_CSS = """
      verloren. */
   .mini-charts { display: flex; flex-direction: column; gap: 8px;
     flex: 1 1 auto; min-height: 0; }
-  .mini-chart-col { display: flex; flex-direction: column; min-height: 0; position: relative; }
+  .mini-chart-col { display: flex; flex-direction: column; min-height: 0;
+    position: relative; flex: 1 1 auto; }
   /* Bei erloschenem Standort "LINK LOST" quer ueber die Zeichenflaeche: der
      kleine Chip oben rechts geht auf einem Wandmonitor unter, und die Kurve
      darunter zeigt ohnehin nur noch eingefrorene Vergangenheit. Die Kurve
@@ -2685,7 +2686,7 @@ REDUKTION_CSS = """
                            minmax(0, .78fr) minmax(0, 1.04fr); }
   .readouts .r { display: block; min-width: 0; }
   .readouts .rl { display: block; margin-bottom: 1px; }
-  .readouts .rv { font-size: 21px; }
+  .readouts .rv { font-size: 21px; text-align: left; }
   .readouts .rv .unit, .readouts .threshold-ref { font-size: 10px; }
 
   /* Die Latenzkurve teilt sich die Resthoehe mit dem Flow-Graphen, bekommt
@@ -2696,7 +2697,7 @@ REDUKTION_CSS = """
     margin: 0; font-size: 8.5px; opacity: .75; pointer-events: none;
     background: linear-gradient(90deg, #020406 72%, transparent);
     padding-right: 14px; }
-  .lat-spur .lat-chart { width: 100%; height: 22px; display: block; }
+  .lat-spur .lat-chart { width: 100%; height: 30px; display: block; }
   .lat-spur .lat-line { stroke: rgba(159, 216, 232, .85); }
   .panel.offline .lat-spur { opacity: .25; }
 
