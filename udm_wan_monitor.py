@@ -1487,89 +1487,6 @@ def _lat_spur_html(info):
             f"stroke-width='1.1' vector-effect='non-scaling-stroke'/>{kerben}</svg>")
 
 
-def _plan_html(consoles, latency=None):
-    """Bus mit dem Hub links und einem Abzweig je Konsole.
-
-    Die LAENGE des Abzweigs ist die gemessene Latenz - kurzer Strich heisst
-    schnell. Das ist der Unterschied zum frueheren Bus-Diagramm, bei dem alle
-    Abzweige gleich lang waren und nur sagten, DASS es sechs Standorte gibt.
-
-    Eine runde Anordnung (der zwischenzeitliche Ring) hat sich mit der
-    durchgehend rechtwinkligen Seite gebissen. Als waagerechtes Stabdiagramm
-    bleibt die Aussage dieselbe und die Form passt.
-
-    Das Kuerzel steht links in einer festen Spalte - danach sucht man, und es
-    soll nicht mit dem Messwert mitwandern. Der Messwert steht am Strichende,
-    wo das Auge beim Vergleichen ohnehin hinsieht.
-
-    Als SVG statt HTML/CSS: hier ist die Laenge die Aussage, und die muss
-    exakt zur Skala passen - in einer Flex-Zeile liesse sie sich nicht
-    verlaesslich ausdruecken."""
-    latency = latency or {}
-    W, HO = 420.0, 150.0
-    x_kurz, x_start, x_max = 90.0, 102.0, 366.0  # Kuerzel | Strichanfang | Ende
-    l_min = 26.0
-    zeile_h = 20.0
-    oben = HO / 2 - (len(consoles) or 1) * zeile_h / 2 + zeile_h / 2
-    # Die Skala haelt RADAR_MAX_MS als Untergrenze: sonst skalierte eine Seite,
-    # auf der alle Standorte schnell sind, die kleinen Unterschiede zu
-    # dramatischen Laengenunterschieden hoch.
-    max_ms = max([(latency.get(c["device"]) or {}).get("cur") or 0 for c in consoles]
-                 + [RADAR_MAX_MS])
-
-    def laenge(ms):
-        return l_min + (min(ms, max_ms) / max_ms) * (x_max - x_start - l_min)
-
-    teile = []
-    # Teilstriche der Skala, damit die Laengen nicht nur untereinander,
-    # sondern auch absolut ablesbar sind.
-    for ms in (max_ms / 2, max_ms):
-        x = x_start + laenge(ms)
-        teile.append(
-            f"<line class='pskala' x1='{x:.1f}' y1='{oben - 13:.1f}' "
-            f"x2='{x:.1f}' y2='{oben + (len(consoles) - 1) * zeile_h + 9:.1f}'/>"
-            f"<text class='pskalat' x='{x:.1f}' y='{oben - 17:.1f}' "
-            f"text-anchor='middle'>{ms:.0f} ms</text>")
-
-    # Der Hub links, mit der Sammelschiene zu den Abzweigen.
-    y0, y1 = oben, oben + (len(consoles) - 1) * zeile_h
-    teile.append(
-        f"<rect class='phub-box' x='2' y='{(y0 + y1) / 2 - 15:.1f}' width='52' height='30'/>"
-        f"<text class='phub' x='28' y='{(y0 + y1) / 2 - 2:.1f}' text-anchor='middle'>WUS</text>"
-        f"<text class='phub' x='28' y='{(y0 + y1) / 2 + 9:.1f}' text-anchor='middle'>HUB</text>"
-        f"<line class='pbus' x1='{x_start - 8:.0f}' y1='{y0:.1f}' "
-        f"x2='{x_start - 8:.0f}' y2='{y1:.1f}'/>"
-        f"<line class='pbus' x1='54' y1='{(y0 + y1) / 2:.1f}' "
-        f"x2='{x_start - 8:.0f}' y2='{(y0 + y1) / 2:.1f}'/>")
-
-    for i, c in enumerate(consoles):
-        status = _console_status(c)
-        lat = latency.get(c["device"]) or {}
-        ms = lat.get("cur")
-        kurz = html.escape(c["device"].split("--")[0])
-        y = oben + i * zeile_h
-        # Ohne Messwert die volle Laenge: "unbekannt" ist nicht "schnell".
-        ende = x_start + (laenge(ms) if ms else (x_max - x_start))
-        strich = " stroke-dasharray='4 4'" if status == "offline" or not ms else ""
-        zustand = {"failover": "Failover", "offline": "Link Lost"}.get(status, "Nominal")
-        titel = f"{c['device']}: {zustand}" + (f", {ms:.0f} ms" if ms else ", keine Latenzdaten")
-        _mit, _mx = _loss_werte(lat)
-        if _loss_zeigen(lat) and _mit:
-            titel += f", {_mit:.1f} % Paketverlust im Mittel (Spitze {_mx:.1f} %)"
-        teile.append(
-            f"<g class='pnode {status}'><title>{html.escape(titel)}</title>"
-            f"<line class='pabzweig' x1='{x_start - 8:.0f}' y1='{y:.1f}' "
-            f"x2='{ende:.1f}' y2='{y:.1f}'{strich}/>"
-            f"<rect class='pmarke' x='{ende - 4:.1f}' y='{y - 4:.1f}' width='8' height='8'/>"
-            f"<text class='pk' x='{x_kurz:.0f}' y='{y + 3.5:.1f}' text-anchor='end'>{kurz}</text>"
-            f"<text class='pm' x='{ende + 9:.1f}' y='{y + 3.5:.1f}'>"
-            f"{f'{ms:.0f}' if ms else '--'}</text></g>")
-
-    return (f"<svg class='plan' viewBox='0 0 {W:.0f} {HO:.0f}' role='img' "
-            f"aria-label='Standorte am Hub, Strichlaenge ist die Latenz'>"
-            + "".join(teile) + "</svg>")
-
-
 def _update_event_log(state, consoles, now):
     """Haelt Statuswechsel je Konsole in state['events'] fest (rollierend,
     EVENT_LOG_KEEP) und merkt sich den zuletzt gesehenen Status in
@@ -1813,7 +1730,7 @@ HUD_CSS = """
      mehr, an der etwas nicht fluchten koennte, und der Kopfbereich schrumpft
      von 365 auf 249px (gemessen bei 1600x950); die gewonnene Hoehe geht an
      die Konsolenkacheln, wo die Flow-Kurven sitzen. */
-  .bank { display: grid; grid-template-columns: minmax(175px, .62fr) minmax(0, 1.45fr) minmax(0, 1.6fr);
+  .bank { display: grid; grid-template-columns: minmax(175px, .55fr) minmax(0, 3fr);
     gap: 20px; margin-top: 14px; flex: 0 0 auto; }
   @media (max-width: 900px) {
     .bank { grid-template-columns: 1fr; }
@@ -1823,31 +1740,6 @@ HUD_CSS = """
     .radar { display: none; }
     .pylon .werte { flex-direction: row; justify-content: flex-start; gap: 34px; }
   }
-
-  /* Bus mit Latenz in der Strichlaenge (siehe _plan_html). Farben kommen
-     aus den CSS-Variablen, damit der Bus dem Thema folgt statt eigene Werte
-     mitzubringen. */
-  .plan { width: 100%; height: auto; max-height: 136px; display: block; }
-  .plan .pk { font-family: "Rajdhani", "Segoe UI", sans-serif; font-size: 11px;
-    font-weight: 600; letter-spacing: .06em; fill: var(--dim); }
-  .plan .pm { font-size: 9px; fill: var(--dim); font-family: ui-monospace, monospace; }
-  .plan .phub { font-family: "Rajdhani", "Segoe UI", sans-serif; font-size: 9.5px;
-    font-weight: 600; letter-spacing: .08em; fill: var(--down); }
-  .plan .phub-box { fill: none; stroke: var(--down); stroke-width: 1; opacity: .75; }
-  .plan .pbus { stroke: rgba(160, 220, 235, .28); stroke-width: 1.4; }
-  .plan .pskala { stroke: rgba(160, 220, 235, .10); stroke-width: 1; }
-  .plan .pskalat { font-size: 7.5px; fill: var(--dim); opacity: .7;
-    font-family: ui-monospace, monospace; letter-spacing: .04em; }
-  .plan .pabzweig { stroke: var(--down); stroke-opacity: .55; stroke-width: 1.4; }
-  .plan .pmarke { fill: var(--ink); stroke: var(--down); stroke-width: 1.3; }
-  /* Der Zustand faerbt die ganze Zeile, nicht nur den Knoten - sonst muesste
-     man ihn am Strichende suchen. */
-  .plan .pnode.failover .pabzweig, .plan .pnode.failover .pmarke { stroke: var(--alert); }
-  .plan .pnode.failover .pabzweig { stroke-opacity: .8; }
-  .plan .pnode.failover .pk, .plan .pnode.failover .pm { fill: var(--alert); }
-  .plan .pnode.offline .pabzweig, .plan .pnode.offline .pmarke { stroke: var(--dim); }
-  .plan .pnode.offline .pabzweig { stroke-opacity: .4; }
-  .plan .pnode.offline .pk, .plan .pnode.offline .pm { opacity: .5; }
 
   /* Konsolen-Panels: Raster-Abstand wie zuvor (20px). Das Raster bekommt die
      Resthoehe und gibt sie an die Charts weiter (siehe .mini-chart-col). */
@@ -2006,7 +1898,7 @@ HUD_CSS = """
      BLEIBT stehen: seine beiden Zahlen stehen sonst nirgends auf der Seite. */
   @media (max-height: 700px) {
     .bank { grid-template-columns: 1fr; max-height: none; }
-    .bank .schema, .bank .log { display: none; }
+    .bank .log { display: none; }
     .pylon { display: block; }
     .radar { display: none; }
     .pylon .werte { flex-direction: row; justify-content: flex-start; gap: 34px; }
@@ -2022,7 +1914,7 @@ HUD_CSS = """
   @media (max-width: 900px) {
     body { padding: 24px 26px 20px; }
     .bank { max-height: none; }
-    .bank .schema, .bank .log { display: block; }
+    .bank .log { display: block; }
     .pylon .val { font-size: 33px; }
     .pylon .fuss { display: block; }
     .overview-grid { margin-top: 16px; gap: 20px; }
@@ -2865,11 +2757,6 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
       </div>
     </div>
 
-    <div class="schema bracketed">
-      <div class="bk-tr"></div><div class="bk-bl"></div>
-      <div class="mlabel">Standorte am Hub &middot; Strichl&auml;nge = Latenz</div>
-      {_plan_html(consoles, latency)}
-    </div>
 
     <div class="log bracketed">
       <div class="bk-tr"></div><div class="bk-bl"></div>
