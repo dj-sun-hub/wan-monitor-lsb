@@ -324,9 +324,15 @@ def fetch_latency(console_names_by_host):
         # 1 von 151 Punkten wuerde dort 1 von 30 - die Schwelle in
         # _loss_zeigen() waere damit wertlos.
         mit_verlust = [w for _a, w in reihe if w > 0]
+        # Mittel- UND Hoechstwert auf der vollen Reihe: ausgeduennt behaelt
+        # _thin_latency je Abschnitt das Maximum, ein einzelner Ausreisser
+        # wuerde den Mittelwert dort um den Ausduennungsfaktor anheben.
+        alle_verluste = [w for _a, w in reihe]
         out[name] = {
             "cur": round(reihe[-1][0]),
             "loss": reihe[-1][1],
+            "loss_avg": sum(alle_verluste) / len(alle_verluste),
+            "loss_max": max(alle_verluste),
             "loss_punkte": len(mit_verlust),
             "punkte": len(reihe),
             "series": _thin_latency(reihe, LATENCY_POINTS),
@@ -1407,6 +1413,25 @@ def _split_unit(text):
     return (parts[0], parts[1]) if len(parts) == 2 else (text, "")
 
 
+def _loss_werte(lat):
+    """(Mittelwert, Hoechstwert) des Paketverlusts der letzten 24 Stunden.
+
+    Beides kommt bevorzugt aus dem Abruf, wo es auf der vollen Reihe
+    gerechnet wurde. Aeltere Zwischenspeicher haben die Felder nicht - dann
+    aus der ausgeduennten Reihe, was den Mittelwert leicht zu hoch ausfallen
+    laesst (_thin_latency behaelt je Abschnitt das Maximum). Lieber etwas zu
+    hoch als gar nichts, und mit dem naechsten Abruf stimmt es wieder."""
+    lat = lat or {}
+    if lat.get("loss_avg") is not None:
+        return float(lat["loss_avg"]), float(lat.get("loss_max") or 0.0)
+    werte = [p[1] for p in (lat.get("series") or [])
+             if isinstance(p, (list, tuple)) and len(p) > 1
+             and isinstance(p[1], (int, float))]
+    if not werte:
+        return 0.0, 0.0
+    return sum(werte) / len(werte), max(werte)
+
+
 def _loss_zeigen(lat):
     """Ist der Paketverlust haeufig genug, um als Prozentzahl zu erscheinen?
 
@@ -1523,11 +1548,9 @@ def _plan_html(consoles, latency=None):
         strich = " stroke-dasharray='4 4'" if status == "offline" or not ms else ""
         zustand = {"failover": "Failover", "offline": "Link Lost"}.get(status, "Nominal")
         titel = f"{c['device']}: {zustand}" + (f", {ms:.0f} ms" if ms else ", keine Latenzdaten")
-        if _loss_zeigen(lat) and lat.get("series"):
-            _mx = max((w for p in lat["series"] if isinstance(p, (list, tuple)) and len(p) > 1
-                       and isinstance(p[1], (int, float)) for w in (p[1],)), default=0.0)
-            if _mx:
-                titel += f", hoechstens {_mx:.1f} % Paketverlust"
+        _mit, _mx = _loss_werte(lat)
+        if _loss_zeigen(lat) and _mit:
+            titel += f", {_mit:.1f} % Paketverlust im Mittel (Spitze {_mx:.1f} %)"
         teile.append(
             f"<g class='pnode {status}'><title>{html.escape(titel)}</title>"
             f"<line class='pabzweig' x1='{x_start - 8:.0f}' y1='{y:.1f}' "
@@ -2751,18 +2774,18 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
         lat_val = f"{_ms:.0f}" if _ms else "–"
         lat_cls = "" if not _ms else (" value-alert" if _ms > LATENZ_ALERT_MS
                                       else (" value-warn" if _ms > LATENZ_WARN_MS else ""))
-        # Der HOECHSTWERT der 24 Stunden, nicht der letzte Messpunkt:
-        # "loss" ist der jeweils juengste Wert und damit fast immer 0 - die
-        # Zahl waere praktisch nie zu sehen. Dieselbe Lesart wie frueher im
-        # Systemschema, wo sie _loss_nicks() mitgeliefert hat.
-        _loss = None
-        if _loss_zeigen(_lat):
-            _werte = [w for p in (_lat.get("series") or [])
-                      if isinstance(p, (list, tuple)) and len(p) > 1
-                      for w in (p[1],) if isinstance(w, (int, float))]
-            _loss = max(_werte, default=0.0) or None
+        # Der MITTELWERT der 24 Stunden. Weder der letzte Messpunkt ("loss"
+        # ist fast immer 0 und waere nie zu sehen) noch der Hoechstwert: der
+        # stammt aus einem einzelnen Fuenf-Minuten-Eimer und liest sich wie
+        # ein Dauerzustand. Nachgemessen an der API: NID hatte einen Eimer
+        # mit 30 % bei einem 24-Stunden-Mittel von 0,2 %.
+        _loss, _loss_max = _loss_werte(_lat)
+        if not _loss_zeigen(_lat):
+            _loss = None
         loss_val = f"{_loss:.1f}" if _loss else "0"
-        loss_cls = " value-alert" if _loss else ''
+        loss_cls = " value-alert" if _loss else ""
+        loss_titel = (f"Paketverlust im Mittel ueber 24 h; Spitze {_loss_max:.1f} %"
+                      if _loss_max else "Kein Paketverlust in den letzten 24 h")
         panel_cls = {"failover": " failover", "offline": " offline"}.get(status, "")
         cards.append(f"""<div class="panel bracketed{panel_cls}">
       <div class="bk-tr"></div><div class="bk-bl"></div>
@@ -2771,7 +2794,7 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
       <div class="readouts">
         <div class="r"><div class="rl">Monat</div><div class="rv num{total_alert_class(c['total_month'], c['device'])}">{month_val}<span class="unit">{month_unit}</span> <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
         <div class="r"><div class="rl">Latenz</div><div class="rv num{lat_cls}">{lat_val}<span class="unit">ms</span></div></div>
-        <div class="r"><div class="rl">Verlust</div><div class="rv num{loss_cls}">{loss_val}<span class="unit">%</span></div></div>
+        <div class="r" title="{html.escape(loss_titel)}"><div class="rl">Verlust</div><div class="rv num{loss_cls}">{loss_val}<span class="unit">%</span></div></div>
         <div class="r"><div class="rl">Spitze</div><div class="rv num">{peak_val}<span class="unit">{peak_unit}/h</span></div></div>
       </div>
       <div class="mini-meter" title="Monatsvolumen im Verhältnis zur Rot-Schwelle ({alert_threshold_label(c['device'])})">{_segments_html(12, round(min(ratio, 1.0) * 12), meter_mode)}</div>
