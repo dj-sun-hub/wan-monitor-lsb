@@ -696,7 +696,6 @@ LOSS_MIN_ANTEIL = 0.01   # mehr als dieser Anteil aller Messpunkte
 # laufen sie auseinander, springt die Bewegung bei jedem Neuladen der Seite,
 # statt durchzulaufen.
 RADAR_SWEEP_S = 4.2      # Suchstrahl des Latenz-Radars, ein Umlauf
-PULSE_TRAVEL_S = 2.6     # Tropfen auf den Abzweigleitungen im Bus
 LOST_PULSE_S = 1.4       # "Link Lost" ueber der Kachel, Takt wie bk-pulse
 
 # Dauerbetrieb: der Flow-Chart bleibt auf ein recentes Fenster begrenzt, sonst
@@ -1360,6 +1359,10 @@ def _segments_html(total, lit, mode=""):
 # deckt die real gemessenen 5-25 ms mit Reserve ab, ohne dass alle Punkte in
 # der Mitte kleben.
 RADAR_MAX_MS = 40.0
+# Ab wann eine Latenz auffaellt. Gelb ist eine Beobachtung, Rot eine Meldung -
+# dieselbe Logik wie beim Monatsvolumen.
+LATENZ_WARN_MS = 35.0
+LATENZ_ALERT_MS = 60.0
 RADAR_RINGE = 4
 
 
@@ -1418,107 +1421,104 @@ def _loss_zeigen(lat):
     return betroffen >= LOSS_MIN_PUNKTE or betroffen / punkte > LOSS_MIN_ANTEIL
 
 
-def _loss_nicks(series, max_marks=4, min_abstand=0.14):
-    """Rote Kerben auf der geraden Abzweigleitung, dort wo es in den letzten
-    24 Stunden Paketverlust gab - oben vor 24 h, unten jetzt.
+def _lat_spur_html(info):
+    """Latenzverlauf einer Konsole als flache Kurve, Verlustpunkte als Kerben.
 
-    Vorgaenger war eine Schlangenlinie, deren Auslenkung die Latenz zeigte.
-    Die ist raus (Nutzerwunsch): sie liess die Leitung am Knoten vorbeilaufen,
-    und der wandernde Punkt bekam ueber den Selektor '.snode.ok .pulse'
-    zusaetzlich zur SMIL-Bewegung noch die CSS-Animation des alten
-    HTML-Elements ab - zwei ueberlagerte Bewegungen, der Punkt fiel sichtbar
-    neben der Linie herunter.
+    Dieselbe Reihe, aus der das Systemschema seine Kerben zieht
+    (siehe _loss_nicks) - hier aber vollstaendig und an der Kachel, zu der
+    sie gehoert. Ohne eigene Achse: der Zahlenwert steht darueber als
+    Ableseinstrument, die Kurve zeigt nur, ob er ruhig war oder nicht."""
+    grund = ("<line x1='0' y1='25' x2='300' y2='25' "
+             "stroke='rgba(160,220,235,.14)' stroke-width='1'/>")
 
-    Begrenzt auf max_marks Kerben mit Mindestabstand: bei 30 Stuetzpunkten auf
-    20 px Leitung saehen zehn Marken wie eine gestrichelte Linie aus und
-    saegten die Aussage kaputt. Gezeigt werden die staerksten Ereignisse."""
-    treffer = []
-    n = max(len(series) - 1, 1)
-    for i, punkt in enumerate(series):
+    def _zahl(v):
+        """Die Reihe kommt aus der API. Ein einzelner unbrauchbarer Wert darf
+        die Seite nicht kippen - er zaehlt als 0, der Rest wird gezeichnet."""
         try:
-            pl = float(punkt[1])
-        except (TypeError, ValueError, IndexError):
-            continue
-        if pl > 0:
-            treffer.append((pl, i / n))
-    if not treffer:
-        return "", 0, 0.0
-    gesamt = len(treffer)
-    treffer.sort(key=lambda t: -t[0])
-    gewaehlt = []
-    for pl, pos in treffer:
-        if all(abs(pos - p) >= min_abstand for _, p in gewaehlt):
-            gewaehlt.append((pl, pos))
-        if len(gewaehlt) >= max_marks:
-            break
-    return "".join(f'<i class="nick" style="top:{pos * 100:.0f}%"></i>'
-                   for _, pos in sorted(gewaehlt, key=lambda t: t[1])), gesamt, max(pl for pl, _ in treffer)
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    reihe = [p for p in ((info or {}).get("series") or []) if isinstance(p, (list, tuple)) and p]
+    if len(reihe) < 2:
+        return (f"<svg class='lat-chart' viewBox='0 0 300 26' "
+                f"preserveAspectRatio='none'>{grund}</svg>")
+    ms = [_zahl(p[0]) for p in reihe]
+    hoch = max(ms) or 1.0
+    n = len(reihe) - 1
+    punkte = " ".join(f"{i / n * 300:.1f},{25 - (v / hoch) * 22:.1f}"
+                      for i, v in enumerate(ms))
+    kerben = "".join(
+        f"<line x1='{i / n * 300:.1f}' y1='20' x2='{i / n * 300:.1f}' y2='26' "
+        f"stroke='var(--alert)' stroke-width='1.4' opacity='.8'/>"
+        for i, p in enumerate(reihe) if len(p) > 1 and _zahl(p[1]) > 0)
+    return (f"<svg class='lat-chart' viewBox='0 0 300 26' preserveAspectRatio='none'>"
+            f"{grund}<polyline class='lat-line' points='{punkte}' fill='none' "
+            f"stroke-width='1.1' vector-effect='non-scaling-stroke'/>{kerben}</svg>")
 
 
-def _schema_html(consoles, latency=None):
-    """Systemschema als Bus-Diagramm: links der Site-Manager (die UniFi-
-    Cloud-API, ueber die ALLE Konsolen gepollt werden - das ist die reale
-    Topologie dieses Monitors, kein erfundener 'WAN-Kern'), davon eine
-    Bus-Linie mit einem Abzweig je Konsole. Knotenfarbe = aktueller Status
-    wie in den Panels; auf nominalen Abzweigen wandert ein Puls (rein
-    dekorativ, respektiert prefers-reduced-motion).
+def _plan_html(consoles, latency=None):
+    """Lageplan: der Site-Manager in der Mitte, die Konsolen auf einem Ring.
 
-    Bewusst HTML/CSS statt SVG: ein SVG braucht eine feste viewBox, und die
-    passt nie zur tatsaechlichen Containerbreite - bei 'meet' entstehen
-    breite Leerraender und der letzte Knoten rutscht aus dem (per
-    overflow-x:hidden abgeschnittenen) Bild, bei 'none' werden die runden
-    Knoten zu Ellipsen. Als Flex-Zeile verteilt sich das Schema dagegen bei
-    jeder Breite korrekt, ohne dass Schrift oder Knoten mitskalieren."""
+    Der ABSTAND zur Mitte ist die gemessene Latenz (naeher = schneller), die
+    Farbe der Zustand, ein toter Strang ist gestrichelt. Das ersetzt das
+    fruehere Bus-Diagramm, das nur die Topologie zeigte.
+
+    Bewusst elliptisch: der Kopfbereich ist flach und breit, ein kreisrunder
+    Plan wuerde dort nur ein Drittel der Breite nutzen. Als SVG statt
+    HTML/CSS - anders als beim Bus sind hier Winkel und Radien die Aussage,
+    und die lassen sich in einer Flex-Zeile nicht ausdruecken.
+
+    Dies ist KEINE Landkarte: echte Koordinaten der Standorte liegen nicht
+    vor, und eine erfundene Geografie waere irrefuehrend."""
     latency = latency or {}
-    nodes = []
+    W, HO = 420.0, 150.0
+    cx, cy = W / 2, HO / 2
+    r_min, r_max = 26.0, 58.0
+    breit = 1.9  # Streckung in der Waagerechten
+    max_ms = max([(latency.get(c["device"]) or {}).get("cur") or 0 for c in consoles]
+                 + [RADAR_MAX_MS])
+
+    teile = ["".join(
+        f"<ellipse cx='{cx}' cy='{cy}' rx='{(r_min + (r_max - r_min) * i / 2) * breit:.0f}' "
+        f"ry='{r_min + (r_max - r_min) * i / 2:.0f}' fill='none' "
+        f"stroke='rgba(127,240,228,.10)' stroke-width='1'/>" for i in range(3))]
+
     for i, c in enumerate(consoles):
         status = _console_status(c)
-        cls = {"failover": "alert", "offline": "lost"}.get(status, "ok")
-        short = html.escape(c["device"].split("--")[0])
-        zustand = {"alert": "Failover", "lost": "Link Lost"}.get(cls, "Nominal")
         lat = latency.get(c["device"]) or {}
-
-        # Gerade Leitung (Nutzerwunsch, die Latenz-Schlangenlinie ist raus).
-        # Paketverlust erscheint als rote Kerbe an der Stelle, an der er
-        # auftrat - oben vor 24 h, unten jetzt. Bei erloschenen Standorten
-        # keine Kerben: der letzte bekannte Verlauf waere dort veraltet und
-        # wuerde Aktualitaet vortaeuschen.
-        nicks, n_loss, max_loss = ("", 0, 0.0) if cls == "lost" else _loss_nicks(lat.get("series") or [])
-        pulse = f'<i class="pulse" style="animation-delay:{i * 0.35:.2f}s"></i>' if cls == "ok" else ""
-        drop = f'<span class="drop">{pulse}{nicks}</span>'
-
-        # Zahl NEBEN das Kuerzel, nicht darunter: eine zusaetzliche Zeile macht
-        # die Leiste 19px hoeher (gemessen), und die Hoehe fehlt unten direkt
-        # den Charts.
         ms = lat.get("cur")
-        zahl = f'<b class="lat num">{int(ms)}<i class="ms">ms</i></b>' if ms is not None else ""
-        # Paketverlust als Prozentzahl - der HOECHSTWERT der letzten 24
-        # Stunden, aber NUR wenn der Verlust nicht bloss ein einzelner
-        # Ausreisser war (siehe _loss_zeigen). Ein einzelner
-        # Fuenf-Minuten-Punkt von 151 ergab sonst '1 %', was sich wie ein
-        # Dauerzustand liest - der UniFi Site Manager meldete fuer
-        # dieselbe Konsole 'None'. Die rote Kerbe erscheint unabhaengig
-        # davon: sie zeigt, DASS und WANN etwas war, ohne Dauer zu
-        # behaupten. Steht als eigene Zeile mittig unter dem Knoten
-        # (Nutzerwunsch).
-        if max_loss and _loss_zeigen(lat):
-            zahl += f'<b class="pl num">{max_loss:g}<i class="ms">%</i></b>'
-        titel = f'{c["device"]}: {zustand}'
-        if ms is not None:
-            titel += f" · {int(ms)} ms"
-        if n_loss:
-            # Der Tooltip nennt ALLE Verlustereignisse, auch die, fuer die auf
-            # der kurzen Leitung keine eigene Kerbe mehr Platz hatte.
-            titel += (f" · Paketverlust in {n_loss} von {len(lat.get('series') or [])} "
-                      f"Messpunkten (24 h), höchstens {max_loss:g} %")
-        nodes.append(f'<div class="snode {cls}" title="{html.escape(titel)}">'
-                     f'{drop}<span class="bulb"></span>'
-                     f'<span class="name">{short}{zahl}</span></div>')
-    return (f'<div class="bus" role="img" '
-            f'aria-label="Systemschema: Site-Manager und {len(consoles)} Konsolen, '
-            f'rote Kerben markieren Paketverlust der letzten 24 Stunden">'
-            f'<div class="hub">SITE-MANAGER</div>'
-            f'<div class="nodes">{"".join(nodes)}</div></div>')
+        kurz = html.escape(c["device"].split("--")[0])
+        # Fester Winkel je Platz, damit die Standorte nicht springen, wenn
+        # sich die Latenz aendert - nur der Abstand bewegt sich.
+        winkel = math.radians(-90 + i * (360 / max(len(consoles), 1)))
+        r = r_min + (min(ms, max_ms) / max_ms) * (r_max - r_min) if ms else r_max
+        x, y = cx + math.cos(winkel) * r * breit, cy + math.sin(winkel) * r
+        farbe = {"failover": "var(--alert)", "offline": "var(--dim)"}.get(status, "var(--down)")
+        strich = " stroke-dasharray='4 5'" if status == "offline" else ""
+        zustand = {"failover": "Failover", "offline": "Link Lost"}.get(status, "Nominal")
+        titel = f"{c['device']}: {zustand}" + (f", {ms:.0f} ms" if ms else ", keine Latenzdaten")
+        if _loss_zeigen(lat) and lat.get("loss"):
+            titel += f", {lat['loss']:.1f} % Paketverlust"
+        sechseck = " ".join(
+            f"{x + math.cos(math.radians(a)) * 9:.1f},{y + math.sin(math.radians(a)) * 9:.1f}"
+            for a in range(0, 360, 60))
+        teile.append(
+            f"<g class='pnode {status}'><title>{html.escape(titel)}</title>"
+            f"<line x1='{cx}' y1='{cy}' x2='{x:.1f}' y2='{y:.1f}' stroke='{farbe}' "
+            f"stroke-opacity='.5' stroke-width='1.2'{strich}/>"
+            f"<polygon points='{sechseck}' fill='var(--ink)' stroke='{farbe}' stroke-width='1.3'/>"
+            f"<text class='pk' x='{x:.1f}' y='{y - 14:.1f}' text-anchor='middle' "
+            f"fill='{farbe}'>{kurz}</text>"
+            f"<text class='pm' x='{x:.1f}' y='{y + 21:.1f}' text-anchor='middle'>"
+            f"{f'{ms:.0f}' if ms else '--'}</text></g>")
+
+    teile.append(f"<circle cx='{cx}' cy='{cy}' r='15' fill='var(--ink)' "
+                 f"stroke='var(--down)' stroke-width='1.3'/>"
+                 f"<text class='phub' x='{cx}' y='{cy + 3.5:.0f}' text-anchor='middle'>HUB</text>")
+    return (f"<svg class='plan' viewBox='0 0 {W:.0f} {HO:.0f}' role='img' "
+            f"aria-label='Lageplan der Standorte, Abstand zur Mitte ist die Latenz'>"
+            + "".join(teile) + "</svg>")
 
 
 def _update_event_log(state, consoles, now):
@@ -1775,118 +1775,16 @@ HUD_CSS = """
     .pylon .werte { flex-direction: row; justify-content: flex-start; gap: 34px; }
   }
 
-  /* Systemschema (HTML/CSS statt SVG, siehe _schema_html) */
-  .schema { background: var(--panel); border: 1px solid var(--line); padding: 10px 16px 12px; }
-  .schema .mlabel { margin-bottom: 8px; }
-  .bus { display: flex; align-items: flex-start; padding: 2px 0 0; }
-  /* --hub-h/2: die Trunk-Linie dockt genau an der Mittelachse des Hubs an. */
-  .bus { --hub-h: 25px; --drop-h: 20px; }
-  .bus .hub { flex: 0 0 auto; font-family: "Rajdhani", "Segoe UI", sans-serif;
-    font-size: 11px; font-weight: 600; letter-spacing: .08em; line-height: 1;
-    color: var(--text); background: var(--hull-2); border: 1px solid var(--down);
-    padding: 8px 12px; white-space: nowrap; }
-  .bus .nodes { flex: 1 1 auto; min-width: 0; display: flex;
-    position: relative; padding-top: calc(var(--hub-h) / 2); }
-  .bus .nodes::before { content: ""; position: absolute; left: 0; right: 0;
-    top: calc(var(--hub-h) / 2); border-top: 2px solid var(--line); }
-  .snode { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; }
-  /* Die Leitung ist ein eigenes, mittig ausgerichtetes Element - NICHT der
-     linke Rahmen des Kastens. Grund: absolut positionierte Kinder richten
-     sich nach der INNENkante, also um die Rahmenbreite verschoben. Mit der
-     frueheren Rahmen-Loesung lief der Tropfen dadurch 0,5px und die
-     Verlustkerbe 1,0px neben der Linie her (nachgemessen an allen sechs
-     Knoten). Jetzt teilen sich Linie, Tropfen und Kerbe dieselbe Mitte bei
-     left:50%, unabhaengig von Strichstaerken. */
-  .snode .drop { position: relative; width: 9px; height: var(--drop-h); border: none; }
-  .snode .drop::before { content: ""; position: absolute; left: 50%; margin-left: -1px;
-    top: 0; bottom: 0; width: 2px; background: var(--phosphor-dim); }
-  .snode.alert .drop::before { background: var(--alert); }
-  /* Offline war bisher die schwaechste der drei Darstellungen: gestrichelte
-     Leitung und fehlendes Leuchten, aber die Beschriftung blieb exakt wie bei
-     Nominal. Aus ein paar Metern Entfernung - und genau dafuer ist das Bild
-     da - war "Standort tot" damit kaum von "Standort in Ordnung" zu
-     unterscheiden, obwohl es inhaltlich nicht harmloser ist als ein Failover.
-     Deshalb jetzt zusaetzlich ein durchgestrichener, leerer Knoten: das Kreuz
-     ist ein reines FORM-Signal und traegt auch dann, wenn die Farbe nicht
-     ankommt (Entfernung, Farbsehschwaeche). Bewusst grau statt rot -
-     ausgefallen ist nicht dasselbe wie Alarm. */
-  .snode.lost .drop { opacity: .55; }
-  .snode.lost .drop::before { background: repeating-linear-gradient(180deg,
-    var(--dim) 0 3px, transparent 3px 6px); }
-  .snode .pulse { position: absolute; left: 50%; margin-left: -2.5px; top: 0; width: 5px; height: 5px;
-    border-radius: 50%; background: var(--down); opacity: 0; }
-  .snode .bulb { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--down);
-    background: var(--ink); box-shadow: 0 0 6px var(--phosphor-dim); }
-  .snode.alert .bulb { border-color: var(--alert); background: var(--alert-dim); box-shadow: 0 0 7px var(--alert); }
-  .snode.lost .bulb { border-color: var(--dim); background: none; box-shadow: none; position: relative; }
-  .snode.lost .bulb::before, .snode.lost .bulb::after {
-    content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 1px;
-    background: var(--dim); }
-  .snode.lost .bulb::before { transform: translate(-50%, -50%) rotate(45deg); }
-  .snode.lost .bulb::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  /* Paketverlust als rote Kerbe quer ueber die gerade Abzweigleitung (siehe
-     _loss_nicks). Die Leitung bleibt gerade und behaelt ihre alte Hoehe - die
-     frueher hier stehende Latenz-Schlangenlinie ist raus. */
-  /* left:-4px bei 9px Breite setzt die Kerbenmitte auf x=+0.5 - genau die
-     Mitte der 1px starken Leitung, die bei x=0..1 liegt. */
-  .snode .nick { position: absolute; left: 50%; margin-left: -4.5px; width: 9px; height: 2px;
-    background: var(--alert); box-shadow: 0 0 5px var(--alert); opacity: .95;
-    border-radius: 0; margin-top: -1px; }
-  .snode .name { font-size: 11px; color: var(--dim); margin-top: 5px; letter-spacing: .06em;
-    white-space: nowrap; }
-  .snode .lat { font-weight: 500; color: var(--text); margin-left: 6px; letter-spacing: .02em; }
-  .snode .lat .ms { font-size: 8.5px; font-style: normal; color: var(--dim); margin-left: 1px; }
-  /* Die Prozentzahl steht UNTER der Latenz, nicht daneben (so passt es am
-     Monitor besser, und nebeneinander ueberlappten sich die Beschriftungen
-     benachbarter Knoten: gemessen bei 1060px Breite bis -24px im
-     schlimmsten Fall, dreistellige Latenz plus zweistelliger Verlust an
-     allen sechs Knoten). Die zweite Zeile entsteht nur, wenn es wirklich
-     Verlust gab - und der gezeigte Wert ist das 24-Stunden-Maximum, aendert
-     sich also im Stundentakt und nicht bei jedem Poll. Ein Hoehensprung im
-     Minutentakt ist dadurch ausgeschlossen. */
-  /* text-align:center hebt das rechtsbuendige .num auf. Ohne das klebte die
-     Prozentzahl am rechten Rand der Beschriftung, stand also unter der
-     ms-Zahl statt unter dem Knoten. Da die Beschriftung selbst mittig unter
-     dem Knoten sitzt (align-items:center), liegt die zentrierte Zahl damit
-     genau unter der Bubble. */
-  .snode .pl { display: block; font-weight: 600; color: var(--alert);
-    margin-left: 0; letter-spacing: .02em; line-height: 1.35; text-align: center; }
-  .snode .pl .ms { font-size: 8.5px; font-style: normal; color: var(--alert); opacity: .75; margin-left: 1px; }
-  /* Die Knotenbeschriftung bricht nicht um (sonst waere die Leiste hoeher),
-     kann bei schmalen Fenstern aber ueber ihre Spalte hinauslaufen und die
-     Nachbarn ueberlappen. Gemessen bei 950px Breite: nur Kuerzel +27px Luft,
-     mit Latenz schon -3px, mit Latenz UND Prozentzahl bis -20px. Deshalb
-     zwei Stufen. In der zweiten fallen die Einheiten weg - die Bedeutung
-     traegt dort die Farbe (teal = ms, rot = %), und der volle Text steht
-     ohnehin im Tooltip. */
-     Bei schmalen Fenstern zusaetzlich verkleinert - sechs Kuerzel plus
-     Messwerte brauchen dort mehr Platz, als die Spalte hergibt. */
-  @media (max-width: 1250px) {
-    .snode .name { font-size: 10px; }
-    .snode .lat { margin-left: 4px; }
-  }
-  /* Noch schmaler: die Einheit "ms" faellt weg. Sie ist die entbehrlichere
-     der beiden - die Latenz steht direkt beim Kuerzel und ist teal, waehrend
-     die rote Prozentzahl ihre Einheit behaelt, weil sie seltener auftritt
-     und sonst als blosse Zahl missverstaendlich waere. Voller Text im
-     Tooltip. */
-  @media (max-width: 1050px) {
-    .snode .name { font-size: 9px; }
-    .snode .lat .ms { display: none; }
-  }
-  .snode.lost .lat { opacity: .5; }
-  .snode.alert .name { color: var(--alert); }
-  /* Zurueckgenommen statt nur andersfarbig: der ausgefallene Standort soll
-     sichtbar aus der Reihe fallen, nicht um Aufmerksamkeit mit dem Failover
-     konkurrieren. */
-  .snode.lost .name { opacity: .55; }
-  @media (prefers-reduced-motion: no-preference) {
-    .snode.ok .pulse { animation: pulse-travel __PULSE__s linear infinite; } }
-  @keyframes pulse-travel {
-    0% { transform: translateY(0); opacity: 0; }
-    12% { opacity: 1; }
-    88% { opacity: 1; }
-    100% { transform: translateY(var(--drop-h)); opacity: 0; } }
+  /* Lageplan (siehe _plan_html). Farben kommen aus den CSS-Variablen,
+     damit der Plan dem Thema folgt statt eigene Werte mitzubringen. */
+  .plan { width: 100%; height: auto; max-height: 132px; display: block; }
+  .plan .pk { font-family: "Rajdhani", "Segoe UI", sans-serif; font-size: 10px;
+    font-weight: 600; letter-spacing: .06em; }
+  .plan .pm { font-size: 8.5px; fill: var(--dim);
+    font-family: ui-monospace, monospace; }
+  .plan .phub { font-family: "Rajdhani", "Segoe UI", sans-serif; font-size: 8px;
+    font-weight: 600; letter-spacing: .05em; fill: var(--down); }
+  .plan .pnode.offline .pm { opacity: .5; }
 
   /* Konsolen-Panels: Raster-Abstand wie zuvor (20px). Das Raster bekommt die
      Resthoehe und gibt sie an die Charts weiter (siehe .mini-chart-col). */
@@ -1952,7 +1850,7 @@ HUD_CSS = """
      Stundenchart nur zu 24 Balken summiert hat - seit die Ausduennung die
      Spitzen behaelt (siehe _thin_keeping_peaks) geht dabei nichts mehr
      verloren. */
-  .mini-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
+  .mini-charts { display: flex; flex-direction: column; gap: 8px;
     flex: 1 1 auto; min-height: 0; }
   .mini-chart-col { display: flex; flex-direction: column; min-height: 0; position: relative; }
   /* Bei erloschenem Standort "LINK LOST" quer ueber die Zeichenflaeche: der
@@ -2071,7 +1969,7 @@ HUD_CSS = """
   @media (prefers-reduced-motion: reduce) {
     .boot-line .dot, .sync-dot.stale, .bracketed.failover::before, .bracketed.failover::after,
     .bracketed.failover .bk-tr, .bracketed.failover .bk-bl { animation: none; } }
-""".replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S)).replace("__LOSTPULSE__", str(LOST_PULSE_S))
+""".replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__LOSTPULSE__", str(LOST_PULSE_S))
 
 
 # Glasprojektion - setzt auf HUD_CSS auf und wird NACH ihm eingebunden (gleiche
@@ -2093,12 +1991,6 @@ HUD_CSS = """
 # Umlaufdauer des Lichtstreifens. Steht an EINER Stelle, weil CSS-Animation
 # und das Phasen-Skript in CANOPY_HTML denselben Wert brauchen - liefen sie
 # auseinander, waere der Streifen nach jedem Reload an der falschen Stelle.
-CANOPY_SWEEP_S = 82
-# Die zweite Schwade laeuft bewusst nicht im selben Takt: sonst wiederholt
-# sich das Bild periodisch und wird als Muster erkennbar. 82 zu 112 ist kein
-# glattes Verhaeltnis, die beiden treffen sich erst nach gut zwei Stunden
-# wieder in derselben Stellung.
-CANOPY_SWEEP_THIN_S = 112
 
 GLASS_CSS = """
   :root {
@@ -2108,8 +2000,6 @@ GLASS_CSS = """
        des Dashboards (Teal = Download, Amber = Upload, Rot = Failover)
        unangetastet. Eine gesaettigte Leuchte wuerde die Platten toenen und
        Teal/Amber dahinter mitverschieben. */
-    --nebula: #1b3147; --hull-far: #16283a;
-    --lamp-a: rgba(198, 230, 255, .24); --lamp-b: rgba(150, 200, 255, .20);
     --glass: rgba(120, 195, 210, .085); --glass-2: rgba(96, 170, 190, .03);
     --glass-edge: rgba(198, 240, 255, .20);
     --phosphor-dim: #2a7d75; --hull-2: rgba(120, 195, 210, .10); --alert-dim: rgba(255, 106, 88, .18);
@@ -2133,98 +2023,7 @@ GLASS_CSS = """
      der backdrop-filter der Platten ueberhaupt etwas zum Verschleifen. Im
      Spalt zwischen zwei Kacheln steht es scharf, darunter weich. Genau
      dieser Kontrast macht aus einer dunklen Flaeche eine Scheibe. */
-  .depth {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    background:
-      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='55' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.8' stroke-opacity='0.11'/></svg>\"),
-      url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='148' height='127' viewBox='0 0 56 48'><path d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M42 0 L56 8 L56 24 L42 32 L28 24 L28 8 Z M14 32 L28 40 L28 48 M42 32 L28 40' fill='none' stroke='%237ff0e4' stroke-width='0.6' stroke-opacity='0.05'/></svg>\"),
-      radial-gradient(18% 22% at 73% 16%, var(--lamp-a) 0%, transparent 72%),
-      radial-gradient(15% 19% at 26% 84%, var(--lamp-b) 0%, transparent 72%),
-      radial-gradient(62% 52% at 14% 8%, var(--nebula) 0%, transparent 62%),
-      radial-gradient(52% 48% at 92% 88%, var(--hull-far) 0%, transparent 58%),
-      var(--ink);
-    background-size: 64px 55px, 148px 127px, auto, auto, auto, auto, auto;
-    background-position: 0 0, 18px 12px, 0 0, 0 0, 0 0, 0 0, 0 0;
-  }
   .wrap { position: relative; z-index: 1; }
-
-  /* Die Scheibe. z-index ueber allem, pointer-events:none - sie faengt keine
-     Klicks ab und stoert die Chart-Tooltips nicht. */
-  .canopy { position: fixed; inset: 0; z-index: 50; pointer-events: none; overflow: hidden; }
-  /* Scanlinien und Lichtkegel: das Bild kommt sichtbar von einem Projektor
-     statt aus dem Bildschirm. Bewusst ENG (3px) und schwach - je feiner das
-     Raster, desto weniger liest es sich als Streifen und desto mehr als
-     Materialstruktur. Ein groberer Abstand kippt sofort ins Retro-Roehren-
-     hafte. Die Linien binden Kacheln und Hintergrund zu EINER
-     Projektionsflaeche zusammen; ohne sie wirken die Platten aufgelegt. */
-  .canopy::after {
-    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 3;
-    background-image:
-      repeating-linear-gradient(0deg, rgba(127,240,228,.020) 0 1px, transparent 1px 3px),
-      radial-gradient(70% 55% at 50% -12%, rgba(127, 240, 228, .09), transparent 72%);
-  }
-  /* Nebelschwaden statt Lichtstreifen. Vorher zwei schmale Baender mit
-     sauberen Verlaufskanten - das las sich als Scheinwerfer, der ueber die
-     Scheibe faehrt. Jetzt breite, weiche Wolken, die mit einem Rauschmuster
-     MASKIERT sind: dadurch fransen sie aus und sind stellenweise dichter,
-     statt ein gleichmaessig runder Fleck zu sein. Genau daran erkennt das
-     Auge Dunst statt Licht. Dasselbe feTurbulence-Rauschen benutzt die Seite
-     ohnehin schon als Frost-Koernung im Glas. */
-  .canopy .band {
-    position: absolute; top: -40%; left: -80%; width: 120%; height: 180%;
-    transform: rotate(9deg) translateX(-50%);
-    background: radial-gradient(60% 50% at 50% 50%, rgba(214, 245, 255, .16) 0%,
-      rgba(198, 240, 255, .08) 44%, transparent 76%);
-    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
-    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.010' numOctaves='4' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.62'/></svg>\");
-    /* Die Maske deckt das Band GENAU EINMAL ab. Vorher stand sie auf
-       1400x900px bei einem Band von 2164x1989px, und mask-repeat gilt per
-       Vorgabe als "repeat" - das Rauschen kachelte, und feTurbulence ist an
-       den Kachelgrenzen nicht nahtlos. Dort lief eine harte Kante durch den
-       Nebel. Gestreckt statt gekachelt faellt nichts auf: die Schwade ist
-       ohnehin um 14px weichgezeichnet. */
-    -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
-    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-    filter: blur(14px);
-  }
-  /* Zweite Schwade, schmaler und feiner gerauscht: eine Kanzel hat mehrere
-     Scheiben, der Dunst dahinter ist nicht eine einzige Schicht. */
-  .canopy .band.thin {
-    width: 60%; transform: rotate(9deg) translateX(-180%);
-    background: radial-gradient(60% 50% at 50% 50%, rgba(214, 245, 255, .10) 0%, transparent 74%);
-    -webkit-mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
-    mask-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='1500'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.017' numOctaves='3' seed='7'/></filter><rect width='100%25' height='100%25' filter='url(%23f)' opacity='0.55'/></svg>\");
-    -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
-    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-    filter: blur(10px);
-  }
-  .canopy .grime {
-    position: absolute; inset: 0;
-    background:
-      radial-gradient(90px 26px at 18% 24%, rgba(198, 240, 255, .035), transparent 72%),
-      radial-gradient(140px 40px at 63% 68%, rgba(198, 240, 255, .028), transparent 72%),
-      radial-gradient(60px 20px at 88% 18%, rgba(198, 240, 255, .032), transparent 72%),
-      radial-gradient(110px 30px at 40% 88%, rgba(198, 240, 255, .022), transparent 72%);
-  }
-  /* Randabfall des Projektionsfelds - gehoert auf die Scheibe, nicht auf die
-     einzelne Kachel. */
-  .canopy .vignette {
-    position: absolute; inset: 0;
-    background: radial-gradient(82% 74% at 50% 44%, transparent 52%, rgba(4, 7, 10, .58) 100%);
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    /* Deutlich langsamer als die frueheren 26s: Nebel zieht, er fegt nicht.
-       Die beiden Schwaden laufen unterschiedlich schnell, damit sich das
-       Bild nicht periodisch wiederholt. */
-    .canopy .band { animation: sweep __SWEEP__s linear infinite; }
-    .canopy .band.thin { animation: sweep-thin __SWEEP_THIN__s linear infinite; }
-  }
-  @keyframes sweep {
-    from { transform: rotate(9deg) translateX(-60%); }
-    to   { transform: rotate(9deg) translateX(180%); } }
-  @keyframes sweep-thin {
-    from { transform: rotate(9deg) translateX(-190%); }
-    to   { transform: rotate(9deg) translateX(400%); } }
 
   /* ---- Glasplatten: Telemetriezellen, Schema, Protokoll, Kacheln ----
      Drei Dinge machen aus der getoenten Flaeche eine Scheibe mit Dicke:
@@ -2345,16 +2144,61 @@ GLASS_CSS = """
   .chip.nominal { text-shadow: 0 0 5px rgba(127, 240, 228, .34); }
   .chip.failover { text-shadow: 0 0 5px rgba(255, 106, 88, .42); }
 
-  /* Schema-Knoten leuchten wie Lichtpunkte auf der Scheibe */
-  .bus .hub { background: rgba(127, 240, 228, .06); border-color: rgba(127, 240, 228, .35);
-    box-shadow: 0 0 14px rgba(127, 240, 228, .12); }
-  .bus .nodes::before { border-top-width: 1px; border-top-color: rgba(160, 220, 235, .2); }
-  .snode .drop::before { width: 1px; margin-left: -0.5px; }
-  .snode .bulb { width: 14px; height: 14px; border-width: 1px;
-    background: rgba(127, 240, 228, .10); box-shadow: 0 0 9px rgba(127, 240, 228, .45); }
-  .snode.alert .bulb { background: var(--alert-dim); box-shadow: 0 0 11px rgba(255, 106, 88, .55); }
-  .snode.lost .bulb { background: none; box-shadow: none; }
-  .snode .pulse { box-shadow: 0 0 6px var(--down); }
+  .segments i.lit { background: rgba(127, 240, 228, .55); box-shadow: 0 0 6px rgba(127, 240, 228, .45); }
+  .segments i.lit.warn { background: rgba(255, 196, 122, .6); box-shadow: 0 0 6px rgba(255, 196, 122, .5); }
+  .segments i.lit.crit { background: rgba(255, 106, 88, .65); box-shadow: 0 0 6px rgba(255, 106, 88, .5); }
+
+  .chart .down { fill: rgba(127, 240, 228, .6); }
+  .chart .up { fill: rgba(255, 196, 122, .55); }
+  .chart .flow-down-line { filter: drop-shadow(0 0 4px rgba(127, 240, 228, .5)); }
+  .chart .grid { stroke: rgba(150, 210, 220, .09); }
+  .chart .baseline { stroke: rgba(150, 210, 220, .2); }
+
+  /* ------------------------------------------------------------------
+     Eine Flaeche statt neun (siehe .wrap::before): die Bloecke brauchen
+     jetzt keine eigene Glasflaeche, keinen Rahmen und keine eigene
+     Lichtpfuetze mehr. Gegliedert wird nur noch durch Haarlinien, Abstand
+     und die helle Lichtkante oben.
+     ------------------------------------------------------------------ */
+  .panel, .schema, .log {
+    background: none; box-shadow: none; filter: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-color: transparent;
+    border-top-color: rgba(216, 250, 255, .42);
+  }
+  .panel::after, .schema::after, .log::after { content: none; }
+  .panel.failover { border-top-color: rgba(255, 180, 168, .75); }
+
+  /* Etwas weniger abgeblendet als frueher (.55): der LINK-LOST-Schriftzug
+     ueber der Zeichenflaeche soll auch aus der Entfernung tragen. */
+  .panel.offline { opacity: .72; }
+
+  /* Farbsaum an den Ziffern, wie aus einer billigen Projektionsoptik. Per
+     Selektor statt per Zusatzklasse, damit am erzeugten HTML nichts haengt. */
+  /* Eine Projektion strahlt selbst, sie wird nicht angestrahlt: die Schrift
+     bekommt einen echten Lichthof, nicht nur Farbe. Der Farbsaum daneben
+     bleibt - eine billige Projektionsoptik trennt die Farben leicht auf. */
+  /* Enger Lichthof statt breitem Schein, und ein deutlich zurueckgenommener
+     Farbsaum: 12px Radius legten sich wie ein Schleier ueber die
+     Buchstabenkanten, und 0,6px Versatz in zwei Farben verdoppelten jede
+     Kante sichtbar. Die Schrift leuchtet weiterhin, bleibt aber scharf. */
+  .pylon .val, .panel-head .fn, .readouts .rv, .log li .fn {
+    text-shadow: 0 0 6px rgba(127, 240, 228, .30), -.4px 0 rgba(255, 70, 120, .11),
+      .4px 0 rgba(90, 220, 255, .11);
+  }
+  /* Staerker als in den Kacheln: dort traegt die Platte den Kontrast mit,
+     hier steht die Zahl frei auf dem Muster. */
+  /* Der Pylon steht frei auf dem gemusterten Hintergrund und braucht mehr
+     Eigenkontrast als Text in einer Kachel - aber ueber einen dunklen
+     Schatten, nicht ueber einen breiten Lichthof. */
+  .pylon .val {
+    text-shadow: 0 0 10px rgba(127, 240, 228, .34), 0 1px 10px rgba(0, 0, 0, .95),
+      -.4px 0 rgba(255, 70, 120, .12), .4px 0 rgba(90, 220, 255, .12);
+  }
+  .pylon .label, .pylon .fuss { text-shadow: 0 1px 8px rgba(0, 0, 0, .85); }
+  .panel .subhead, .mini-chart-label, .readouts .rl { text-shadow: 0 0 4px rgba(127, 240, 228, .14); }
+  .chip.nominal { text-shadow: 0 0 5px rgba(127, 240, 228, .34); }
+  .chip.failover { text-shadow: 0 0 5px rgba(255, 106, 88, .42); }
 
   .segments i.lit { background: rgba(127, 240, 228, .55); box-shadow: 0 0 6px rgba(127, 240, 228, .45); }
   .segments i.lit.warn { background: rgba(255, 196, 122, .6); box-shadow: 0 0 6px rgba(255, 196, 122, .5); }
@@ -2451,21 +2295,6 @@ GLASS_CSS = """
      derselben Flaeche wie alles andere. */
   .pylon::before { content: none; }
 
-  /* Geraeterahmen: fasst die Anzeige ein, statt sie am Monitorrand einfach
-     aufhoeren zu lassen. Liegt als Auflage UEBER der Seite (fixed auf der
-     Scheiben-Ebene) - so verhaelt sich auch ein echter Rahmen. Der
-     Innenabstand der Seite ist an seine Staerke gekoppelt, siehe body. */
-  .canopy::before {
-    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 55;
-    border: 20px solid rgba(12, 22, 29, .96);
-    border-radius: 24px;
-    box-shadow:
-      inset 0 0 0 1px rgba(150, 205, 220, .34),
-      inset 0 1px 0 1px rgba(216, 250, 255, .26),
-      inset 0 0 40px rgba(4, 9, 13, .55),
-      0 0 0 100vmax rgba(2, 4, 6, .96);
-  }
-
   /* ------------------------------------------------------------------
      HUD-Struktur in der Flaeche (Nutzerwunsch: gerastert, diagonal,
      sechseckig). Alles als CSS-Verlauf bzw. SVG-Muster im data-URI, kein
@@ -2522,11 +2351,7 @@ GLASS_CSS = """
   .panel.failover .bk-tr { background: linear-gradient(90deg, transparent, rgba(255,150,135,.9)); }
   .panel.failover .bk-bl { background: linear-gradient(90deg, rgba(255,150,135,.9), transparent); }
 
-  /* Sechseckige Statusknoten im Bus - sechs Standorte, sechs Ecken. */
-  .snode .bulb { border-radius: 0;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
-
-""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S))
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -2747,35 +2572,19 @@ RISS_DEFS_HTML, RISS_CSS = _riss_bauen()
 # Animationsdauer laesst ihn dort weiterlaufen, wo er war: alle Betrachter
 # rechnen aus derselben Uhrzeit dieselbe Phase aus, unabhaengig davon, wann
 # ihre Seite zuletzt geladen hat.
-CANOPY_HTML = """<div class="canopy" aria-hidden="true">
-  <div class="band"></div><div class="band thin"></div>
-  <div class="grime"></div><div class="vignette"></div>
-</div>
-<script>
+# Phasen-Skript: alle Dauerbewegungen der Seite bekommen ihre Phase aus der
+# UHRZEIT, per negativem animation-delay. Ohne das beginnt jede Bewegung bei
+# jedem Neuladen (einmal pro Minute) wieder von vorn - der Suchstrahl des
+# Radars springt sichtbar zurueck.
+PHASEN_HTML = """<script>
 (function () {
-  // Alle Dauerbewegungen der Seite bekommen ihre Phase aus der UHRZEIT, per
-  // negativem animation-delay. Ohne das beginnt jede Bewegung bei jedem
-  // Neuladen (einmal pro Minute) wieder von vorn - der Suchstrahl des Radars
-  // springt zurueck, die Tropfen im Bus setzen neu an. Mit Phase laeuft
-  // alles durch, als waere die Seite nie neu geladen worden.
   var jetzt = Date.now() / 1000;
 
-  function phase(el, dauer, versatz) {
-    if (!dauer) return;
-    // versatz: die Staffelung, die das Element schon mitbringt (die Tropfen
-    // starten je Knoten 0,35s spaeter). Sie muss erhalten bleiben, deshalb
-    // wird sie zur Uhrzeit-Phase addiert statt sie zu ersetzen.
-    el.style.animationDelay = (-((jetzt + (versatz || 0)) % dauer)).toFixed(2) + 's';
+  function phase(el, dauer) {
+    if (el && dauer) el.style.animationDelay = (-(jetzt % dauer)).toFixed(2) + 's';
   }
 
-  // Die beiden Nebelschwaden laufen unterschiedlich schnell - jede braucht
-  // deshalb ihre eigene Phase, aus ihrer eigenen Dauer.
-  document.querySelectorAll('.canopy .band').forEach(function (el) {
-    phase(el, parseFloat(getComputedStyle(el).animationDuration) || __SWEEP__);
-  });
-
-  var radar = document.querySelector('.radar .sweep');
-  if (radar) phase(radar, __RADAR__);
+  phase(document.querySelector('.radar .sweep'), __RADAR__);
 
   // "Link Lost" ueber den erloschenen Kacheln: das Pseudo-Element selbst ist
   // per Skript nicht erreichbar, die Phase geht deshalb ueber eine Variable
@@ -2783,15 +2592,92 @@ CANOPY_HTML = """<div class="canopy" aria-hidden="true">
   document.querySelectorAll('.panel.offline .mini-chart-col').forEach(function (el) {
     el.style.setProperty('--puls-phase', (-(jetzt % __LOSTPULSE__)).toFixed(2) + 's');
   });
-
-  document.querySelectorAll('.snode .pulse').forEach(function (el) {
-    // Die Staffelung steht als inline-Style im Markup (siehe _schema_html)
-    // und wird hier durch den berechneten Wert ersetzt - vorher auslesen.
-    var versatz = parseFloat(getComputedStyle(el).animationDelay) || 0;
-    phase(el, __PULSE__, versatz);
-  });
 })();
-</script>""".replace("__SWEEP__", str(CANOPY_SWEEP_S)).replace("__SWEEP_THIN__", str(CANOPY_SWEEP_THIN_S)).replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__PULSE__", str(PULSE_TRAVEL_S)).replace("__LOSTPULSE__", str(LOST_PULSE_S))
+</script>""".replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__LOSTPULSE__", str(LOST_PULSE_S))
+
+
+
+# ---------------------------------------------------------------------------
+# Reduktion
+# ---------------------------------------------------------------------------
+# Was bleibt, nachdem die Kulisse weg ist: fast schwarzer Grund, Haarlinien
+# statt Platten, grosse Ziffern, Luft. Der Zustand sitzt in der linken Kante
+# der Kachel - eine Linie, die gleichzeitig trennt und meldet.
+REDUKTION_CSS = """
+  body { background: #020406; background-image: none; padding: 30px 38px 22px; }
+
+  /* Keine Traegerflaeche mehr - es gibt nichts mehr zu tragen. */
+  .wrap::before { content: none; }
+
+  /* Lichthoefe und Farbsaum waren das Projektor-Motiv. Beide kosten Schaerfe,
+     und auf einem Wandmonitor ist Schaerfe das Knappere. */
+  .pylon .val, .panel-head .fn, .readouts .rv, .log li .fn,
+  .panel .subhead, .mini-chart-label, .readouts .rl,
+  .chip.nominal, .chip.failover, .pylon .label, .pylon .fuss,
+  .radar .blip b, .radar .rlabel { text-shadow: none; }
+
+  /* Kacheln ohne Flaeche, ohne Rahmen, ohne Mattierung. Getrennt wird durch
+     eine Haarlinie und durch Abstand. */
+  .schema, .log, .panel {
+    background: none; box-shadow: none; border: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  /* Eigene Zeile, weil '.panel.failover' weiter oben spezifischer ist als
+     '.panel' und seine warme Flaeche sonst stehen bliebe - die Reihenfolge
+     allein reicht hier nicht. */
+  .panel.failover { background: none; box-shadow: none; border: none; }
+  .panel::after, .schema::after, .log::after,
+  .panel.failover::after { content: none; }
+  .panel .bk-tr { display: none; }
+  .overview-grid { gap: 26px 0; }
+
+  /* Die linke Kante traegt den Zustand: gruen nominal, rot Failover, grau
+     erloschen. Sie ersetzt den frueheren Gruenstich (der eine ganze Flaeche
+     einfaerbte) UND die schraffierte Warnflaeche der Failover-Kachel, die
+     dieselbe Sache ein zweites Mal meldete. */
+  .panel { border-left: 2px solid rgba(150, 255, 200, .55);
+    padding: 6px 20px 6px 22px; }
+  .panel.failover { border-left-color: var(--alert); }
+  .panel.offline { border-left-color: rgba(120, 150, 158, .45); }
+
+  /* Damit wird der Chip zur Beschriftung und darf leise sein. */
+  .chip { border: none; padding: 0; opacity: .72; background: none; }
+
+  /* Vier gleichwertige Ableseinstrumente nebeneinander statt einer Zahl:
+     gemeinsame Grundlinie, gleiche Ziffernbreite, in einer Zeile ablesbar. */
+  .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px; }
+  .readouts .r { display: block; min-width: 0; }
+  .readouts .rl { display: block; margin-bottom: 1px; }
+  .readouts .rv { font-size: 21px; }
+  .readouts .rv .unit, .readouts .threshold-ref { font-size: 10px; }
+
+  /* Die Latenzkurve teilt sich die Resthoehe mit dem Flow-Graphen, bekommt
+     aber nur ein Viertel davon: sie soll die Form zeigen, nicht abgelesen
+     werden. Feste Hoehe statt flex, damit der Flow-Graph den Rest behaelt. */
+  .lat-spur { flex: 0 0 auto; }
+  .lat-spur .mini-chart-label { margin-bottom: 1px; }
+  .lat-spur .lat-chart { width: 100%; height: 26px; display: block; }
+  .lat-spur .lat-line { stroke: rgba(159, 216, 232, .85); }
+  .panel.offline .lat-spur { opacity: .25; }
+
+  /* Grosse Ziffern, kleine Beschriftung - das Verhaeltnis macht den
+     Instrumenteneindruck, nicht die Farbe. */
+  .panel-head .fn { font-size: 15px; font-weight: 500; letter-spacing: .1em;
+    color: var(--dim); text-transform: uppercase; }
+  .readouts .rl { opacity: .7; }
+
+  /* Schema und Protokoll geben Flaeche an die Kurven ab. */
+  .bank { gap: 34px; margin-top: 18px; }
+  .schema, .log { padding: 2px 0; }
+  .log .log-head { border-bottom-color: rgba(150, 200, 215, .13); padding: 0 0 7px; }
+  .log li { padding: 3px 0; }
+  .radar { border-color: rgba(127, 240, 228, .30); box-shadow: none;
+    background: radial-gradient(circle at 50% 50%, rgba(10,20,26,.9), rgba(4,7,10,.9) 78%); }
+  .radar .sweep { opacity: .55; }
+  .segments i.lit { box-shadow: none; }
+  .chart .flow-down-line { filter: none; }
+"""
 
 
 def render_overview_html(consoles, start, now, events=(), latency=None):
@@ -2860,6 +2746,27 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
             sub = f'Akt. Upload {human_kbps(c["last_rate_kbps"])} &middot; unter Schwelle'
             sub_cls = ""
         month_val, month_unit = _split_unit(human_bytes(c["total_month"]))
+        peak_val, peak_unit = _split_unit(human_bytes(c["peak"]))
+        # Latenz und Paketverlust lagen bisher nur im Systemschema. Sie
+        # gehoeren an die Kachel: dort steht alles andere zu diesem Standort
+        # auch. Die Schwellen sind dieselben wie im Schema.
+        _lat = (latency or {}).get(c["device"]) or {}
+        _ms = _lat.get("cur")
+        lat_val = f"{_ms:.0f}" if _ms else "–"
+        lat_cls = "" if not _ms else (" value-alert" if _ms > LATENZ_ALERT_MS
+                                      else (" value-warn" if _ms > LATENZ_WARN_MS else ""))
+        # Der HOECHSTWERT der 24 Stunden, nicht der letzte Messpunkt:
+        # "loss" ist der jeweils juengste Wert und damit fast immer 0 - die
+        # Zahl waere praktisch nie zu sehen. Dieselbe Lesart wie frueher im
+        # Systemschema, wo sie _loss_nicks() mitgeliefert hat.
+        _loss = None
+        if _loss_zeigen(_lat):
+            _werte = [w for p in (_lat.get("series") or [])
+                      if isinstance(p, (list, tuple)) and len(p) > 1
+                      for w in (p[1],) if isinstance(w, (int, float))]
+            _loss = max(_werte, default=0.0) or None
+        loss_val = f"{_loss:.1f}" if _loss else "0"
+        loss_cls = " value-alert" if _loss else ''
         panel_cls = {"failover": " failover", "offline": " offline"}.get(status, "")
         cards.append(f"""<div class="panel bracketed{panel_cls}">
       <div class="bk-tr"></div><div class="bk-bl"></div>
@@ -2867,12 +2774,19 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
       <div class="subhead{sub_cls}" title="{html.escape(sub.replace('&middot;', '·').replace('&gt;', '>').replace('&Oslash;', 'Ø'))}">{sub}</div>
       <div class="readouts">
         <div class="r"><div class="rl">Monat</div><div class="rv num{total_alert_class(c['total_month'], c['device'])}">{month_val}<span class="unit">{month_unit}</span> <span class="threshold-ref">/ {alert_threshold_label(c['device'])}</span></div></div>
+        <div class="r"><div class="rl">Latenz</div><div class="rv num{lat_cls}">{lat_val}<span class="unit">ms</span></div></div>
+        <div class="r"><div class="rl">Verlust</div><div class="rv num{loss_cls}">{loss_val}<span class="unit">%</span></div></div>
+        <div class="r"><div class="rl">Spitze</div><div class="rv num">{peak_val}<span class="unit">{peak_unit}/h</span></div></div>
       </div>
       <div class="mini-meter" title="Monatsvolumen im Verhältnis zur Rot-Schwelle ({alert_threshold_label(c['device'])})">{_segments_html(12, round(min(ratio, 1.0) * 12), meter_mode)}</div>
       <div class="mini-charts">
         <div class="mini-chart-col">
           <div class="mini-chart-label">Flow &middot; 24 h <span class="lg">Spitze {human_bytes(c['peak'])}/h<span class="dot" style="background:var(--down)"></span>Down<span class="dot" style="background:var(--up)"></span>Up</span></div>
           {c['flow_chart_mini']}
+        </div>
+        <div class="lat-spur">
+          <div class="mini-chart-label">Latenz &middot; 24 h <span class="lg">Kerbe = Paketverlust</span></div>
+          {_lat_spur_html(_lat)}
         </div>
       </div>
     </div>""")
@@ -2892,10 +2806,10 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
 {HUD_CSS}
 {GLASS_CSS if COLOR_THEME == "glas" else ""}
 {RISS_CSS if COLOR_THEME == "glas" else ""}
+{REDUKTION_CSS if COLOR_THEME == "glas" else ""}
 </style>
 </head>
 <body>
-{'<div class="depth"></div>' if COLOR_THEME == "glas" else ""}
 {RISS_DEFS_HTML if COLOR_THEME == "glas" else ""}
 <div class="wrap">
   <header>
@@ -2925,8 +2839,8 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
 
     <div class="schema bracketed">
       <div class="bk-tr"></div><div class="bk-bl"></div>
-      <div class="mlabel">Systemschema &middot; Site-Manager-Bus</div>
-      {_schema_html(consoles, latency)}
+      <div class="mlabel">Lageplan &middot; Abstand = Latenz</div>
+      {_plan_html(consoles, latency)}
     </div>
 
     <div class="log bracketed">
@@ -2949,7 +2863,7 @@ def render_overview_html(consoles, start, now, events=(), latency=None):
     ({", ".join(f"{n.split('--')[0]} {v:.0f}" for n, v in FAILOVER_THRESHOLD_KBPS_BY_CONSOLE.items())}) &middot;
     Link Lost ab {OFFLINE_THRESHOLD_S // 60} Min ohne Messpunkt.</footer>
 </div>
-{CANOPY_HTML if COLOR_THEME == "glas" else ""}
+{PHASEN_HTML if COLOR_THEME == "glas" else ""}
 {refresh_countdown_script(now)}
 </body>
 </html>"""
