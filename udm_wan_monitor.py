@@ -2261,52 +2261,6 @@ GLASS_CSS = """
   .panel::after, .schema::after, .log::after { content: none; }
   .panel.failover { border-top-color: rgba(255, 180, 168, .75); }
 
-  /* Ganz leichter Gruenstich auf den Konsolenkacheln - dasselbe Mittel wie
-     beim roten Failover: eine eingefaerbte Flaeche, sonst nichts. Kein
-     Rahmen, kein Schatten, keine eigene Mattierung, keine Bewegung. Die
-     Kachel bleibt damit ein Feld auf der EINEN Scheibe und wird nicht
-     wieder zur eigenen Platte.
-
-     Diese Regel MUSS nach der Loeschregel darueber stehen: '.panel' hat
-     dieselbe Spezifitaet wie das '.panel' dort, es entscheidet die
-     Reihenfolge. Genau daran sind die ersten beiden Anlaeufe gescheitert -
-     sie faerbten die Glasplatten-Regel weiter oben ein, deren Hintergrund
-     hier ohnehin geloescht wird.
-
-     Fassung aus der Vorschau ausgewaehlt ("C3, Reaktorkante"). Entscheidend
-     ist dabei nicht der Farbton, sondern die RICHTUNG: die Farbe kommt aus
-     der angeleuchteten OBERKANTE und faellt darunter kurz ab, die Flaeche
-     selbst bleibt fast neutral. Eine gleichmaessig ueber die Kachel gelegte
-     Toenung - ein frueherer Stand - liest sich dagegen immer als
-     eingefaerbtes Rechteck, egal welches Gruen man nimmt.
-
-     Oben statt unten, und das ist der Punkt: die Flow-Kurve sitzt im unteren
-     Drittel der Kachel. Licht, das sich dort sammelt, liegt genau auf den
-     Daten; an der Oberkante liegt es dort, wo nichts steht. Die Kurven
-     behalten damit ihren neutralen Untergrund.
-
-     Zahlenmaessig liegt die Spitze ueber dem Failover-Rot (.105 gegen .065),
-     optisch deutlich darunter: Rot auf dunkelblauem Grund hat einen viel
-     groesseren Farbabstand als ein gedaempftes Gruen, und das Rot bekommt
-     zusaetzlich Rahmen, Schlagschatten und Lichtpfuetze, die das Gruen
-     bewusst nicht hat. Das Rot bleibt damit klar das Alarmsignal, das Gruen
-     sagt nur "laeuft".
-
-     Der Blauanteil bleibt unter dem Gruenanteil, sonst landet der Ton beim
-     Teal der Download-Kurve und liest sich nicht mehr als eigener Stich.
-
-     Die erloschene Kachel bleibt aussen vor: ein gruener "laeuft"-Ton auf
-     einem toten Standort waere ein falsches Signal. */
-  .panel:not(.failover):not(.offline) {
-    background:
-      linear-gradient(180deg, rgba(120, 255, 180, .105) 0%,
-        rgba(96, 230, 160, .030) 22%, transparent 52%),
-      linear-gradient(158deg, rgba(104, 226, 150, .045),
-        rgba(88, 198, 128, .018) 55%, rgba(96, 214, 138, .034));
-    border-top-color: rgba(150, 255, 200, .80);
-    box-shadow: inset 0 14px 22px -18px rgba(150, 255, 200, .55);
-  }
-
   /* Kacheln als Felder EINES Instruments: 1px Fuge statt 20px Abstand, und
      die Trennlinien enden am Rasterrand statt jede Kachel zu umschliessen. */
   .overview-grid { gap: 1px; }
@@ -2667,11 +2621,13 @@ REDUKTION_CSS = """
   .panel .bk-tr { display: none; }
   .overview-grid { gap: 26px 0; }
 
-  /* Die linke Kante traegt den Zustand: gruen nominal, rot Failover, grau
-     erloschen. Sie ersetzt den frueheren Gruenstich (der eine ganze Flaeche
+  /* Die linke Kante traegt den Zustand - aber nur, wenn es einen zu melden
+     gibt: neutrale Haarlinie bei nominal, rot bei Failover, grau bei
+     erloschen. Farbe heisst damit "hinsehen", und der Normalzustand leuchtet
+     nicht. Sie ersetzt den frueheren Gruenstich (der eine ganze Flaeche
      einfaerbte) UND die schraffierte Warnflaeche der Failover-Kachel, die
      dieselbe Sache ein zweites Mal meldete. */
-  .panel { border-left: 2px solid rgba(150, 255, 200, .55);
+  .panel { border-left: 2px solid rgba(150, 200, 215, .16);
     padding: 6px 20px 6px 22px; }
   .panel.failover { border-left-color: var(--alert); }
   .panel.offline { border-left-color: rgba(120, 150, 158, .45); }
