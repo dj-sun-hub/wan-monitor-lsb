@@ -2629,8 +2629,8 @@ REDUKTION_CSS = """
      dieselbe Sache ein zweites Mal meldete. */
   .panel { border-left: 2px solid rgba(150, 200, 215, .16);
     padding: 6px 20px 6px 22px; }
-  .panel.failover { border-left-color: var(--alert); }
-  .panel.offline { border-left-color: rgba(120, 150, 158, .45); }
+  .panel.failover { border-left: 2px solid var(--alert); }
+  .panel.offline { border-left: 2px solid rgba(120, 150, 158, .45); }
 
   /* Damit wird der Chip zur Beschriftung und darf leise sein. */
   .chip { border: none; padding: 0; opacity: .72; background: none; }
