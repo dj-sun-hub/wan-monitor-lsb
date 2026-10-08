@@ -2680,8 +2680,9 @@ REDUKTION_CSS = """
 
   /* Vier gleichwertige Ableseinstrumente nebeneinander statt einer Zahl:
      gemeinsame Grundlinie, gleiche Ziffernbreite, in einer Zeile ablesbar. */
-  .readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px; }
+  .readouts { display: grid; gap: 12px;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, .78fr)
+                           minmax(0, .78fr) minmax(0, 1.04fr); }
   .readouts .r { display: block; min-width: 0; }
   .readouts .rl { display: block; margin-bottom: 1px; }
   .readouts .rv { font-size: 21px; }
@@ -2690,9 +2691,12 @@ REDUKTION_CSS = """
   /* Die Latenzkurve teilt sich die Resthoehe mit dem Flow-Graphen, bekommt
      aber nur ein Viertel davon: sie soll die Form zeigen, nicht abgelesen
      werden. Feste Hoehe statt flex, damit der Flow-Graph den Rest behaelt. */
-  .lat-spur { flex: 0 0 auto; }
-  .lat-spur .mini-chart-label { margin-bottom: 1px; }
-  .lat-spur .lat-chart { width: 100%; height: 26px; display: block; }
+  .lat-spur { flex: 0 0 auto; position: relative; }
+  .lat-spur .mini-chart-label { position: absolute; left: 0; top: 0; z-index: 1;
+    margin: 0; font-size: 8.5px; opacity: .75; pointer-events: none;
+    background: linear-gradient(90deg, #020406 72%, transparent);
+    padding-right: 14px; }
+  .lat-spur .lat-chart { width: 100%; height: 22px; display: block; }
   .lat-spur .lat-line { stroke: rgba(159, 216, 232, .85); }
   .panel.offline .lat-spur { opacity: .25; }
 
