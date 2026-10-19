@@ -123,6 +123,57 @@ jobs:
             echo "::warning::Konnte Messpunkt nicht pushen, dieser Poll geht verloren (naechster Lauf holt es i.d.R. nach)."
           fi
 
+          # Monatliches Kuerzen der Git-Historie.
+          #
+          # Warum ueberhaupt: wan_traffic.csv IST der Datenspeicher des
+          # Monitors (sie kann nicht ignoriert werden, sonst gehen die
+          # Messpunkte verloren) und wird von merge_rows() bei JEDEM Poll
+          # komplett neu geschrieben. Jeder Minuten-Commit legt damit einen
+          # neuen Blob der ganzen Datei ab - gemessen rund 13 MB Packfile pro
+          # Tag, also ~400 MB im Monat. Nach 36 Tagen Laufzeit war das Repo
+          # dadurch auf 1,9 GB angewachsen.
+          #
+          # Die Historie wird hier nirgends gebraucht: der Checkout oben klont
+          # ohnehin mit fetch-depth: 1, und fuer das Dashboard zaehlt nur der
+          # jeweils aktuelle Stand. Einmal im Monat wird sie deshalb auf einen
+          # einzelnen Wurzel-Commit mit dem aktuellen Baum zusammengefasst -
+          # bitgenau derselbe Inhalt, nur ohne Vorgeschichte.
+          #
+          # Gesteuert ueber die winzige Markerdatei .git-historie-stand
+          # (Inhalt: YYYY-MM des letzten Kuerzens). Ein Commit-Zaehler oder
+          # ein Vergleich mit dem Datum des ersten Commits waere hier nicht
+          # moeglich, weil der flache Klon die Historie gar nicht kennt. So
+          # laeuft es genau einmal pro Monat, beim ersten Poll des Monats -
+          # unabhaengig von GitHubs eigenem Cron, der bei diesem Repo nicht
+          # verlaesslich feuert (siehe 'on:' oben).
+          MONAT_JETZT=$(date -u +%Y-%m)
+          MONAT_MARKER=$(cat .git-historie-stand 2>/dev/null || echo "")
+          # Nur kuerzen, wenn der Messpunkt oben wirklich durchging: sonst
+          # wuerde der Force-Push einen nicht gepushten Stand zementieren und
+          # im schlimmsten Fall einen fremden Messpunkt ueberschreiben.
+          if [ "$pushed" = "true" ] && [ "$MONAT_MARKER" != "$MONAT_JETZT" ]; then
+            # Stand, den wir eben selbst gepusht haben - dagegen laeuft das
+            # Lease unten. Hat in der Zwischenzeit ein anderer Lauf gepusht,
+            # schlaegt der Force-Push fehl, statt dessen Messpunkt zu
+            # verschlucken; der Marker ist dann noch nicht remote, also
+            # versucht es der naechste Poll von selbst erneut.
+            SHA_GEPUSHT=$(git rev-parse HEAD)
+            echo "$MONAT_JETZT" > .git-historie-stand
+            git add .git-historie-stand
+            git commit -q -m "Git-Historie gekuerzt (Stand $MONAT_JETZT)"
+            # Ohne -p: ein Commit ohne Eltern, also eine neue Wurzel. Mehrere
+            # -m ergeben Absaetze, ohne dass die YAML-Einrueckung im
+            # Commit-Text landet.
+            WURZEL=$(git commit-tree "HEAD^{tree}" \
+              -m "Wan-Monitor: Stand $(date -u +%FT%RZ), Historie gekuerzt" \
+              -m "Monatliches Zusammenfassen der Minuten-Commits (siehe wan-monitor.yml). Inhalt unveraendert, nur ohne Vorgeschichte - die braucht hier niemand, der Checkout klont mit fetch-depth: 1.")
+            if git push --force-with-lease=master:"$SHA_GEPUSHT" origin "$WURZEL":master; then
+              echo "::notice title=Git-Historie::Auf einen Wurzel-Commit gekuerzt ($WURZEL), Marker steht jetzt auf $MONAT_JETZT."
+            else
+              echo "::warning::Kuerzen der Historie fehlgeschlagen (fremder Push dazwischen?), der naechste Poll versucht es erneut."
+            fi
+          fi
+
           # Laufzeit-Diagnose je Phase als Annotation - auch OHNE GitHub-Login
           # auf der Actions-Lauf-Seite sichtbar (im Gegensatz zu den vollen
           # Step-Logs), um den tatsaechlichen Flaschenhals zu finden statt
