@@ -641,6 +641,10 @@ assert m._klima_stufe(2.0, m.TEMP_GUT, m.TEMP_ALARM) == "alert"
 assert m._klima_stufe(None, m.TEMP_GUT, m.TEMP_ALARM) == ""
 assert m._klima_stufe(50.0, m.FEUCHTE_GUT, m.FEUCHTE_ALARM) == ""
 assert m._klima_stufe(70.0, m.FEUCHTE_GUT, m.FEUCHTE_ALARM) == "warn"
+# Gelb erst AB 70 %: die 65 bis 69,9 sind ausdruecklich unauffaellig
+# (Nutzerentscheidung 2026-10-19, vorher begann gelb schon ueber 65 %).
+assert m._klima_stufe(65.0, m.FEUCHTE_GUT, m.FEUCHTE_ALARM) == "", "gelb beginnt zu frueh"
+assert m._klima_stufe(69.9, m.FEUCHTE_GUT, m.FEUCHTE_ALARM) == "", "gelb beginnt zu frueh"
 assert m._klima_stufe(90.0, m.FEUCHTE_GUT, m.FEUCHTE_ALARM) == "alert"
 
 _sens = {c["device"]: {"name": c["device"].split("--")[0] + "--Sens-1",

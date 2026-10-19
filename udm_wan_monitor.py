@@ -763,7 +763,17 @@ SENSOR_REFRESH_S = 300
 # Alarmgrenze. Zwei Werte je Groesse reichen - die untere Alarmgrenze ergibt
 # sich spiegelbildlich aus dem Abstand der oberen (siehe _klima_stufe).
 TEMP_GUT, TEMP_ALARM = (10.0, 27.0), 32.0
-FEUCHTE_GUT, FEUCHTE_ALARM = (25.0, 65.0), 75.0
+# Feuchte: gelb erst ab 70 % (Nutzerentscheidung 2026-10-19, vorher ab 65 %) -
+# damit deckt sich die Schwelle mit der Begruendung oben. Die Bereichsgrenze
+# steht deshalb auf 69,9 und nicht auf 70,0: _klima_stufe vergleicht mit '>',
+# bei 70,0 waere die 70 selbst noch unauffaellig und gelb begaenne erst bei
+# 70,1. Der Sensor liefert eine Dezimalstelle, 69,9 trifft also genau "ab 70".
+#
+# Weil die untere Alarmgrenze spiegelbildlich aus dem Abstand der oberen
+# entsteht, verschiebt sie sich mit: rot nach unten jetzt ab 19,9 % statt
+# 15 %. Fuer Technikraum und Lager ohne Belang - so trocken wird es hier
+# nicht, und die trockene Seite ist ohnehin nicht das Problem.
+FEUCHTE_GUT, FEUCHTE_ALARM = (25.0, 69.9), 75.0
 # Ab hier ist die Batterie des Sensors ein eigener Hinweis wert: faellt sie
 # aus, verschwindet der Messwert still, und niemand merkt es.
 AKKU_WARN_PCT = 20
