@@ -2679,6 +2679,12 @@ PHASEN_HTML = """<script>
   document.querySelectorAll('.panel.offline .mini-chart-col').forEach(function (el) {
     el.style.setProperty('--puls-phase', (-(jetzt % __LOSTPULSE__)).toFixed(2) + 's');
   });
+
+  // Die Alarmflaeche der Failover-Kachel laeuft im selben Takt und braucht
+  // dieselbe Phase: ohne sie setzt der Puls bei jedem Neuladen neu an.
+  document.querySelectorAll('.panel.failover').forEach(function (el) {
+    el.style.animationDelay = (-(jetzt % __LOSTPULSE__)).toFixed(2) + 's';
+  });
 })();
 </script>""".replace("__RADAR__", str(RADAR_SWEEP_S)).replace("__LOSTPULSE__", str(LOST_PULSE_S))
 
@@ -2710,8 +2716,9 @@ REDUKTION_CSS = """
     -webkit-backdrop-filter: none; backdrop-filter: none;
   }
   /* Eigene Zeile, weil '.panel.failover' weiter oben spezifischer ist als
-     '.panel' und seine warme Flaeche sonst stehen bliebe - die Reihenfolge
-     allein reicht hier nicht. */
+     '.panel' und seine alte warme Flaeche sonst stehen bliebe - die
+     Reihenfolge allein reicht hier nicht. Die NEUE Alarmflaeche kommt
+     weiter unten und gewinnt dann ueber die Reihenfolge. */
   .panel.failover { background: none; box-shadow: none; border: none; }
   .panel::after, .schema::after, .log::after,
   .panel.failover::after { content: none; }
@@ -2726,8 +2733,42 @@ REDUKTION_CSS = """
      dieselbe Sache ein zweites Mal meldete. */
   .panel { border-left: 2px solid rgba(150, 200, 215, .16);
     padding: 6px 20px 6px 22px; }
-  .panel.failover { border-left: 2px solid var(--alert); }
   .panel.offline { border-left: 2px solid rgba(120, 150, 158, .45); }
+
+  /* Der Alarmfall ist die Ausnahme von der Regel, die die ganze Seite
+     traegt: hier DARF die Flaeche Farbe bekommen. Genau dafuer wurde sie
+     ueberall sonst abgeschafft - eine 2px-Kante ging auf dem Wandmonitor
+     aus einigen Metern unter.
+
+     Der Verlauf laeuft nach unten aus: oben, wo Name und Zustand stehen,
+     ist er am kraeftigsten; unten bleiben die Flow-Kurven auf neutralem
+     Grund und damit lesbar. Im Alarmfall sollen die Messwerte besser
+     ablesbar sein als sonst, nicht schlechter.
+
+     Gepulst werden nur Flaeche und Kante - NICHT die Deckkraft der Kachel.
+     Sonst flackerten die Messwerte mit, und die Bewegung ginge auf Kosten
+     genau der Zahlen, auf die es im Alarmfall ankommt. Takt wie beim
+     "Link Lost"-Schriftzug: auf einer Seite nur ein Alarmtakt. */
+  .panel.failover {
+    border-left: 7px solid var(--alert); padding-left: 17px;
+    background: linear-gradient(180deg,
+      rgba(255, 106, 88, .20) 0%, rgba(255, 106, 88, .07) 42%, transparent 78%);
+    box-shadow: inset 0 14px 26px -18px rgba(255, 150, 135, .55);
+    animation: failover-puls __LOSTPULSE__s ease-in-out infinite;
+  }
+  @keyframes failover-puls {
+    0%, 100% { background-color: transparent;
+               border-left-color: rgba(255, 106, 88, .55); }
+    50%      { background-color: rgba(255, 106, 88, .11);
+               border-left-color: rgba(255, 158, 143, 1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .panel.failover { animation: none; }
+  }
+  /* Der Name faerbt sich mit. Bisher wurde nur die Statuszeile darunter rot,
+     und die liest man erst, wenn man ohnehin schon hinsieht. */
+  .panel.failover .panel-head .fn { color: var(--alert); }
+  .panel.failover .chip.failover { opacity: 1; font-weight: 700; }
 
   /* Damit wird der Chip zur Beschriftung und darf leise sein. */
   .chip { border: none; padding: 0; opacity: .72; background: none; }
@@ -2770,7 +2811,7 @@ REDUKTION_CSS = """
   .radar .sweep { opacity: .55; }
   .segments i.lit { box-shadow: none; }
   .chart .flow-down-line { filter: none; }
-"""
+""".replace("__LOSTPULSE__", str(LOST_PULSE_S))
 
 
 def render_overview_html(consoles, start, now, events=(), latency=None, sensors=None):

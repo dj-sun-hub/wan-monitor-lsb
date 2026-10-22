@@ -586,8 +586,11 @@ assert "rgba(150, 200, 215" in _red[_i:_i + 120], "nominale Kante ist nicht neut
 # setzen reicht nicht, weil '.panel.failover { border: none }' weiter oben
 # spezifischer ist und die Breite sonst auf 0 bleibt - die Failover-Kachel
 # war dadurch die einzige ganz ohne Kante.
-assert ".panel.failover { border-left: 2px solid var(--alert); }" in _red
 assert ".panel.offline { border-left: 2px solid" in _red
+# Die Failover-Kachel hat inzwischen eine eigene, auffaelligere Regel -
+# siehe Pruefung 31. Hier bleibt nur die Forderung, dass sie ueberhaupt
+# eine farbige Kante traegt.
+assert "border-left: 7px solid var(--alert)" in _red
 print("28) Nominale Kachel ohne Flaeche und ohne Lichtkante            OK")
 
 
@@ -694,6 +697,49 @@ try:
 finally:
     m.fetch_sensors = _alt_fetch
 print("30) Klima der Standorte: Schwellen, Ausfall, Zwischenspeicher   OK")
+
+
+# ---------------------------------------------------------------------------
+# 31) Die Failover-Kachel faellt auf
+# ---------------------------------------------------------------------------
+# Eine 2px-Kante ging auf dem Wandmonitor aus einigen Metern unter. Der
+# Alarmfall ist die Ausnahme von der Regel, dass Flaechen keine Farbe
+# tragen - genau dafuer wurde sie ueberall sonst abgeschafft.
+_red = m.REDUKTION_CSS
+_i = _red.index("  .panel.failover {\n")
+_fo = _red[_i:_red.index("\n  }", _i)]
+assert "border-left: 7px solid var(--alert)" in _fo, "Kante wieder duenn"
+assert "linear-gradient" in _fo, "Alarmflaeche fehlt"
+assert f"failover-puls {m.LOST_PULSE_S}s" in _fo, "Alarmflaeche pulsiert nicht"
+
+# Gepulst werden nur Flaeche und Kante. Pulste die Deckkraft der Kachel,
+# flackerten die Messwerte mit - und die Bewegung ginge auf Kosten genau der
+# Zahlen, auf die es im Alarmfall ankommt.
+_k = _red[_red.index("@keyframes failover-puls"):]
+_k = _k[:_k.index("\n  }")]
+assert "background-color" in _k and "border-left-color" in _k
+assert "opacity" not in _k, "der Puls dimmt die ganze Kachel"
+
+# Ein Alarmtakt fuer die ganze Seite: der Puls der Failover-Flaeche und der
+# des "Link Lost"-Schriftzugs duerfen nie auseinanderlaufen.
+assert f"bk-pulse {m.LOST_PULSE_S}s" in m.HUD_CSS
+assert "__LOSTPULSE__" not in _red, "Platzhalter ungefuellt in die Seite gelaufen"
+
+# Bewegung immer mit Ruecksicht auf prefers-reduced-motion.
+_rm = _red[_red.index("@media (prefers-reduced-motion: reduce)"):]
+assert ".panel.failover { animation: none; }" in _rm[:200]
+
+# Und die Phase aus der Uhrzeit, sonst setzt der Puls bei jedem der
+# minuetlichen Neuladevorgaenge neu an und springt sichtbar.
+assert ".panel.failover" in m.PHASEN_HTML, "Alarmflaeche bekommt keine Phase"
+
+# In der erzeugten Seite: die Failover-Kachel traegt die Flaeche, die
+# nominale nicht.
+_fb = _body(m.render_overview_html(consoles, start_real, now, [], latency=_lat2))
+assert 'class="panel bracketed failover"' in _fb
+assert ".panel.failover {" in m.render_overview_html(
+    consoles, start_real, now, [], latency=_lat2), "Regel fehlt auf der Seite"
+print("31) Failover-Kachel: Flaeche, Kante, Puls ohne Flackern         OK")
 
 
 print("\nAlle Pruefungen bestanden.")
