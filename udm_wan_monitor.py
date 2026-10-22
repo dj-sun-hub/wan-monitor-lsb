@@ -732,6 +732,10 @@ FRESH_STALE_S = OFFLINE_THRESHOLD_S
 # Vorher war ein Failover nur sichtbar, SOLANGE er lief - wer 10 Minuten
 # spaeter draufschaute, sah nichts mehr davon.
 EVENT_LOG_KEEP = 50
+# Und nicht aelter als das: die Seite zeigt ueberall sonst 24 Stunden
+# (Flow-Kurve, Latenz, Paketverlust). Ein Protokolleintrag von letzter Woche
+# daneben liest sich, als waere er von heute.
+EVENT_LOG_MAX_AGE_S = 24 * 3600
 # Die Uebersicht muss ohne Scrollbalken auf EINEN Bildschirm passen (harte
 # Vorgabe) - das Protokoll steht deshalb neben dem Systemschema statt darunter
 # und zeigt nur wenige Eintraege; aeltere sind per Scrollen im Protokoll
@@ -1631,9 +1635,29 @@ def _lat_spur_html(info):
             f"stroke-width='1.1' vector-effect='non-scaling-stroke'/>{kerben}</svg>")
 
 
+def _events_aktuell(events, now):
+    """Die Eintraege der letzten EVENT_LOG_MAX_AGE_S, hoechstens
+    EVENT_LOG_KEEP, in urspruenglicher Reihenfolge.
+
+    Eintraege mit unlesbarem Zeitstempel bleiben drin: ihr Alter laesst sich
+    nicht beurteilen, und Daten wegzuwerfen, deren Uhrzeit man nicht lesen
+    kann, waere die schlechtere der beiden Moeglichkeiten. Die Obergrenze
+    faengt sie ohnehin ab."""
+    grenze = now - timedelta(seconds=EVENT_LOG_MAX_AGE_S)
+    behalten = []
+    for ev in events:
+        try:
+            if datetime.fromisoformat(ev["ts"]) >= grenze:
+                behalten.append(ev)
+        except (KeyError, ValueError, TypeError):
+            behalten.append(ev)
+    return behalten[-EVENT_LOG_KEEP:]
+
+
 def _update_event_log(state, consoles, now):
     """Haelt Statuswechsel je Konsole in state['events'] fest (rollierend,
-    EVENT_LOG_KEEP) und merkt sich den zuletzt gesehenen Status in
+    EVENT_LOG_KEEP, und nicht aelter als EVENT_LOG_MAX_AGE_S) und merkt sich
+    den zuletzt gesehenen Status in
     state['status'], damit beim naechsten Poll (neuer Prozess!) der Wechsel
     erkannt wird. Beim allerersten Lauf ohne gespeicherten Status gibt es
     EINEN Ausgangslage-Eintrag statt sechs Pseudo-Wechseln."""
@@ -1668,16 +1692,22 @@ def _update_event_log(state, consoles, now):
                 add(name, "ok", "VERBINDUNG WIEDERHERGESTELLT — LINK NOMINAL")
             else:
                 add(name, "ok", "NEU IM MONITOR — STATUS: NOMINAL")
-    del events[:-EVENT_LOG_KEEP]
+    # In-place, damit der Aufrufer dieselbe Liste behaelt (state wird
+    # danach gesichert).
+    events[:] = _events_aktuell(events, now)
     state["status"] = current
 
 
 def _event_log_html(events, now):
-    """Die juengsten EVENT_LOG_SHOW Eintraege, neuester zuerst. Datum nur,
-    wenn der Eintrag nicht von heute ist (spart Platz in der Zeitspalte)."""
+    """Die juengsten EVENT_LOG_SHOW Eintraege der letzten 24 Stunden,
+    neuester zuerst. Datum nur, wenn der Eintrag nicht von heute ist (spart
+    Platz in der Zeitspalte)."""
     today = now.astimezone().date()
     items = []
-    for ev in list(events)[-EVENT_LOG_SHOW:][::-1]:
+    # Auch hier die Altersgrenze: --report schreibt das Protokoll nicht fort
+    # (record_events=False) und wuerde sonst Eintraege zeigen, die der
+    # naechste echte Poll laengst geloescht hat.
+    for ev in _events_aktuell(list(events), now)[-EVENT_LOG_SHOW:][::-1]:
         try:
             ts_local = datetime.fromisoformat(ev["ts"]).astimezone()
         except (KeyError, ValueError, TypeError):
@@ -1691,8 +1721,11 @@ def _event_log_html(events, now):
                      f'<span class="fn">{html.escape(str(ev.get("console", "")))}</span>'
                      f'<span class="msg" title="{msg}">{msg}</span></li>')
     if not items:
+        # Ein leeres Protokoll heisst jetzt "ruhige 24 Stunden", nicht
+        # "noch nichts aufgezeichnet" - das waere seit der Altersgrenze
+        # falsch und saehe aus, als funktioniere der Monitor nicht.
         items.append('<li class="info"><span class="t num">--:--:--</span><span class="fn">MONITOR</span>'
-                     '<span class="msg">NOCH KEINE STATUSWECHSEL AUFGEZEICHNET</span></li>')
+                     '<span class="msg">KEINE STATUSWECHSEL IN DEN LETZTEN 24 H</span></li>')
     return "\n      ".join(items)
 
 

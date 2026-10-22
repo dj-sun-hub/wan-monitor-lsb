@@ -742,4 +742,50 @@ assert ".panel.failover {" in m.render_overview_html(
 print("31) Failover-Kachel: Flaeche, Kante, Puls ohne Flackern         OK")
 
 
+# ---------------------------------------------------------------------------
+# 32) Ereignisprotokoll: nur die letzten 24 Stunden
+# ---------------------------------------------------------------------------
+# Vorher rollierte es allein ueber die Anzahl. Gemessen am echten Zustand
+# vom 22.10.2026: 47 der 50 gespeicherten Eintraege waren aelter als 24
+# Stunden, der aelteste fast zwei Wochen - auf einer Seite, die sonst
+# ueberall 24 Stunden zeigt.
+_mk = lambda minuten, name="HAN--UDM-1": {
+    "ts": (now - timedelta(minutes=minuten)).isoformat(),
+    "console": name, "kind": "ok", "msg": f"EINTRAG {minuten} MIN ALT"}
+_alt_neu = [_mk(3000), _mk(1500), _mk(1441), _mk(1439), _mk(60), _mk(1)]
+
+_uebrig = m._events_aktuell(_alt_neu, now)
+assert len(_uebrig) == 3, f"Altersgrenze greift nicht ({len(_uebrig)} statt 3)"
+assert _uebrig[0]["msg"].startswith("EINTRAG 1439"), "Reihenfolge verdreht"
+assert _uebrig[-1]["msg"].startswith("EINTRAG 1 "), "neuester Eintrag fehlt"
+
+# Die Anzahlgrenze gilt weiter - beide zusammen, nicht statt einander.
+_viele = [_mk(i) for i in range(m.EVENT_LOG_KEEP + 20, 0, -1)]
+assert len(m._events_aktuell(_viele, now)) == m.EVENT_LOG_KEEP
+
+# Ein unlesbarer Zeitstempel bleibt drin: sein Alter laesst sich nicht
+# beurteilen, und Daten wegzuwerfen, deren Uhrzeit man nicht lesen kann,
+# waere die schlechtere der beiden Moeglichkeiten.
+for _kaputt in ({"msg": "ohne ts"}, {"ts": None, "msg": "x"}, {"ts": "morgen", "msg": "y"}):
+    assert _kaputt in m._events_aktuell([_mk(3000), _kaputt], now), f"verworfen: {_kaputt}"
+
+# Beim Fortschreiben verschwinden die alten aus dem Zustand - und zwar
+# in-place, der Aufrufer sichert danach dieselbe Liste.
+_st = {"events": list(_alt_neu), "status": {c["device"]: "nominal" for c in consoles}}
+_liste = _st["events"]
+m._update_event_log(_st, consoles, now)
+assert _st["events"] is _liste, "die Liste wurde ersetzt statt beschnitten"
+assert not [e for e in _st["events"] if e["msg"].startswith("EINTRAG 3000")], (
+    "alter Eintrag ueberlebt im Zustand")
+
+# Und beim Anzeigen: --report schreibt das Protokoll NICHT fort und wuerde
+# sonst zeigen, was der naechste echte Poll laengst geloescht hat.
+_html_alt = m._event_log_html([_mk(3000), _mk(2000)], now)
+assert "EINTRAG 3000" not in _html_alt and "EINTRAG 2000" not in _html_alt
+assert "KEINE STATUSWECHSEL IN DEN LETZTEN 24 H" in _html_alt, (
+    "leeres Protokoll meldet nicht den Grund")
+assert "EINTRAG 60" in m._event_log_html([_mk(3000), _mk(60)], now)
+print("32) Ereignisprotokoll: nur die letzten 24 Stunden              OK")
+
+
 print("\nAlle Pruefungen bestanden.")
