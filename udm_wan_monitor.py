@@ -678,7 +678,7 @@ ALERT_THRESHOLD_BYTES_BY_CONSOLE = {
     "LSB--UDM-1": 9 * GB,
     "KLO--UDM-1": 4 * GB,
     "NID--UDM-1": 4 * GB,
-    "HAN--UDM-1": 4 * GB,
+    "HAN--UDM-1": 9 * GB,    # Tarif auf 9 GB angehoben (Nutzervorgabe)
 }
 DEFAULT_ALERT_THRESHOLD_BYTES = 4 * GB  # Fallback fuer nicht gelistete Konsolen
 WARN_THRESHOLD_FACTOR = 0.8
