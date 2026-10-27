@@ -190,21 +190,31 @@ jobs:
     # Ohne jede concurrency hier konnten mehrere veroeffentlichen-Laeufe
     # gleichzeitig starten und kollidierten an der GitHub-Pages-API: "Failed
     # to create deployment (status: 400) ... due to in progress deployment".
-    # cancel-in-progress:false (Warteschlange statt Abbruch) war KEINE gute
-    # Loesung: bei einem Trigger alle ~1 Minute wuchs die Warteschlange
-    # schneller, als sie abgearbeitet werden konnte (ein Deploy brauchte am
-    # Ende teils 5 Minuten Wartezeit) - das belegte Runner-Kapazitaet ueber
-    # lange Zeit und verdraengte dadurch sogar neue poll-Laeufe, die dann
-    # selbst wegen Zeitueberschreitung abgebrochen wurden. Fuer dieses
-    # Dashboard zaehlt ohnehin nur der JEWEILS AKTUELLSTE Stand - ein
-    # ueberholter, noch wartender Deploy bringt keinen Mehrwert, sobald ein
-    # neuerer Poll bereits vorliegt. Deshalb wie beim poll-Job:
-    # cancel-in-progress:true - ein neuer Deploy bricht den alten sauber auf
-    # Actions-Ebene ab, statt ihn entweder warten zu lassen (Rueckstau) oder
-    # ihn parallel kollidieren zu lassen (400-Fehler).
+    # Es braucht also eine Gruppe - die Frage ist nur, was mit einem bereits
+    # laufenden Deploy passiert.
+    #
+    # cancel-in-progress: true war hier die falsche Antwort und hat den
+    # Monitor am 27.10.2026 ueber eine Viertelstunde eingefroren. Gemessen an
+    # 60 Laeufen: ein erfolgreicher Deploy dauert 7-11s ("Created deployment"
+    # -> "Reported success!" in rund 6s), die ABGEBROCHENEN Jobs sassen aber
+    # 45-100s da, ohne einen einzigen Step auszufuehren. Das ist kein
+    # langsamer Pages-Dienst, das ist Wartezeit auf den Abbruch des Vorgaengers:
+    # ein neuer Lauf darf die Gruppe erst betreten, wenn dessen Teardown
+    # fertig ist, und das dauert ungefaehr eine Minute - also genau unseren
+    # Triggerabstand. Jeder Lauf bricht damit den vorherigen ab und wartet
+    # dann auf dessen Teardown, bis ihn der naechste abbricht. Ein Livelock,
+    # der sich nur loest, wenn zufaellig ein Trigger ausfaellt.
+    #
+    # false heisst auf JOB-Ebene ausdruecklich nicht "unbegrenzte
+    # Warteschlange" (das galt fuer die frueher hier stehende Variante auf
+    # Workflow-Ebene): GitHub laesst je Gruppe genau einen Lauf arbeiten und
+    # genau einen warten, und ein neuer Wartender ersetzt den alten. Damit
+    # bleibt "der aktuellste Stand gewinnt" erhalten, ohne eine Minute
+    # Teardown zu bezahlen - die Seite hinkt hoechstens einen Deploy (~10s)
+    # hinter dem Poll her.
     concurrency:
       group: wan-monitor-deploy
-      cancel-in-progress: true
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
