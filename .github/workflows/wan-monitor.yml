@@ -13,6 +13,9 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  # Zum Lesen der github-pages-Deployments und ihrer Zustaende, siehe den
+  # Schritt 'Haengendes Pages-Deployment abbrechen' weiter unten.
+  deployments: write
 
 jobs:
   poll:
@@ -219,5 +222,76 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      # Am 29.10.2026 blieb ein serverseitiges Pages-Deployment 28 Minuten in
+      # 'in_progress' haengen. Jeder folgende Lauf bekam daraufhin HTTP 400:
+      # "due to in progress deployment. Please cancel <id> first or wait for
+      # it to complete." - 28 Fehlschlaege, 28 Mails, und die Seite stand so
+      # lange still, bis GitHub es von selbst aufloeste.
+      #
+      # Genau das tun wir jetzt selbst: haengt ein Deployment laenger als 90
+      # Sekunden, wird es abgebrochen. Die Schwelle trennt es von einem ganz
+      # normalen, eben erst gestarteten Deploy - der ist nach 7-11s fertig
+      # (gemessen), und einen laufenden wollen wir nicht stoeren.
+      #
+      # Der Schritt darf den Job nie scheitern lassen; er ist Vorsorge, kein
+      # Selbstzweck. Jeder API-Aufruf ist mit '|| true' abgesichert, am Ende
+      # steht ein 'exit 0', und continue-on-error faengt den Rest.
+      - name: Haengendes Pages-Deployment abbrechen
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          jetzt=$(date -u +%s)
+          liste="$RUNNER_TEMP/deployments.txt"
+          abfrage="deployments?environment=github-pages&per_page=10"
+          # Durch Leerzeichen getrennt: ID, SHA und ISO-Zeitstempel enthalten
+          # selbst keine, also braucht es hier keinen Trennzeichen-Zauber.
+          format='.[] | "\(.id) \(.sha) \(.created_at)"'
+          gh api "repos/$REPO/$abfrage" --jq "$format" > "$liste" || true
+
+          while read -r id sha erstellt; do
+            [ -n "$id" ] || continue
+            # Der zuletzt gemeldete Zustand zaehlt; 'statuses' liefert den
+            # neuesten zuerst. Fehlt er ganz, ist das Deployment eben erst
+            # angelegt worden - also nicht unser Fall.
+            pfad="repos/$REPO/deployments/$id/statuses?per_page=1"
+            zustand=$(gh api "$pfad" --jq '.[0].state // "ohne"' || echo "ohne")
+            case "$zustand" in
+              queued|pending|waiting|in_progress) ;;
+              *) continue ;;
+            esac
+            begonnen=$(date -u -d "$erstellt" +%s)
+            alter=$(( jetzt - begonnen ))
+            if [ "$alter" -lt 90 ]; then
+              echo "Deployment $sha laeuft seit ${alter}s ($zustand) - normal, in Ruhe lassen."
+              continue
+            fi
+            echo "::warning title=Pages-Deployment haengt::$sha steht seit ${alter}s auf '$zustand' und wird abgebrochen."
+            # Die Pages-API nimmt hier die Build-Version, also den SHA - genau
+            # die ID, die der Fehlschlag oben nennt.
+            if gh api -X POST "repos/$REPO/pages/deployments/$sha/cancel"; then
+              echo "Abgebrochen, der naechste Deploy hat freie Bahn."
+            else
+              echo "::warning::Abbruch von $sha fehlgeschlagen, der naechste Lauf versucht es erneut."
+            fi
+          done < "$liste"
+          exit 0
+
+      # continue-on-error: ein einzelner Fehlschlag ist KEIN Grund, den Lauf
+      # rot zu faerben und eine Mail zu schicken. Die naechste Messung kommt
+      # in einer Minute und veroeffentlicht denselben Stand erneut; mit dem
+      # Abbruch-Schritt oben ist die Ursache bis dahin meist beseitigt. Ein
+      # roter Lauf pro Minute waere nur Laerm, der genau dann aufhoert, wenn
+      # man ihn abstellt - also kein Signal.
       - id: deploy
+        continue-on-error: true
         uses: actions/deploy-pages@v4
+
+      # Unsichtbar wird der Fehlschlag damit nicht: er steht als Annotation am
+      # Lauf (Annotationen mailen nicht) - und die Seite selbst prueft ihren
+      # Stand und weist einen veralteten aus.
+      - name: Fehlgeschlagenen Deploy vermerken
+        if: steps.deploy.outcome == 'failure'
+        run: |
+          echo "::warning title=Deploy uebersprungen::Dieser Stand wurde nicht veroeffentlicht; der naechste Lauf holt es nach."
