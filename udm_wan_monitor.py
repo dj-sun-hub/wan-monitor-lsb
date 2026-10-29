@@ -381,6 +381,92 @@ def fetch_sensors(console_names_by_host):
     return aus
 
 
+def _primaer_uplink(console_name):
+    """Primaeruplink einer Konsole, mit Substring-Match wie bei den anderen
+    Je-Konsole-Nachschlagen."""
+    if console_name:
+        needle = console_name.lower()
+        for name, wert in PRIMAER_UPLINK_BY_CONSOLE.items():
+            if needle in name.lower() or name.lower() in needle:
+                return wert
+    return PRIMAER_UPLINK
+
+
+def fetch_uplinks(console_names_by_host):
+    """Aktiver Uplink je Standort, direkt aus dem Controller.
+
+    Liefert {konsolenname: {"aktiv", "status", "ts"}} - 'aktiv' ist der Name
+    des gerade benutzten Uplinks ('WAN', 'WAN3', ...), 'status' der Zustand
+    aller bekannten Uplinks. Eine nicht erreichbare Konsole fehlt einfach;
+    der Aufrufer behaelt dann den letzten Stand (siehe refresh_uplinks) und
+    faellt nach dessen Alterung auf die Ratenregel zurueck."""
+    aus = {}
+
+    def hole(eintrag):
+        host, name = eintrag
+        roh = legacy_get(host, "/api/s/default/stat/device")
+        for g in (roh.get("data") or []):
+            # Das Gateway heraussuchen, nicht den erstbesten Switch oder
+            # Access Point: die haben auch ein 'uplink'-Feld, dort steht dann
+            # aber ihr eigener Anschluss ('eth0'). Erkennungsmerkmal ist
+            # 'last_wan_status'/'wan1' - beides hat nur das Geraet, das
+            # wirklich am Internet haengt, modellunabhaengig.
+            if "last_wan_status" not in g and "wan1" not in g:
+                continue
+            uplink = g.get("uplink") or {}
+            aktiv = uplink.get("comment") or uplink.get("name")
+            if not aktiv:
+                continue
+            return name, {"aktiv": aktiv, "status": g.get("last_wan_status") or {}}
+        return name, None
+
+    with ThreadPoolExecutor(max_workers=len(console_names_by_host) or 1) as pool:
+        for fut in as_completed([pool.submit(hole, e)
+                                 for e in console_names_by_host.items()]):
+            try:
+                name, wert = fut.result()
+            except Exception as exc:
+                # Erwartbar: 404 'device_offline', wenn die Konsole gerade
+                # nicht am Netz haengt. Genau der Fall, fuer den es den
+                # Rueckfall auf die Ratenregel gibt.
+                print(f"Hinweis: Uplink-Zustand nicht abrufbar ({exc}).")
+                continue
+            if wert:
+                aus[name] = wert
+    return aus
+
+
+def refresh_uplinks(state, console_names_by_host, now):
+    """Wie refresh_sensors, nur fuer den aktiven Uplink: frischt nur auf, wenn
+    der Stand aelter als UPLINK_REFRESH_S ist, und behaelt bei einem
+    Fehlschlag den letzten.
+
+    Anders als bei Klima und Latenz wird der Zeitstempel JE KONSOLE
+    mitgefuehrt: eine Konsole kann seit Stunden nicht erreichbar sein,
+    waehrend die anderen fuenf frisch sind. Ein gemeinsamer Zeitstempel wuerde
+    deren Frische auf den alten Stand der sechsten uebertragen - und genau
+    dieser alte Stand darf die Failover-Anzeige nicht mehr bestimmen."""
+    cache = state.get("uplinks") or {}
+    sites = dict(cache.get("sites") or {})
+    ts = cache.get("ts")
+    if ts:
+        try:
+            if (now - datetime.fromisoformat(ts)).total_seconds() < UPLINK_REFRESH_S:
+                return sites
+        except (ValueError, TypeError):
+            pass
+    try:
+        frisch = fetch_uplinks(console_names_by_host)
+    except Exception as exc:
+        print(f"Hinweis: Uplink-Zustand nicht abrufbar ({exc}), behalte letzten Stand.")
+        return sites
+    for name, wert in frisch.items():
+        wert["ts"] = now.isoformat()
+        sites[name] = wert
+    state["uplinks"] = {"ts": now.isoformat(), "sites": sites}
+    return sites
+
+
 def refresh_sensors(state, console_names_by_host, now):
     """Wie refresh_latency, nur fuer die Klimasensoren: frischt den
     Zwischenspeicher nur auf, wenn er aelter als SENSOR_REFRESH_S ist, und
@@ -673,8 +759,10 @@ GB = 1000 ** 3
 # ueblichem/erwartetem Datenvolumen des Standorts. Gelb liegt einheitlich bei
 # 80% der jeweiligen Rot-Schwelle.
 ALERT_THRESHOLD_BYTES_BY_CONSOLE = {
-    "WTB--UDM-1": 24 * GB,
-    "KNZ--UDM-1": 24 * GB,   # auf WTB-Niveau angehoben (Nutzervorgabe)
+    # 25 GB laut Telekom-Portal ("von 25 GB"), Reset am Monatsersten - das
+    # deckt sich mit der Monatsrechnung hier (ab dem 1. um 00:00 Ortszeit).
+    "WTB--UDM-1": 25 * GB,
+    "KNZ--UDM-1": 25 * GB,   # gleicher Tarif wie WTB (Nutzervorgabe)
     "LSB--UDM-1": 9 * GB,
     "KLO--UDM-1": 4 * GB,
     "NID--UDM-1": 4 * GB,
@@ -715,6 +803,12 @@ ALLE_AUSGEFALLEN = False
 # Update" gilt (5x der 1-Minuten-Pollintervall Toleranz fuer vereinzelt
 # uebersprungene Laeufe, siehe poll() Fehlerbehandlung).
 OFFLINE_THRESHOLD_S = 300
+# Ab hier ist es kein Aussetzer mehr, sondern ein Ausfall. Dazwischen (5-20
+# Min) gilt der Standort als 'gestoert': Daten veraltet, aber er meldet sich
+# erfahrungsgemaess wieder. WTB hatte in der Woche vor dem 29.10.2026 35
+# Aussetzer zwischen 5 und 39 Minuten - jeder davon stand bis dahin als
+# vollwertiger LINK LOST im Protokoll.
+LINK_LOST_S = 20 * 60
 # Datenfrische-Anzeige ("SYNC" oben rechts): die Seite zaehlt clientseitig
 # die Sekunden seit ihrem Erzeugungszeitpunkt hoch. Bis FRESH_WARN_S teal,
 # danach amber, ab FRESH_STALE_S rot blinkend. Zweck: die Seite ist statisch
@@ -757,6 +851,19 @@ EVENT_LOG_SHOW = 4
 # (~1,5 KB fuer alle sechs) und nicht die vollen ~288 Punkte je Konsole - der
 # State wird bei JEDEM Poll committet, da gehoeren keine 35 KB hinein.
 LATENCY_REFRESH_S = 240
+# Wie oft der aktive Uplink je Konsole nachgesehen wird. Jeder Abruf ist ein
+# Proxy-Aufruf zur Konsole, deshalb nicht im Minutentakt - aber deutlich
+# haeufiger als Klima/Latenz, weil daran die Failover-Anzeige haengt.
+UPLINK_REFRESH_S = 120
+# Name des Primaeruplinks im Controller. Bei allen sechs Konsolen heisst er
+# 'WAN' (nachgesehen am 29.10.2026); die LTE-Strecke taucht je nach Modell als
+# 'WAN2' oder 'WAN3' auf. Abweichungen hier eintragen.
+PRIMAER_UPLINK = "WAN"
+PRIMAER_UPLINK_BY_CONSOLE = {}
+# Ab diesem Alter gilt der gespeicherte Uplink-Zustand als unbrauchbar und die
+# Anzeige faellt auf die Ratenregel zurueck. Mehr als UPLINK_REFRESH_S, damit
+# ein einzelner fehlgeschlagener Abruf nicht sofort durchschlaegt.
+UPLINK_STALE_S = 15 * 60
 # Klimasensoren (UFP-SENSE) je Standort. Raumklima bewegt sich langsam -
 # haeufiger abzufragen kostet nur Proxy-Aufrufe, ohne etwas zu zeigen.
 SENSOR_REFRESH_S = 300
@@ -1038,6 +1145,11 @@ def compute_stats(rows, start, site_filter=None, rows_prefiltered=False):
         flow_chart_mini=flow_chart_mini,
         is_failover=is_failover, last_rate_kbps=last_rate_kbps, is_offline=is_offline,
         last_seen=last_seen,
+        # Wie lange der letzte Messwert her ist. _console_status() hat selbst
+        # kein 'now' und koennte es sonst nicht entscheiden; None heisst "noch
+        # nie etwas gesehen" und zaehlt als voller Ausfall.
+        stillstand_s=(None if last_seen is None
+                      else (now - last_seen).total_seconds()),
     )
 
 
@@ -1427,19 +1539,57 @@ def refresh_countdown_script(now):
 </script>"""
 
 
+def _uplink_wenn_frisch(eintrag, now):
+    """Der aktive Uplink aus einem Zwischenspeicher-Eintrag - aber nur, wenn
+    er jung genug ist, sonst None.
+
+    UPLINK_STALE_S ist absichtlich grosszuegiger als UPLINK_REFRESH_S: ein
+    einzelner fehlgeschlagener Abruf soll die Anzeige nicht sofort auf die
+    schwaechere Ratenregel zurueckwerfen."""
+    ts = eintrag.get("ts")
+    if not ts:
+        return None
+    try:
+        alter = (now - datetime.fromisoformat(ts)).total_seconds()
+    except (ValueError, TypeError):
+        return None
+    return eintrag.get("aktiv") if alter <= UPLINK_STALE_S else None
+
+
 def _console_status(c):
     """Einheitliche Status-Einstufung einer Konsole fuer Uebersicht, Schema
-    und Ereignisprotokoll: 'failover' > 'offline' > 'nominal'. Failover hat
-    Vorrang, is_offline setzt is_failover in compute_stats() aber ohnehin
-    schon zurueck, beides gleichzeitig kommt also nicht vor.
+    und Ereignisprotokoll: 'failover' > 'offline' > 'nominal'.
+
+    Failover wird vorrangig am AKTIVEN UPLINK erkannt (c['uplink_aktiv'],
+    gesetzt in write_reports aus dem Controller-Zustand). Das ist das ehrliche
+    Signal und gilt in beide Richtungen: meldet der Controller den
+    Primaeruplink, ist ein hoher Upload eben Verkehr und kein Failover; meldet
+    er den Backup-Uplink, ist es Failover, auch wenn kaum etwas fliesst.
+
+    Letzteres ist der Grund fuer die Umstellung: bei aufgebrauchtem
+    LTE-Volumen drosselt der Anbieter, die Rate faellt unter die Schwelle, und
+    die alte Regel meldete ausgerechnet dann "nominal" (WTB, 28.10.2026).
+
+    Ohne frischen Uplink-Zustand - die Konsole ist waehrend eines Aussetzers
+    nicht erreichbar - bleibt die Ratenregel als Rueckfall.
 
     Die manuelle Ausfallmarkierung (ALLE_AUSGEFALLEN) sticht alles: sie
     bildet eine Stoerung ab, die die UDM-Messung gar nicht sehen kann."""
     if ALLE_AUSGEFALLEN:
         return "offline"
-    if c["is_failover"]:
+    aktiv = c.get("uplink_aktiv")
+    if aktiv:
+        if aktiv.upper() != _primaer_uplink(c.get("device", "")).upper():
+            return "failover"
+    elif c["is_failover"]:
         return "failover"
     if c["is_offline"]:
+        # Zwischen Aussetzer und Ausfall unterscheiden: ein Standort, der
+        # minutenweise verschwindet und wiederkommt, ist etwas anderes als
+        # einer, der aus ist - und soll auch anders aussehen.
+        still = c.get("stillstand_s")
+        if still is not None and still < LINK_LOST_S:
+            return "gestoert"
         return "offline"
     return "nominal"
 
@@ -1540,7 +1690,10 @@ def _radar_html(consoles, latency):
         if ms is None:
             continue
         kurz = html.escape(c["device"].split("--")[0])
-        cls = {"failover": "alert", "offline": "lost"}.get(_console_status(c), "ok")
+        # Ein Aussetzer zaehlt hier wie erloschen: der Latenzwert stammt aus
+        # dem Zwischenspeicher und ist waehrenddessen nicht mehr aktuell.
+        cls = {"failover": "alert", "offline": "lost",
+               "gestoert": "lost"}.get(_console_status(c), "ok")
         winkel = math.radians(-90 + i * 360.0 / max(len(consoles), 1))
         # 6 % Totzone innen, damit Punkte nahe 0 ms nicht im Fadenkreuz sitzen
         r = 6 + min(ms / RADAR_MAX_MS, 1.0) * 40
@@ -1654,6 +1807,35 @@ def _events_aktuell(events, now):
     return behalten[-EVENT_LOG_KEEP:]
 
 
+def _aussetzer_dauer_min(seit_iso, now):
+    """Dauer eines Aussetzers in ganzen Minuten. Ohne brauchbaren Startpunkt
+    (z.B. erster Lauf nach einem Neustart mitten im Aussetzer) wird die
+    Schwelle genannt, ab der er ueberhaupt gezaehlt wurde - lieber die
+    gesicherte Untergrenze als eine erfundene Zahl."""
+    if seit_iso:
+        try:
+            return max(1, int((now - datetime.fromisoformat(seit_iso)).total_seconds() // 60))
+        except (ValueError, TypeError):
+            pass
+    return OFFLINE_THRESHOLD_S // 60
+
+
+def _aussetzer_zahl(events, console, now):
+    """Wie viele Aussetzer dieser Standort in den letzten 24 Stunden schon
+    hinter sich hat."""
+    grenze = now - timedelta(seconds=EVENT_LOG_MAX_AGE_S)
+    n = 0
+    for ev in events:
+        if ev.get("console") != console or not str(ev.get("msg", "")).startswith("AUSSETZER"):
+            continue
+        try:
+            if datetime.fromisoformat(ev["ts"]) >= grenze:
+                n += 1
+        except (KeyError, ValueError, TypeError):
+            n += 1
+    return n
+
+
 def _update_event_log(state, consoles, now):
     """Haelt Statuswechsel je Konsole in state['events'] fest (rollierend,
     EVENT_LOG_KEEP, und nicht aelter als EVENT_LOG_MAX_AGE_S) und merkt sich
@@ -1662,6 +1844,9 @@ def _update_event_log(state, consoles, now):
     erkannt wird. Beim allerersten Lauf ohne gespeicherten Status gibt es
     EINEN Ausgangslage-Eintrag statt sechs Pseudo-Wechseln."""
     events = state.setdefault("events", [])
+    # Beginn eines laufenden Aussetzers je Konsole; ueberlebt den Prozess im
+    # Zustand, weil jeder Poll ein neuer Prozess ist.
+    laufend = state.setdefault("aussetzer_seit", {})
     prev = state.get("status")
     current = {c["device"]: _console_status(c) for c in consoles}
 
@@ -1679,13 +1864,30 @@ def _update_event_log(state, consoles, now):
             name, status, old = c["device"], current[c["device"]], prev.get(c["device"])
             if old == status:
                 continue
-            if status == "failover":
+            if status == "gestoert":
+                # Kein Eintrag beim BEGINN: ein Aussetzer ist erst
+                # interessant, wenn man seine Dauer kennt. Gemerkt wird der
+                # LETZTE MESSWERT, nicht der Moment des Bemerkens - der liegt
+                # naturgemaess schon OFFLINE_THRESHOLD_S dahinter, und die
+                # spaeter gemeldete Dauer soll die echte Luecke sein.
+                laufend[name] = (c["last_seen"] or now).isoformat()
+            elif status == "failover":
                 add(name, "crit",
                     f"UPLOAD-Ø {human_kbps(c['last_rate_kbps'])} > "
                     f"{_console_failover_threshold(name):.0f} KBPS "
                     f"({FAILOVER_CONSECUTIVE} POLLS) — FAILOVER BESTÄTIGT")
             elif status == "offline":
-                add(name, "warn", f"KEIN POLL SEIT > {OFFLINE_THRESHOLD_S} S — STATUS: LINK LOST")
+                laufend.pop(name, None)
+                add(name, "warn",
+                    f"SEIT ÜBER {LINK_LOST_S // 60} MIN KEIN MESSWERT — STATUS: LINK LOST")
+            elif old == "gestoert":
+                # Jetzt lohnt der Eintrag: eine Zeile mit Dauer und mit der
+                # Nummer des Aussetzers in 24 Stunden. Aus dem Flackern wird
+                # damit eine Aussage ueber die Haeufung.
+                dauer = _aussetzer_dauer_min(laufend.pop(name, None), now)
+                nummer = _aussetzer_zahl(events, name, now) + 1
+                add(name, "ok",
+                    f"AUSSETZER {dauer} MIN BEENDET — {nummer}. IN 24 H")
             elif old == "failover":
                 add(name, "ok", f"UPLOAD-Ø {human_kbps(c['last_rate_kbps'])} WIEDER UNTER SCHWELLE — FAILOVER BEENDET")
             elif old == "offline":
@@ -2767,6 +2969,13 @@ REDUKTION_CSS = """
   .panel { border-left: 2px solid rgba(150, 200, 215, .16);
     padding: 6px 20px 6px 22px; }
   .panel.offline { border-left: 2px solid rgba(120, 150, 158, .45); }
+  /* Aussetzer: eine Stufe unter 'erloschen'. Gestrichelte Kante statt
+     durchgezogener - dieselbe Sprache ("hier stimmt etwas nicht"), aber
+     sichtbar vorlaeufig, und ohne den Glasbruch, der dem echten Ausfall
+     vorbehalten bleibt. Keine eigene Farbe: die Kachel meldet veraltete
+     Werte, keinen Alarm. */
+  .panel.gestoert { border-left: 2px dashed rgba(150, 200, 215, .42); }
+  .chip.gestoert { color: var(--dim); border-color: rgba(150, 200, 215, .35); }
 
   /* Der Alarmfall ist die Ausnahme von der Regel, die die ganze Seite
      traegt: hier DARF die Flaeche Farbe bekommen. Genau dafuer wurde sie
@@ -2900,13 +3109,22 @@ def render_overview_html(consoles, start, now, events=(), latency=None, sensors=
             sub = (f'Upload-Ø {human_kbps(c["last_rate_kbps"])} &middot; Schwelle '
                    f'{_console_failover_threshold(c["device"]):.0f} kbps &middot; LTE trägt Last')
             sub_cls = " alert"
-        elif status == "offline":
-            chip = '<span class="chip lost">Link Lost</span>'
+        elif status in ("offline", "gestoert"):
             if c["last_seen"] is not None:
                 age_min = int((now - c["last_seen"]).total_seconds() // 60)
-                sub = f'Kein Poll seit {age_min} Min &middot; Stand eingefroren'
             else:
-                sub = 'Noch kein einziger Messpunkt'
+                age_min = None
+            if status == "gestoert":
+                # Bewusst ohne Alarmfarbe und ohne Glasbruch: der Standort
+                # meldet sich erfahrungsgemaess wieder. Gezeigt wird, was
+                # stimmt - die Werte sind alt -, nicht mehr.
+                chip = '<span class="chip gestoert">Aussetzer</span>'
+                sub = (f'Kein Messwert seit {age_min} Min &middot; Werte veraltet'
+                       if age_min is not None else 'Noch kein einziger Messpunkt')
+            else:
+                chip = '<span class="chip lost">Link Lost</span>'
+                sub = (f'Kein Messwert seit {age_min} Min &middot; Stand eingefroren'
+                       if age_min is not None else 'Noch kein einziger Messpunkt')
             sub_cls = ""
         else:
             chip = '<span class="chip nominal">Nominal</span>'
@@ -2938,7 +3156,8 @@ def render_overview_html(consoles, start, now, events=(), latency=None, sensors=
                     (" value-warn" if _loss >= VERLUST_WARN_PCT else ""))
         loss_titel = (f"Paketverlust im Mittel ueber 24 h; Spitze {_loss_max:.1f} %"
                       if _loss_max else "Kein Paketverlust in den letzten 24 h")
-        panel_cls = {"failover": " failover", "offline": " offline"}.get(status, "")
+        panel_cls = {"failover": " failover", "offline": " offline",
+                     "gestoert": " gestoert"}.get(status, "")
         cards.append(f"""<div class="panel bracketed{panel_cls}">
       <div class="bk-tr"></div><div class="bk-bl"></div>
       <div class="panel-head"><h3 class="fn"><span class="idx num">{i:02d}·</span>{html.escape(c['device'])}</h3>{chip}</div>
@@ -3080,6 +3299,18 @@ def write_reports(rows, start, console_names, state=None, record_events=True):
     buckets = _group_by_console(rows, console_names)
     consoles = [compute_stats(buckets[name], start, site_filter=name, rows_prefiltered=True)
                 for name in console_names]
+
+    # Aktiven Uplink aus dem Zwischenspeicher an die Konsolen haengen, BEVOR
+    # das Ereignisprotokoll fortgeschrieben wird - sonst bewertet es einen
+    # Statuswechsel noch nach der alten Ratenregel. Ein Stand aelter als
+    # UPLINK_STALE_S bleibt bewusst liegen: lieber die Ratenregel als eine
+    # Failover-Anzeige, die seit Stunden niemand bestaetigt hat.
+    if state is not None:
+        gespeichert = (state.get("uplinks") or {}).get("sites") or {}
+        for c in consoles:
+            eintrag = gespeichert.get(c["device"]) or {}
+            c["uplink_aktiv"] = _uplink_wenn_frisch(eintrag, now)
+            c["uplink_status"] = eintrag.get("status") or {}
 
     if state is None:
         events, latency, sensors = [], {}, {}
@@ -3366,6 +3597,7 @@ def main():
         # Klima der Standorte, eigener Takt (siehe SENSOR_REFRESH_S).
         # Fehlschlaege sind auch hier folgenlos.
         refresh_sensors(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
+        refresh_uplinks(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
         # Baseline sofort sichern: scheitert die Berichtserzeugung danach,
         # waere der frisch geholte SIM-Zaehlerstand sonst verloren und der
         # naechste Lauf muesste neu baselinen (ein Intervall ohne Delta).

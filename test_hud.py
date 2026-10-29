@@ -788,4 +788,159 @@ assert "EINTRAG 60" in m._event_log_html([_mk(3000), _mk(60)], now)
 print("32) Ereignisprotokoll: nur die letzten 24 Stunden              OK")
 
 
+# ---------------------------------------------------------------------------
+# 33) Failover haengt am aktiven Uplink, nicht an der Rate
+# ---------------------------------------------------------------------------
+# Die Ratenregel versagt genau im wichtigsten Fall: ist das LTE-Volumen
+# aufgebraucht, drosselt der Anbieter, die Rate faellt - und der Monitor
+# meldete "Failover beendet", waehrend der Standort weiter auf dem Notweg
+# hing (WTB, 28.10.2026).
+def _k(**kw):
+    d = dict(device="WTB--UDM-1", is_failover=False, is_offline=False)
+    d.update(kw)
+    return d
+
+# Der Uplink sticht die Rate - in BEIDE Richtungen.
+assert m._console_status(_k(is_failover=True, uplink_aktiv="WAN")) == "nominal", (
+    "hoher Upload auf dem Primaeruplink ist Verkehr, kein Failover")
+assert m._console_status(_k(uplink_aktiv="WAN3")) == "failover", (
+    "Backup-Uplink bei niedriger Rate wird nicht als Failover erkannt")
+assert m._console_status(_k(uplink_aktiv="wan")) == "nominal", "Gross/Kleinschreibung"
+
+# Ohne Uplink-Angabe bleibt die alte Regel - waehrend eines Aussetzers ist
+# die Konsole nicht erreichbar, dann ist die Rate alles, was wir haben.
+assert m._console_status(_k(is_failover=True)) == "failover"
+
+# Und ein alter Stand zaehlt nicht mehr: lieber die schwaechere Ratenregel
+# als eine Failover-Anzeige, die seit Stunden niemand bestaetigt hat.
+assert m._uplink_wenn_frisch({"aktiv": "WAN3", "ts": now.isoformat()}, now) == "WAN3"
+_alt = (now - timedelta(seconds=m.UPLINK_STALE_S + 60)).isoformat()
+assert m._uplink_wenn_frisch({"aktiv": "WAN3", "ts": _alt}, now) is None
+assert m._uplink_wenn_frisch({"aktiv": "WAN3"}, now) is None
+assert m._uplink_wenn_frisch({"aktiv": "WAN3", "ts": "morgen"}, now) is None
+assert m.UPLINK_STALE_S > m.UPLINK_REFRESH_S, (
+    "ein einzelner fehlgeschlagener Abruf darf nicht sofort durchschlagen")
+
+# fetch_uplinks muss das GATEWAY finden, nicht den erstbesten Access Point:
+# der hat auch ein 'uplink'-Feld, dort steht aber sein eigener Anschluss.
+_echt = m.legacy_get
+m.legacy_get = lambda host, pfad: {"data": [
+    {"name": "AP-Flur", "uplink": {"name": "eth0"}},
+    {"name": "SW-Keller", "uplink": {"comment": "Uplink", "name": "eth1"}},
+    {"name": "WTB--UDM-1", "last_wan_status": {"WAN": "online", "WAN3": "online"},
+     "uplink": {"comment": "WAN3", "name": "eth9"}},
+]}
+try:
+    _res = m.fetch_uplinks({"host-1": "WTB--UDM-1"})
+finally:
+    m.legacy_get = _echt
+assert _res["WTB--UDM-1"]["aktiv"] == "WAN3", _res
+assert _res["WTB--UDM-1"]["status"] == {"WAN": "online", "WAN3": "online"}
+
+# Eine nicht erreichbare Konsole (404 'device_offline') darf den Abruf der
+# anderen nicht mitreissen - genau dafuer gibt es den Rueckfall.
+m.legacy_get = lambda host, pfad: (_ for _ in ()).throw(RuntimeError("device_offline"))
+try:
+    assert m.fetch_uplinks({"host-1": "WTB--UDM-1"}) == {}
+finally:
+    m.legacy_get = _echt
+
+# Der Zwischenspeicher behaelt bei einem Fehlschlag den letzten Stand, und
+# zwar JE KONSOLE mit eigenem Zeitstempel: eine Konsole kann seit Stunden
+# weg sein, waehrend die anderen fuenf frisch sind.
+_st = {"uplinks": {"ts": (now - timedelta(seconds=m.UPLINK_REFRESH_S + 60)).isoformat(),
+                   "sites": {"WTB--UDM-1": {"aktiv": "WAN3", "ts": _alt}}}}
+m.legacy_get = lambda host, pfad: (_ for _ in ()).throw(RuntimeError("device_offline"))
+try:
+    _sites = m.refresh_uplinks(_st, {"host-1": "LSB--UDM-1"}, now)
+finally:
+    m.legacy_get = _echt
+assert _sites["WTB--UDM-1"]["aktiv"] == "WAN3", "letzter Stand ging verloren"
+assert _sites["WTB--UDM-1"]["ts"] == _alt, "fremder Zeitstempel ueberschrieben"
+print("33) Failover am aktiven Uplink statt an der Upload-Rate         OK")
+
+
+# ---------------------------------------------------------------------------
+# 34) Aussetzer ist nicht Link Lost
+# ---------------------------------------------------------------------------
+# WTB hatte in einer Woche 35 Lucken zwischen 5 und 39 Minuten. Jede stand
+# als vollwertiger LINK LOST im Protokoll, mit Entwarnung daneben - 70
+# Zeilen Flackern, in dem ein echter Ausfall untergegangen waere.
+assert m.OFFLINE_THRESHOLD_S < m.LINK_LOST_S
+assert m._console_status(_k(is_offline=True, stillstand_s=6 * 60)) == "gestoert"
+assert m._console_status(_k(is_offline=True, stillstand_s=m.LINK_LOST_S + 1)) == "offline"
+# Ohne je einen Messpunkt gesehen zu haben, ist es kein Aussetzer.
+assert m._console_status(_k(is_offline=True, stillstand_s=None)) == "offline"
+# Failover sticht weiter alles.
+assert m._console_status(_k(is_offline=True, stillstand_s=60, uplink_aktiv="WAN3")) == "failover"
+
+def _still(dev, minuten, jetzt=None):
+    """Konsole, die seit `minuten` keinen Messwert mehr geliefert hat.
+
+    `jetzt` ist der Zeitpunkt der Auswertung - ohne ihn waere last_seen an
+    die Modulzeit gebunden und die Luecke damit eine andere als die
+    behauptete, sobald der Test in der Zeit vorspult."""
+    c = fake(dev, offline=True)
+    c["last_seen"] = (jetzt or now) - timedelta(minutes=minuten)
+    c["stillstand_s"] = minuten * 60
+    return c
+
+# Beginn eines Aussetzers: KEIN Eintrag, nur gemerkt.
+_s = {}
+m._update_event_log(_s, [fake("WTB--UDM-1")], now)
+_t7 = now + timedelta(minutes=7)
+m._update_event_log(_s, [_still("WTB--UDM-1", 7, _t7)], _t7)
+assert _s["status"]["WTB--UDM-1"] == "gestoert"
+assert len(_s["events"]) == 1, [e["msg"] for e in _s["events"]]
+assert "WTB--UDM-1" in _s["aussetzer_seit"], "Startzeitpunkt nicht gemerkt"
+
+# Ende: EINE Zeile mit Dauer und Nummer, statt Meldung plus Entwarnung.
+m._update_event_log(_s, [fake("WTB--UDM-1")], now + timedelta(minutes=16))
+_letzte = _s["events"][-1]
+assert _letzte["kind"] == "ok" and "AUSSETZER" in _letzte["msg"], _letzte
+assert "16 MIN" in _letzte["msg"], _letzte["msg"]
+assert "1. IN 24 H" in _letzte["msg"], _letzte["msg"]
+assert "WTB--UDM-1" not in _s["aussetzer_seit"], "Startzeitpunkt nicht aufgeraeumt"
+
+# Der zweite Aussetzer zaehlt weiter.
+_t30 = now + timedelta(minutes=30)
+m._update_event_log(_s, [_still("WTB--UDM-1", 6, _t30)], _t30)
+m._update_event_log(_s, [fake("WTB--UDM-1")], now + timedelta(minutes=38))
+assert "2. IN 24 H" in _s["events"][-1]["msg"], _s["events"][-1]["msg"]
+
+# Wird daraus doch ein echter Ausfall, meldet das Protokoll Link Lost - und
+# der gemerkte Startzeitpunkt verschwindet, sonst zaehlte ihn die naechste
+# Erholung als Aussetzer mit.
+_t50 = now + timedelta(minutes=50)
+m._update_event_log(_s, [_still("WTB--UDM-1", 6, _t50)], _t50)
+_t70 = now + timedelta(minutes=70)
+m._update_event_log(_s, [_still("WTB--UDM-1", 25, _t70)], _t70)
+assert _s["status"]["WTB--UDM-1"] == "offline"
+assert "LINK LOST" in _s["events"][-1]["msg"] and _s["events"][-1]["kind"] == "warn"
+assert "WTB--UDM-1" not in _s["aussetzer_seit"]
+
+# An der Kachel: eigener Chip, gestrichelte Kante - und ausdruecklich NICHT
+# der Glasbruch, der dem echten Ausfall vorbehalten bleibt.
+_html = m.render_overview_html([_still("WTB--UDM-1", 7)] + c1, start_real, now, [])
+assert 'class="chip gestoert">Aussetzer<' in _html, "Chip fehlt"
+assert 'class="panel bracketed gestoert"' in _html, "Kachelklasse fehlt"
+assert "dashed" in m.REDUKTION_CSS.split(".panel.gestoert")[1][:90], "Kante nicht gestrichelt"
+_lost = m.render_overview_html([_still("WTB--UDM-1", 40)] + c1, start_real, now, [])
+assert 'class="panel bracketed offline"' in _lost
+assert 'class="chip lost">Link Lost<' in _lost
+
+# Glasbruch und der quergelegte "Link Lost"-Schriftzug haengen ausschliesslich
+# an .panel.offline. Das ist der eigentliche Punkt der Trennung: ein Standort,
+# der sich in zehn Minuten wieder meldet, darf nicht aussehen wie einer, der
+# aus ist. Geprueft wird an den Regeln selbst - beides ist reines CSS und
+# steht im Kopf, nicht im Rumpf der Seite.
+for _regel in ("filter: url(#rissglas)", '.mini-chart-col::after'):
+    _wo = [z for z in _lost.splitlines() if _regel in z]
+    assert _wo, f"Regel nicht gefunden: {_regel}"
+    for _z in _wo:
+        assert "gestoert" not in _z, f"Aussetzer bekommt {_regel}: {_z.strip()[:80]}"
+        assert ".panel.offline" in _z, _z.strip()[:80]
+print("34) Aussetzer (5-20 Min) getrennt von echtem Link Lost          OK")
+
+
 print("\nAlle Pruefungen bestanden.")
