@@ -2960,14 +2960,16 @@ REDUKTION_CSS = """
   .panel .bk-tr { display: none; }
   .overview-grid { gap: 26px 0; }
 
-  /* Die linke Kante traegt den Zustand - aber nur, wenn es einen zu melden
-     gibt: neutrale Haarlinie bei nominal, rot bei Failover, grau bei
-     erloschen. Farbe heisst damit "hinsehen", und der Normalzustand leuchtet
-     nicht. Sie ersetzt den frueheren Gruenstich (der eine ganze Flaeche
-     einfaerbte) UND die schraffierte Warnflaeche der Failover-Kachel, die
-     dieselbe Sache ein zweites Mal meldete. */
-  .panel { border-left: 2px solid rgba(150, 200, 215, .16);
-    padding: 6px 20px 6px 22px; }
+  /* Die linke Kante traegt den Zustand, jetzt in allen vier Faellen: gruen
+     bei nominal, gestrichelt bei Aussetzer, grau bei erloschen, rot bei
+     Failover. Die Rangfolge steckt in der Breite, nicht nur in der Farbe -
+     3px gegen 7px beim Alarm, damit der Blick weiter zuerst auf Rot faellt.
+
+     Das ist ausdruecklich NICHT der zweimal verworfene Gruenstich: der
+     faerbte die ganze FLAECHE der Kachel und machte die Messwerte darauf
+     schlechter lesbar. Hier bleibt die Flaeche unberuehrt (Pruefung 28). */
+  .panel { border-left: 3px solid rgba(104, 226, 160, .62);
+    padding: 6px 20px 6px 21px; }
   .panel.offline { border-left: 2px solid rgba(120, 150, 158, .45); }
   /* Aussetzer: eine Stufe unter 'erloschen'. Gestrichelte Kante statt
      durchgezogener - dieselbe Sprache ("hier stimmt etwas nicht"), aber

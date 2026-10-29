@@ -581,7 +581,13 @@ for _weg in ("rgba(120, 255, 180", "rgba(150, 255, 200, .80)", "inset 0 14px 22p
 # Die Zustandskante bleibt - aber nur Failover und Ausfall sind farbig.
 _red = m.REDUKTION_CSS
 _i = _red.index("  .panel { border-left:")
-assert "rgba(150, 200, 215" in _red[_i:_i + 120], "nominale Kante ist nicht neutral"
+_nominal = _red[_i:_i + 120]
+# Die nominale Kante ist seit dem 29.10.2026 gruen (Nutzerwunsch) - aber
+# schmaler als die Alarmkante. Die Rangfolge steckt in der Breite: faerbt man
+# den Normalfall ein, darf er dem Alarm nicht die Aufmerksamkeit nehmen.
+assert "rgba(104, 226, 160" in _nominal, "nominale Kante ist nicht gruen"
+_breit = int(_nominal.split("border-left:")[1].strip().split("px")[0])
+assert _breit < 7, f"nominale Kante ({_breit}px) ist so breit wie der Alarm"
 # Die Zustandskanten als vollstaendige Kurzschreibweise: nur die Farbe zu
 # setzen reicht nicht, weil '.panel.failover { border: none }' weiter oben
 # spezifischer ist und die Breite sonst auf 0 bleibt - die Failover-Kachel
