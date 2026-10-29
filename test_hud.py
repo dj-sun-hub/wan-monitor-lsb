@@ -925,6 +925,20 @@ assert _s["status"]["WTB--UDM-1"] == "offline"
 assert "LINK LOST" in _s["events"][-1]["msg"] and _s["events"][-1]["kind"] == "warn"
 assert "WTB--UDM-1" not in _s["aussetzer_seit"]
 
+# Im Protokoll stehen sie NICHT: vier Zeilen, und ein Standort mit einem
+# Aussetzer alle zehn Minuten belegt sie alle - dann faellt der Failover
+# heraus, fuer den das Protokoll da ist. Aufgezeichnet bleiben sie trotzdem,
+# sonst ginge die Zaehlung verloren.
+_mitaus = [e for e in _s["events"] if e["msg"].startswith("AUSSETZER")]
+assert _mitaus, "Aussetzer werden gar nicht mehr aufgezeichnet"
+_log = m._event_log_html(_s["events"], now + timedelta(minutes=71))
+assert "AUSSETZER" not in _log, "Aussetzer stehen wieder im Protokoll"
+assert "LINK LOST" in _log, "der echte Ausfall fehlt im Protokoll"
+# Und der Platz geht nicht verloren: ohne die Aussetzer ruecken die
+# uebrigen Eintraege nach, statt dass leere Zeilen bleiben.
+assert _log.count("<li") == min(m.EVENT_LOG_SHOW,
+                                len(m._ohne_aussetzer(_s["events"]))), _log.count("<li")
+
 # An der Kachel: eigener Chip, gestrichelte Kante - und ausdruecklich NICHT
 # der Glasbruch, der dem echten Ausfall vorbehalten bleibt.
 _html = m.render_overview_html([_still("WTB--UDM-1", 7)] + c1, start_real, now, [])

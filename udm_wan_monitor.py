@@ -1900,16 +1900,48 @@ def _update_event_log(state, consoles, now):
     state["status"] = current
 
 
+# Was als Aussetzer gilt und damit nicht ins Protokoll kommt. Die beiden
+# letzten Eintraege sind UEBERGANGSWEISE dabei: so hiessen dieselben
+# Meldungen vor dem 29.10.2026, als jede Luecke ueber 5 Minuten noch als
+# vollwertiger "Link Lost" gezaehlt wurde. Solche Eintraege koennen hoechstens
+# 24 Stunden alt sein (EVENT_LOG_MAX_AGE_S raeumt sie weg), die beiden Zeilen
+# sind also ab dem 30.10.2026 wirkungslos und koennen raus.
+#
+# Der Preis dieser Uebergangsregel: eine echte Wiederkehr nach einem langen
+# Ausfall bleibt heute ebenfalls unsichtbar, weil sie denselben Text trug.
+# Die eine verpasste Zeile ist weniger schlimm als ein Protokoll, das einen
+# Tag lang nur aus Flackern besteht.
+AUSSETZER_PRAEFIXE = (
+    "AUSSETZER",
+    "KEIN POLL SEIT",
+    "VERBINDUNG WIEDERHERGESTELLT",
+)
+
+
+def _ohne_aussetzer(events):
+    """Alles ausser den Aussetzer-Meldungen.
+
+    Sie werden weiter aufgezeichnet (siehe _update_event_log), nur nicht mehr
+    gezeigt: ein Standort mit einem Aussetzer alle zehn Minuten belegt sonst
+    alle vier Zeilen des Protokolls und draengt genau das hinaus, wofuer es
+    da ist - Failover, Ausfall, Wiederkehr. Sichtbar bleibt der Zustand an
+    der Kachel, die waehrend eines Aussetzers "Aussetzer" zeigt."""
+    return [ev for ev in events
+            if not any(str(ev.get("msg", "")).startswith(p)
+                       for p in AUSSETZER_PRAEFIXE)]
+
+
 def _event_log_html(events, now):
-    """Die juengsten EVENT_LOG_SHOW Eintraege der letzten 24 Stunden,
-    neuester zuerst. Datum nur, wenn der Eintrag nicht von heute ist (spart
-    Platz in der Zeitspalte)."""
+    """Die juengsten EVENT_LOG_SHOW Eintraege der letzten 24 Stunden ausser
+    den Aussetzern, neuester zuerst. Datum nur, wenn der Eintrag nicht von
+    heute ist (spart Platz in der Zeitspalte)."""
     today = now.astimezone().date()
     items = []
     # Auch hier die Altersgrenze: --report schreibt das Protokoll nicht fort
     # (record_events=False) und wuerde sonst Eintraege zeigen, die der
     # naechste echte Poll laengst geloescht hat.
-    for ev in _events_aktuell(list(events), now)[-EVENT_LOG_SHOW:][::-1]:
+    sichtbar = _ohne_aussetzer(_events_aktuell(list(events), now))
+    for ev in sichtbar[-EVENT_LOG_SHOW:][::-1]:
         try:
             ts_local = datetime.fromisoformat(ev["ts"]).astimezone()
         except (KeyError, ValueError, TypeError):
