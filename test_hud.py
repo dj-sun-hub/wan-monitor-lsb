@@ -973,6 +973,9 @@ print("34) Aussetzer (5-20 Min) getrennt von echtem Link Lost          OK")
 # nichts wird zwischengespeichert (sonst laedt die Seite nie neu).
 import urllib.request as _req
 
+# Ein Unterverzeichnis muss es geben, damit die Dateilisten-Pruefung
+# unten etwas zu pruefen hat.
+os.makedirs(os.path.join(PROJEKT, "logs"), exist_ok=True)
 _srv, _adresse = m.serve_local(0)          # Port 0 = einen freien nehmen
 try:
     assert _adresse.startswith("http://127.0.0.1:"), _adresse
@@ -991,6 +994,28 @@ try:
     # Die Standdatei traegt einen lesbaren Zeitpunkt - daran entscheidet die
     # Seite, ob sie sich neu laedt.
     datetime.fromisoformat(_stand)
+
+    # Und sie laedt sich mit '?_=<Zeitstempel>' neu (gegen Zwischenspeicher).
+    # Genau DAS war am 30.10.2026 kaputt: der Vergleich im Server traf die
+    # Adresse mit Anhang nicht, die Standardbehandlung sah ein Verzeichnis
+    # und lieferte eine DATEILISTE. An der Wand stand eine Dateiliste,
+    # waehrend jede Pruefung von Hand - die immer '/' abfragt - gut aussah.
+    for _variante in ("/?_=1234567890", "/index.html?_=1", "/?x=1#oben"):
+        with _req.urlopen(_adresse.rstrip("/") + _variante, timeout=5) as _a:
+            _inhalt = _a.read().decode("utf-8", "replace")
+        assert "<html" in _inhalt.lower(), (_variante, _inhalt[:200])
+        assert "Directory listing" not in _inhalt, (
+            f"{_variante} liefert eine Dateiliste statt der Seite")
+
+    # Zweite Absicherung, unabhaengig davon: eine Dateiliste darf dieser
+    # Server ueberhaupt nie ausliefern. Sie verraet, was im Verzeichnis
+    # liegt - unter anderem, dass es eine schluessel.xml gibt.
+    try:
+        with _req.urlopen(_adresse + "logs/", timeout=5) as _a:
+            _liste = _a.read().decode("utf-8", "replace")
+        assert "Directory listing" not in _liste, "Dateiliste wird ausgeliefert"
+    except _req.HTTPError as _f:
+        assert _f.code == 404, _f.code
 finally:
     _srv.shutdown()
     _srv.server_close()

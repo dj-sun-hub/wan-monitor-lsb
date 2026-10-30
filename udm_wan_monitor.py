@@ -3559,7 +3559,16 @@ class _LeitstandHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, **kwargs)
 
     def translate_path(self, path):
-        if path in ("/", "/index.html"):
+        # Abfragezeichenfolge ZUERST abschneiden. Die Seite laedt sich selbst
+        # mit '?_=<Zeitstempel>' neu (gegen Zwischenspeicher, siehe
+        # standPruefen()), und ohne das Abschneiden trifft der Vergleich nicht:
+        # die Standardbehandlung schneidet die Abfrage dann selbst ab, sieht
+        # ein Verzeichnis und liefert eine DATEILISTE. Der erste Aufruf war
+        # also richtig und jeder Selbst-Neustart danach kaputt - am
+        # 30.10.2026 stand deshalb eine Dateiliste an der Wand, waehrend
+        # jede Pruefung von Hand (die immer '/' abfragt) gut aussah.
+        ohne_abfrage = path.split("?", 1)[0].split("#", 1)[0]
+        if ohne_abfrage in ("/", "/index.html"):
             return HTML_PATH
         return super().translate_path(path)
 
@@ -3570,6 +3579,16 @@ class _LeitstandHandler(SimpleHTTPRequestHandler):
         # hier ohnehin nichts: die Dateien liegen auf derselben Platte.
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
+
+    def list_directory(self, path):
+        """Niemals eine Dateiliste ausliefern.
+
+        Zweite Absicherung, unabhaengig von translate_path: eine Liste
+        verraet, was im Verzeichnis liegt - unter anderem, dass es eine
+        schluessel.xml gibt. Und sie ist nie das, was jemand sehen will:
+        der Server hat genau eine Seite zu zeigen."""
+        self.send_error(404, "Nichts zu sehen")
+        return None
 
     def log_message(self, *args):
         # Ein Zugriff je Sekunde ergibt 86400 Zeilen am Tag. Die Ausgabe des
