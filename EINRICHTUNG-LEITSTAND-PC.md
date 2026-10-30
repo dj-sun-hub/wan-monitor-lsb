@@ -18,7 +18,7 @@ die Seite daneben, der Browser zeigt sie.
 
 | | |
 |---|---|
-| **Python** | 3.9 oder neuer, Standardinstallation. Keine Pakete — das Skript nutzt ausschließlich die Standardbibliothek |
+| **Python** | 3.12.8 als *embeddable package* von python.org, entpackt in `C:\WAN-Monitor\python`. **Nicht installiert** — kein Eintrag in PATH, Registrierung oder Softwareliste; mit dem Ordner restlos weg. Es war auf dem Gerät keines vorhanden, und für ein Skript, das nur die Standardbibliothek nutzt, ist eine Installation unnötiger Eingriff |
 | **Internet** | ausgehend https 443 zu `api.ui.com`. Nichts eingehend, kein offener Port |
 | **Platz** | rund 50 MB. Die Messdatei wächst etwa 3,5 MB in drei Monaten |
 | **Konto** | `j.eismann` (seit 30.10.2026). Der Monitor braucht keine Domänenrechte — er redet mit der UniFi-Cloud und schreibt Dateien |
@@ -33,6 +33,38 @@ die Seite daneben, der Browser zeigt sie.
 > Schlüsseldatei ist an das Konto gebunden, also überall dort lesbar, wo
 > dasselbe Profil angemeldet ist. Beides ist vertretbar; ein eigenes
 > Dienstkonto wäre die saubere Form, falls der Leitstand dauerhaft bleibt.
+
+## Aus der Ferne, ohne WinRM
+
+WinRM ist auf dem Gerät nicht erreichbar (Port 5985 zu), und einschalten
+wollten wir es nicht — der Dienst liefe dann dauerhaft und brächte eine
+Firewall-Regel mit. Offen sind RPC, SMB und RDP.
+
+RDP fällt aus: Windows-Clients erlauben nur **eine** interaktive Sitzung, eine
+Anmeldung übernimmt also die Konsolensitzung, und nach dem Trennen zeigt der
+Wandbildschirm den Anmeldeschirm — bis sich jemand örtlich anmeldet. Bei einem
+Bildschirm unter der Decke heißt das: Leiter.
+
+Also **PsExec** über SMB: legt für die Dauer des Aufrufs einen Dienst an und
+entfernt ihn danach, keine bleibende Änderung, keine Sitzungsübernahme.
+
+```powershell
+# Auf dem Arbeitsplatz, als normaler Benutzer, OHNE Erhöhung.
+# PsExec braucht die Rechte auf dem ZIEL, nicht hier - es fragt sie selbst ab.
+& "<Pfad>\PsExec64.exe" \\<Leitstand-PC> -u <DOMAENE>\<Admin> -s -accepteula -nobanner `
+    cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File C:\WAN-Monitor\einrichten-leitstand.ps1 ... > C:\WAN-Monitor\logs\aus.txt 2>&1"
+```
+
+Drei Dinge, die Zeit kosten, wenn man sie nicht weiß:
+
+- **`-s` ist nötig.** Ohne läuft der Prozess als das angegebene Konto, und
+  Richtlinien verbieten diesem Gerät den dafür nötigen Anmeldetyp. Mit `-s`
+  läuft er als SYSTEM; die Anmeldung dient nur der Verbindung.
+- **Ausgabe in eine Datei umleiten** und über die Freigabe lesen. PsExecs
+  Ausgabe kommt sonst abgeschnitten zurück.
+- **Windows PowerShell 5.1 ist die Gegenstelle.** Ein `if` als Ausdruck in
+  einer Hashtabelle ist dort ein Syntaxfehler, der Block läuft gar nicht erst
+  an.
 
 ## In einem Durchgang
 
@@ -66,71 +98,109 @@ C:\WAN-Monitor\
     wan_stand.txt           Zeitstempel für die Neuladeprüfung der Seite
 ```
 
-Rechte: Vollzugriff nur für `j.eismann` und Administratoren.
+Rechte: Vollzugriff nur für `j.eismann`, SYSTEM und Administratoren, mit
+Vererbung auf die Dateien. SYSTEM ist nötig, weil die Messung als Dienst
+läuft und die Schlüsseldatei lesen muss.
+
+**Die Reihenfolge beim Setzen ist wesentlich.** `icacls /reset /T` setzt auch
+den Ordner selbst auf Vererbung zurück, und dann erbt er von `C:\` das Recht
+„Authentifizierte Benutzer: Ändern" — die Schlüsseldatei wäre für jeden
+angemeldeten Benutzer lesbar. Also erst zurücksetzen, dann den Ordner
+schließen. Und die Vererbungs-Flags `(OI)(CI)` gehören **nur** auf den
+Ordner: mit `/T` auch auf die Dateien angewendet ergeben sie Berechtigungen,
+die ins Leere zeigen, und die Datei bleibt ohne jeden Zugriff — auch für
+SYSTEM. Genau so ließ sich `python.exe` nicht mehr starten, lautlos. Das
+Skript prüft deshalb am Ende gegen, ob eine Datei wieder lesbar ist.
 
 ## Der API-Schlüssel
 
-Das Skript erwartet ihn in der Umgebungsvariablen `UI_API_KEY`.
+Das Skript liest ihn aus der Umgebungsvariablen `UI_API_KEY` oder aus einer
+`.env` neben sich (Format: `.env.beispiel`; die Variable sticht die Datei).
 
-Eine Aufgabe in der Windows-Aufgabenplanung bringt keine benutzerbezogene
-Umgebung mit. Die Variable maschinenweit zu setzen wäre der bequeme Weg und
-der falsche: sie stünde im Klartext in der Registrierung, für jeden lokalen
-Administrator lesbar, und in der Prozessumgebung für jeden, der Prozesse
-ausliest.
+Auf dem Leitstand-PC kommt er aus `C:\WAN-Monitor\schluessel.xml`,
+verschlüsselt mit DPAPI und an die **Maschine** gebunden — nicht an ein Konto.
 
-Stattdessen eine DPAPI-verschlüsselte Datei, nach dem Muster, das im
-Schwesterprojekt WAC für `starface.xml` verwendet wird. Verschlüsselt an
-Konto **und** Maschine gebunden: die Datei ist auf einem anderen Rechner
-oder unter einem anderen Konto wertlos.
+Das war nicht die erste Wahl. Kontogebunden wäre enger, setzt aber voraus, dass
+der Schlüssel in einer Sitzung des Zielkontos angelegt wird. Auf diesem Gerät
+verbieten Richtlinien dem Konto den Prozessstart über die Fernverwaltung
+(*„Der Benutzer besitzt nicht den benötigten Anmeldetyp auf diesem Computer"*),
+die Einrichtung läuft dort als SYSTEM — und ein von SYSTEM kontogebunden
+verschlüsselter Schlüssel wäre für die Anzeige wertlos.
 
-Anlegen, einmalig, **angemeldet als das Sitzungskonto auf dem
-Leitstand-PC** (DPAPI bindet die Datei an das Konto — unter einem anderen
-Konto angelegt ist sie dort wertlos):
+**Was die Maschinenbindung kostet:** jeder, der auf diesem Rechner Code
+ausführen kann und die Datei lesen darf, kann sie entschlüsseln. Der Schutz
+liegt damit allein bei den Dateirechten — der Ordner ist auf das Zielkonto,
+SYSTEM und Administratoren beschränkt, die Dateien erben das. Wer diese Rechte
+lockert, hebt den Schutz auf. Die Festplatte ist mit BitLocker verschlüsselt,
+der Schlüssel also nicht offline auslesbar.
 
-```powershell
-# Fragt den Schlüssel ab, ohne ihn auf den Bildschirm zu schreiben
-$key = Read-Host -AsSecureString "UniFi API-Schlüssel"
-$key | ConvertFrom-SecureString | Set-Content C:\WAN-Monitor\schluessel.xml
-```
+### Setzen
 
-Die DPAPI-Runde (verschlüsseln, zurücklesen, Klartext vergleichen) ist auf
-einem Windows-Rechner mit einem Probewert geprüft. Die Aufgabenplanung, der
-Kioskbrowser und die Sicherung auf die Freigabe sind **nicht** erprobt — sie
-stehen hier als Vorlage und gehören beim Einrichten einmal durchgespielt.
-
-Der Starter liest sie und übergibt sie als Umgebungsvariable an das Skript —
-nur in dessen Prozess, nicht maschinenweit:
+`schluessel-setzen.ps1` überträgt ihn, ohne dass ihn jemand tippen oder kennen
+muss — er kommt aus der Umgebungsvariablen des ausführenden Rechners:
 
 ```powershell
-# C:\WAN-Monitor\starte-monitor.ps1
-$sicher = Get-Content C:\WAN-Monitor\schluessel.xml | ConvertTo-SecureString
-$env:UI_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sicher))
-Set-Location C:\WAN-Monitor
-python udm_wan_monitor.py --loop --serve
+# Auf dem Arbeitsplatz, als normaler Benutzer, ohne Erhöhung
+.\schluessel-setzen.ps1 -Rechner <Leitstand-PC> -AusUmgebung -PsExec <Pfad>
 ```
+
+Ohne `-AusUmgebung` fragt es ihn verdeckt ab.
+
+Zur Kontrolle gibt die Gegenseite nur Länge und die ersten acht Zeichen des
+SHA-256 zurück. Daran lässt sich jederzeit vergleichen, ob beide Seiten
+denselben Schlüssel haben, ohne ihn anzuzeigen.
+
+**Zwei Wege, die nicht funktionieren** — beide geprüft, damit es niemand
+wieder versucht:
+
+- **Standardeingabe durch PsExec.** Wäre der sauberste Weg, der Schlüssel
+  berührte keine Datei. PsExec reicht sie mit `-s` aber nicht durch: ein
+  `findstr` am anderen Ende bekam weder über die PowerShell-Pipeline noch über
+  eine echte OS-Pipe etwas zu sehen.
+- **Am Gerät tippen, über PsExec.** `Read-Host -AsSecureString` verdeckt die
+  Eingabe **nicht**, wenn die Konsole umgeleitet ist. Der Probewert stand im
+  Klartext im Protokoll.
+
+Deshalb der Umweg über eine Zwischendatei, die das Gegenstück als Erstes
+überschreibt und löscht — wenige Sekunden, in einem Verzeichnis, auf das nur
+das Zielkonto, SYSTEM und Administratoren Zugriff haben. Ein bewusster
+Kompromiss, keine Nachlässigkeit.
 
 ## Aufgabenplanung
 
-Eine Aufgabe, die den Starter bei der Anmeldung startet:
+Zwei Aufgaben, mit **unterschiedlichen** Auslösern und Konten — das ist der
+Punkt:
 
-| Feld | Wert |
-|---|---|
-| Trigger | Bei Anmeldung von `j.eismann` |
-| Aktion | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\WAN-Monitor\starte-monitor.ps1` |
-| Ausführen als | `j.eismann`, **nicht** SYSTEM (DPAPI ist an das Konto gebunden) |
-| Neu starten | bei Fehler, alle 5 Minuten, bis zu 999 Mal |
-| Zeitlimit | keines (der Dauerlauf soll laufen) |
+| | `WAN-Monitor` | `WAN-Monitor Kiosk` |
+|---|---|---|
+| Auslöser | **Systemstart** (+30 s) | Anmeldung des Zielkontos |
+| Ausführen als | **SYSTEM** | das Zielkonto, interaktiv |
+| Neu starten | bei Fehler, alle 5 Min, bis 999 Mal | ebenso |
+| Zeitlimit | keines | keines |
+
+**Warum die Messung als Dienst läuft:** sonst hinge sie daran, dass sich
+jemand anmeldet. Ein Kennwortwechsel, der die automatische Anmeldung
+aushebelt, hätte dann auch die Messwerte gestoppt — und das wäre niemandem
+aufgefallen, weil die Seite ja noch dastünde, nur eingefroren. Jetzt laufen
+die Messwerte über jeden Neustart hinweg; an der automatischen Anmeldung hängt
+nur noch das Bild. Möglich ist das nur, weil die Schlüsseldatei an die
+Maschine gebunden ist und SYSTEM sie lesen kann.
 
 Das Skript taktet sich selbst (`--interval`, Standard 60 Sekunden) — die
 Aufgabenplanung startet es einmal, nicht jede Minute.
 
-Der Dauerlauf übersteht einen Fehlschlag: eine Ausnahme beendet den Monitor
-nicht mehr, sondern wird gemeldet, und der nächste Takt läuft normal weiter.
-Das ist erst hier wichtig geworden — in GitHub Actions war jeder Poll ein
-eigener Prozess, ein Absturz kostete eine Minute. Ein Prozess, der Wochen
-läuft, würde dagegen stehenbleiben, ohne dass es auffällt: die Seite ist ja
-noch da, nur eingefroren.
+### Zwei Dinge, die stillschweigend schiefgingen
+
+**Das Protokoll muss vor allem anderen bestimmt werden.** Stand die Zeile
+weiter unten, verschwand jeder Fehler davor spurlos: die Aufgabe meldete nur
+„Ergebnis 1", die Protokolldatei blieb 0 Bytes groß. Beide Abschnitte des
+Starters schreiben ihren Abbruch jetzt hinein.
+
+**Python braucht `-u`.** Ohne den Schalter hält es seine Ausgabe zurück,
+solange der Prozess läuft — bei einem Dauerläufer also für immer. Das
+Protokoll blieb leer, obwohl jede Minute gemessen wurde. Ebenso schreibt
+Windows PowerShell 5.1 mit `*>>` standardmäßig UTF-16, was das Protokoll mit
+`tail` oder `Get-Content` unlesbar macht; der Starter legt UTF-8 fest.
 
 ## Anzeige
 
