@@ -301,6 +301,15 @@ Set-Location "$Verzeichnis"
 # Eine Datei je Tag, damit sie nicht unbegrenzt waechst.
 `$log = Join-Path "$Protokoll" ("monitor-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
 
+# Windows PowerShell 5.1 schreibt mit *>> standardmaessig UTF-16, und das
+# Protokoll ist dann mit tail, grep oder Get-Content kaum zu lesen (jedes
+# Zeichen mit einem Nullbyte dazwischen). Hier beides festlegen: was
+# Out-File schreibt - *>> benutzt es im Hintergrund - und was von Python
+# hereinkommt.
+`$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+`$PSDefaultParameterValues['Add-Content:Encoding'] = 'utf8'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new(`$false)
+
 function Notiz(`$text) {
     Add-Content `$log ((Get-Date -Format "HH:mm:ss") + " " + `$text)
 }
@@ -398,12 +407,10 @@ if ($NurStarter) {
 # --------------------------------------------------------- 4) Aufgaben
 Schritt "Aufgabenplanung"
 
-function Aufgabe($name, $skript, $verzoegerung) {
+function Aufgabe($name, $skript, $verzoegerung, [switch]$AlsSystem) {
     $aktion = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$skript`"" `
         -WorkingDirectory $Verzeichnis
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $Konto
-    if ($verzoegerung) { $trigger.Delay = $verzoegerung }
     # Keine Zeitbegrenzung: der Monitor SOLL durchlaufen. Neustart bei
     # Fehlern, weil ein Dauerlauf, der still endet, niemandem auffaellt.
     $einstellungen = New-ScheduledTaskSettingsSet `
@@ -411,16 +418,29 @@ function Aufgabe($name, $skript, $verzoegerung) {
         -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 5) `
         -MultipleInstances IgnoreNew
-    # Interaktiv, nicht als Dienst: DPAPI haengt an der Anmeldesitzung, und
-    # der Kiosk braucht ohnehin einen Bildschirm.
-    $hauptteil = New-ScheduledTaskPrincipal -UserId $Konto -LogonType Interactive `
-        -RunLevel Limited
+    if ($AlsSystem) {
+        # Die MESSUNG darf nicht davon abhaengen, dass jemand angemeldet
+        # ist. Moeglich, weil die Schluesseldatei an die Maschine gebunden
+        # ist (nicht an ein Konto) - SYSTEM kann sie lesen. Nach einem
+        # Neustart laufen die Messwerte also weiter, selbst wenn die
+        # Anmeldung aussteht, etwa weil ein Kennwortwechsel das Autologin
+        # ausgehebelt hat. Am Autologin haengt dann nur noch das Bild.
+        $trigger = New-ScheduledTaskTrigger -AtStartup
+        $hauptteil = New-ScheduledTaskPrincipal -UserId "SYSTEM" `
+            -LogonType ServiceAccount -RunLevel Highest
+    } else {
+        # Der Kiosk braucht zwingend eine Sitzung mit Bildschirm.
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $Konto
+        $hauptteil = New-ScheduledTaskPrincipal -UserId $Konto `
+            -LogonType Interactive -RunLevel Limited
+    }
+    if ($verzoegerung) { $trigger.Delay = $verzoegerung }
     Register-ScheduledTask -TaskName $name -Action $aktion -Trigger $trigger `
         -Settings $einstellungen -Principal $hauptteil -Force | Out-Null
 }
 
-Tun "Aufgabe 'WAN-Monitor' (Dauerlauf bei Anmeldung)" {
-    Aufgabe "WAN-Monitor" $StarterMonitor $null
+Tun "Aufgabe 'WAN-Monitor' (Dauerlauf als SYSTEM beim Systemstart)" {
+    Aufgabe "WAN-Monitor" $StarterMonitor "PT30S" -AlsSystem
 } | Out-Null
 Tun "Aufgabe 'WAN-Monitor Kiosk' (Chrome bei Anmeldung)" {
     Aufgabe "WAN-Monitor Kiosk" $StarterKiosk "PT10S"
