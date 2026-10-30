@@ -34,6 +34,27 @@ die Seite daneben, der Browser zeigt sie.
 > dasselbe Profil angemeldet ist. Beides ist vertretbar; ein eigenes
 > Dienstkonto wäre die saubere Form, falls der Leitstand dauerhaft bleibt.
 
+## In einem Durchgang
+
+`einrichten-leitstand.ps1` macht alles Folgende selbst — Verzeichnis, Rechte,
+Schlüsseldatei, beide Starter, die zwei Aufgaben, Energieoptionen. Auf dem
+Leitstand-PC ausführen, angemeldet als das Konto, unter dem der Monitor laufen
+soll:
+
+```powershell
+cd C:\Sync\claude-projekte\Wan-LSB
+.\einrichten-leitstand.ps1 -NurPruefen     # zeigt nur, was es täte
+.\einrichten-leitstand.ps1                 # und dann wirklich
+.\einrichten-leitstand.ps1 -MitAutologin   # dazu die Anleitung zur Anmeldung
+```
+
+Das Skript ist wiederholbar: es legt nur an, was fehlt, und fasst eine
+vorhandene Messdatei nie an. `-NurStarter` erzeugt bloß die beiden Starter neu,
+etwa nach einem geänderten Port.
+
+Die Abschnitte darunter beschreiben, **was** es einrichtet — zum Nachlesen und
+für den Fall, dass etwas von Hand nachzuziehen ist.
+
 ## Verzeichnis
 
 ```
@@ -121,14 +142,48 @@ per `fetch('wan_stand.txt')` prüft, ob ein neuerer Stand vorliegt, und
 Chromium das für lokale Dateien verweigert. Der Server ist ein Dutzend Zeilen
 Standardbibliothek, kein IIS.
 
-Browser im Kioskmodus, in derselben Aufgabe oder im Autostart des Sitzungskontos:
+Chrome im Kioskmodus, gestartet von der zweiten Aufgabe. `--kiosk` ist ein
+Schalter — die Adresse gehört als **eigenes** Argument dahinter. Als
+`--kiosk=<Adresse>` geschrieben startet Chrome im Vollbild mit einer leeren
+Registerkarte, und an einer Wandanzeige fällt das niemandem auf.
 
-```
-msedge.exe --kiosk http://127.0.0.1:8787/ --edge-kiosk-type=fullscreen --no-first-run
-```
+Der Kiosk-Starter wartet, bis die Seite antwortet, und startet Chrome erst
+dann: ein Kioskfenster auf einer Fehlerseite lädt nicht von selbst nach. Nach
+der Wartezeit startet er trotzdem — eine Fehlerseite am Bildschirm ist besser
+als ein schwarzer Monitor, an dem niemand sieht, dass etwas fehlt.
+
+Geprüft: Chrome im Kioskmodus öffnet die Seite, und die Seite fragt
+anschließend selbst `wan_stand.txt` ab — der Neulademechanismus greift.
 
 Die Seite lädt sich selbst neu, sobald `wan_stand.txt` einen neueren Zeitpunkt
 trägt — kein fester Countdown, der neben dem echten Takt herläuft.
+
+## Automatische Anmeldung
+
+Damit der Bildschirm nach einem Neustart ohne Zutun wieder dasteht, muss sich
+das Konto selbst anmelden. Das Skript setzt dafür **kein Kennwort** — der
+gängige Weg über `Winlogon\DefaultPassword` legt es im Klartext in die
+Registrierung, lesbar für jeden lokalen Administrator und bei Fernzugriff auf
+die Registrierung auch von außerhalb des Raums.
+
+Stattdessen [Sysinternals Autologon](https://learn.microsoft.com/sysinternals/downloads/autologon),
+das es LSA-verschlüsselt ablegt:
+
+```
+Autologon.exe -accepteula <Benutzer> <Domäne> <Kennwort>
+```
+
+Dazu drei Punkte:
+
+- **Nach einem Kennwortwechsel muss das Autologin neu gesetzt werden**, sonst
+  bleibt der Bildschirm nach dem nächsten Neustart auf der Anmeldung stehen.
+  Das ist der häufigste Grund, warum so eine Anzeige irgendwann schwarz ist
+- Die Festplatte sollte verschlüsselt sein (BitLocker) — sonst ist das
+  gespeicherte Kennwort offline auslesbar, unabhängig davon, wie gut der Raum
+  gesichert ist
+- Eine Bildschirmsperre aus einer Richtlinie überschreibt die Einstellungen des
+  Skripts. Dann braucht dieses Gerät eine Ausnahme in der GPO, sonst sperrt der
+  Bildschirm doch
 
 ## Sicherung
 
