@@ -1120,4 +1120,73 @@ for _z in _vorlage.split("\n"):
 print("36) Schluessel aus der .env, Vorlage ohne echten Wert           OK")
 
 
+# ---------------------------------------------------------------------------
+# 37) Monatsgrenze: Nachhol-Zeilen anteilig teilen
+# ---------------------------------------------------------------------------
+# Eine Zeile traegt den Verkehr ihres ganzen Intervalls und ist auf dessen
+# ENDE gestempelt. Nach einem Ausfall ist das Intervall Stunden lang - faellt
+# es ueber die Monatsgrenze, lag der Verkehr zum Teil noch im alten Monat.
+# Ohne Teilung belastet eine Nacht Nachholen am Monatsersten das neue
+# Tarif-Konto mit Gigabyte, die der alte Monat verbraucht hat.
+_jetzt_lokal = now.astimezone()
+_monatsstart = _jetzt_lokal.replace(day=1, hour=0, minute=0, second=0,
+                                    microsecond=0).astimezone(timezone.utc)
+
+def _zeile(ts, intervall, down, up=0):
+    return dict(ts=ts, site="PRUEF--UDM-1", uplink="lte",
+                interval_s=intervall, down_bytes=down, up_bytes=up)
+
+def _monat(zeilen):
+    s = m.compute_stats(zeilen, _monatsstart - timedelta(days=40),
+                        site_filter="PRUEF--UDM-1", rows_prefiltered=True)
+    return s["total_month"]
+
+# Genau zur Haelfte ueber die Grenze: eine Stunde Intervall, das Ende liegt
+# 30 Minuten nach Monatsbeginn.
+_haelfte = _zeile(_monatsstart + timedelta(minutes=30), 3600, 1000)
+assert abs(_monat([_haelfte]) - 500) < 1, _monat([_haelfte])
+
+# Ganz im neuen Monat: unveraendert.
+_drin = _zeile(_monatsstart + timedelta(hours=5), 3600, 1000)
+assert abs(_monat([_drin]) - 1000) < 1, _monat([_drin])
+
+# Ganz im alten Monat: zaehlt hier nicht.
+_drausen = _zeile(_monatsstart - timedelta(hours=1), 3600, 1000)
+assert _monat([_drausen]) == 0, _monat([_drausen])
+
+# Eine lange Nachhol-Zeile, die fast vollstaendig im alten Monat lag:
+# 12 Stunden Intervall, Ende eine Stunde nach Monatsbeginn -> ein Zwoelftel.
+_lang = _zeile(_monatsstart + timedelta(hours=1), 12 * 3600, 12000)
+assert abs(_monat([_lang]) - 1000) < 1, _monat([_lang])
+
+# Ohne Intervallangabe (alte Zeilen) nicht raten, sondern voll zaehlen -
+# lieber die bisherige Rechnung als eine erfundene Aufteilung.
+_ohne = dict(ts=_monatsstart + timedelta(minutes=30), site="PRUEF--UDM-1",
+             uplink="lte", interval_s=0, down_bytes=1000, up_bytes=0)
+assert abs(_monat([_ohne]) - 1000) < 1, _monat([_ohne])
+print("37) Monatsgrenze: Nachhol-Zeilen anteilig geteilt              OK")
+
+
+# ---------------------------------------------------------------------------
+# 38) Keine Hochrechnung, und die Quellenspalte sagt die Wahrheit
+# ---------------------------------------------------------------------------
+# Die Hochrechnung wurde berechnet, nie angezeigt und ist auf Nutzerwunsch
+# entfernt. Sie soll nicht durch die Hintertuer zurueckkommen.
+_s = m.compute_stats([_drin], _monatsstart - timedelta(days=40),
+                     site_filter="PRUEF--UDM-1", rows_prefiltered=True)
+for _weg in ("per_day_month", "projected_month", "days_elapsed_month"):
+    assert _weg not in _s, f"{_weg} ist wieder da - entfernt auf Nutzerwunsch"
+# Was bleibt, traegt "Tag X von Y" an der Kachel - nicht die Prognose.
+assert "days_in_month" in _s and "days_elapsed_month_calendar" in _s
+
+# Die Spalte sagt, WOHER die Zahl kommt: gezaehlt hat das LTE-Modem selbst.
+# Vorher stand dort fest "wan", was das Gegenteil behauptete und am
+# 30.10.2026 zu einer falschen Aussage ueber den Zaehler fuehrte.
+_quelle = open(os.path.join(PROJEKT, "udm_wan_monitor.py"), encoding="utf-8").read()
+_poll = _quelle.split("def poll(")[1].split("\ndef ")[0]
+assert '"uplink": "lte"' in _poll, "poll() beschriftet die Quelle nicht als lte"
+assert '"uplink": "wan"' not in _poll, "die alte Falschbeschriftung ist zurueck"
+print("38) Keine Hochrechnung, Quellenspalte ehrlich                  OK")
+
+
 print("\nAlle Pruefungen bestanden.")

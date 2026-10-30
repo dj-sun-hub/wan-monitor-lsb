@@ -1100,14 +1100,34 @@ def compute_stats(rows, start, site_filter=None, rows_prefiltered=False):
     # Strikt auf den Kalendermonat begrenzte Summe der CSV-Deltas - siehe
     # Docstring oben, warum der rohe SIM-Zaehlerstand dafuer NICHT mehr
     # verwendet wird.
-    month_rows = [r for r in all_rows if r["ts"] >= month_start]
-    month_down = sum(r["down_bytes"] for r in month_rows)
-    month_up = sum(r["up_bytes"] for r in month_rows)
+    # Eine Zeile traegt den Verkehr ihres gesamten Intervalls und ist auf
+    # dessen ENDE gestempelt. Nach einem Ausfall ist dieses Intervall Stunden
+    # lang (der SIM-Zaehler ist kumulativ, es geht also nichts verloren) -
+    # und faellt es ueber die Monatsgrenze, lag der Verkehr zum Teil noch im
+    # alten Monat. Ohne Teilung wird der neue Monat zu gross und der alte zu
+    # klein, genau dort, wo ein Tarif-Limit greift: eine Nacht Nachholen am
+    # Monatsersten kann das neue Konto um Gigabyte belasten, die der alte
+    # Monat verbraucht hat.
+    #
+    # Also anteilig: nur der Teil des Intervalls NACH der Monatsgrenze zaehlt
+    # hier. Gleichmaessige Verteilung ueber das Intervall ist eine Annahme,
+    # aber die einzige, die wir treffen koennen - mehr weiss der kumulative
+    # Zaehler nicht.
+    month_down = 0.0
+    month_up = 0.0
+    for r in all_rows:
+        if r["ts"] < month_start:
+            continue
+        anteil = 1.0
+        intervall = r.get("interval_s") or 0
+        if intervall > 0:
+            beginn = r["ts"] - timedelta(seconds=intervall)
+            if beginn < month_start:
+                anteil = (r["ts"] - month_start).total_seconds() / intervall
+                anteil = min(max(anteil, 0.0), 1.0)
+        month_down += r["down_bytes"] * anteil
+        month_up += r["up_bytes"] * anteil
     total_month = month_down + month_up
-    month_data_start = max(month_start, start)
-    days_elapsed_month = max((now - month_data_start).total_seconds() / 86400.0, 0.001)
-    per_day_month = total_month / days_elapsed_month
-    projected_month = per_day_month * days_in_month
 
     # Failover-Verdacht: der Durchschnitt der letzten FAILOVER_CONSECUTIVE
     # Messpunkte ueber dem Schwellwert (kbps UPLOAD, nicht kombiniert - siehe
@@ -1177,8 +1197,12 @@ def compute_stats(rows, start, site_filter=None, rows_prefiltered=False):
     device = site_filter or (all_rows[0]["site"] if all_rows else (rows[0]["site"] if rows else "unbekannt"))
     return dict(
         window=all_rows, month_down=month_down, month_up=month_up,
-        total_month=total_month, per_day_month=per_day_month, projected_month=projected_month,
-        days_elapsed_month=days_elapsed_month, days_in_month=days_in_month,
+        # Keine Hochrechnung mehr: per_day_month/projected_month wurden
+        # berechnet, nie angezeigt und sind auf Nutzerwunsch entfernt
+        # (30.10.2026, schon vorher so entschieden). days_in_month und
+        # days_elapsed_month_calendar bleiben - sie tragen "Tag X von Y" an
+        # der Kachel, nicht die Prognose.
+        total_month=total_month, days_in_month=days_in_month,
         days_elapsed_month_calendar=days_elapsed_month_calendar,
         start=start, now=now, peak=peak, device=device,
         flow_chart_mini=flow_chart_mini,
@@ -3512,7 +3536,15 @@ def poll(rows, targets, interval_s, sim_baseline):
             points.append({
                 "ts": now,
                 "site": console_name,
-                "uplink": "wan",
+                # Die Quelle der Zahl, nicht der aktive Uplink: gezaehlt hat
+                # das LTE-Modem selbst (get_sim_bytes ueber seine MAC), also
+                # das, was der Mobilfunkanbieter zaehlt. Vorher stand hier
+                # fest "wan" - eine Beschriftung, die das Gegenteil
+                # behauptete und am 30.10.2026 dazu fuehrte, dass der Zaehler
+                # fuer eine Summe des gesamten WAN-Verkehrs gehalten wurde.
+                # Aeltere Zeilen tragen weiter "wan"; die Spalte dient nur
+                # der Beschriftung, nichts rechnet mit ihr.
+                "uplink": "lte",
                 "interval_s": round(actual_interval),
                 "down_bytes": down_delta,
                 "up_bytes": up_delta,
