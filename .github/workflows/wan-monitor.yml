@@ -187,6 +187,33 @@ jobs:
         with:
           path: public
 
+      # Der Abbruch-Schritt im veroeffentlichen-Job hilft hier nicht: er
+      # laeuft erst, wenn der Job die Gruppe betreten hat - genau das
+      # verhindert ein Geisterlauf. Also schaut der Poll nach, der nie
+      # blockiert ist, und meldet den Namen der Gruppe, die zu wechseln ist.
+      - name: Geisterlauf in der Deploy-Gruppe erkennen
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          jetzt=$(date -u +%s)
+          abfrage="actions/runs?status=waiting&per_page=20"
+          format='.workflow_runs[] | "\(.id) \(.created_at)"'
+          gh api "repos/$REPO/$abfrage" --jq "$format" > "$RUNNER_TEMP/warte.txt" || true
+
+          while read -r id erstellt; do
+            [ -n "$id" ] || continue
+            begonnen=$(date -u -d "$erstellt" +%s)
+            alter=$(( (jetzt - begonnen) / 60 ))
+            # Unter 10 Minuten kann es eine echte Freigabe sein, auf die
+            # jemand noch klickt. Darueber wartet der Lauf auf nichts mehr.
+            [ "$alter" -ge 10 ] || continue
+            echo "::error title=Deploy-Gruppe blockiert::Lauf $id steht seit ${alter} Min auf 'waiting' und haelt die Gruppe. GitHub laesst ihn nicht abbrechen; die Ziffer in 'group: wan-monitor-deploy-N' erhoehen loest die Sperre."
+            gh api -X POST "repos/$REPO/actions/runs/$id/force-cancel" || true
+          done < "$RUNNER_TEMP/warte.txt"
+          exit 0
+
   veroeffentlichen:
     needs: poll
     runs-on: ubuntu-latest
@@ -215,8 +242,22 @@ jobs:
     # bleibt "der aktuellste Stand gewinnt" erhalten, ohne eine Minute
     # Teardown zu bezahlen - die Seite hinkt hoechstens einen Deploy (~10s)
     # hinter dem Poll her.
+    #
+    # Am 30.10.2026 blieb ein Lauf von 04:15 im Zustand 'waiting' stehen: sein
+    # veroeffentlichen-Job wartete auf eine Freigabe der github-pages-Umgebung,
+    # die es nicht gab (wait_timer 0, Reviewer-Liste leer, und die API meldete
+    # spaeter "No pending deployment requests"). Dieser Geisterlauf hielt die
+    # Gruppe 189 Minuten, jeder folgende Deploy stand als Wartender darin und
+    # wurde eine Minute spaeter vom naechsten ersetzt - 99 von 100 Laeufen
+    # 'cancelled', ohne einen Step, waehrend der Poll jedes Mal durchlief.
+    # GitHub selbst liess ihn nicht beseitigen: 'run cancel' blieb ohne
+    # Wirkung, force-cancel antwortete 409 "has not been queued yet", und
+    # loeschen geht nur bei abgeschlossenen Laeufen. Der Name der Gruppe ist
+    # deshalb versioniert: ein Geisterlauf haelt immer nur die Gruppe, in der
+    # er steht, und ein Wechsel der Ziffer loest die Sperre sofort - das
+    # einzige Mittel, das ohne GitHubs Mitwirkung greift.
     concurrency:
-      group: wan-monitor-deploy
+      group: wan-monitor-deploy-2
       cancel-in-progress: false
     environment:
       name: github-pages
