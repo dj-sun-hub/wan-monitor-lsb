@@ -1013,4 +1013,86 @@ assert "if args.once:\n                raise" in _schleife, (
 print("35) Lokaler Webserver und sturzfester Dauerlauf                 OK")
 
 
+# ---------------------------------------------------------------------------
+# 36) Schluessel aus der .env
+# ---------------------------------------------------------------------------
+# Hausbrauch der Projekte: .env neben dem Skript, KEY=WERT, nicht im
+# Repository. Der Parser ist winzig und handgeschrieben - also pruefen, dass
+# er die Faelle trifft, an denen solche Parser scheitern.
+import tempfile as _tmp
+
+_env_vorher = m.DATA_DIR
+_mappe = _tmp.mkdtemp()
+try:
+    m.DATA_DIR = _mappe
+    _pfad = os.path.join(_mappe, ".env")
+
+    def _schreib(text):
+        open(_pfad, "w", encoding="utf-8", newline="\n").write(text)
+
+    _schreib("UI_API_KEY=abc123\n")
+    assert m._aus_env_datei("UI_API_KEY") == "abc123"
+
+    # Kommentare, Leerzeilen, Leerraum, Anfuehrungszeichen.
+    _schreib("# Kommentar\n\n  UI_API_KEY = \"mit-quotes\"  \n")
+    assert m._aus_env_datei("UI_API_KEY") == "mit-quotes"
+    _schreib("UI_API_KEY='einfach'\n")
+    assert m._aus_env_datei("UI_API_KEY") == "einfach"
+
+    # Ein auskommentierter Eintrag zaehlt NICHT - sonst nimmt das Skript den
+    # Wert, den jemand bewusst stillgelegt hat.
+    _schreib("#UI_API_KEY=alt\nUI_API_KEY=neu\n")
+    assert m._aus_env_datei("UI_API_KEY") == "neu"
+
+    # Ein Wert mit '=' darin darf nicht abgeschnitten werden (Base64 endet
+    # oft auf '='), und ein anderer Name darf nicht treffen.
+    _schreib("ANDERES=x\nUI_API_KEY=a=b==\n")
+    assert m._aus_env_datei("UI_API_KEY") == "a=b==", m._aus_env_datei("UI_API_KEY")
+    _schreib("UI_API_KEY_ALT=falsch\n")
+    assert m._aus_env_datei("UI_API_KEY") == ""
+
+    # Keine Datei, kaputte Zeile: still leer, kein Absturz.
+    os.remove(_pfad)
+    assert m._aus_env_datei("UI_API_KEY") == ""
+    _schreib("voelliger Unsinn ohne Gleichheitszeichen\n")
+    assert m._aus_env_datei("UI_API_KEY") == ""
+
+    # Die Umgebungsvariable sticht die Datei: ein Lauf mit gesetzter Variable
+    # (Workflow, Dienst) darf nicht heimlich die Datei nehmen.
+    _schreib("UI_API_KEY=aus-datei\n")
+    _alt = os.environ.get("UI_API_KEY")
+    try:
+        os.environ["UI_API_KEY"] = "aus-umgebung"
+        assert m.api_key() == "aus-umgebung"
+        del os.environ["UI_API_KEY"]
+        assert m.api_key() == "aus-datei"
+    finally:
+        if _alt is None:
+            os.environ.pop("UI_API_KEY", None)
+        else:
+            os.environ["UI_API_KEY"] = _alt
+finally:
+    m.DATA_DIR = _env_vorher
+    import shutil as _sh
+    _sh.rmtree(_mappe, ignore_errors=True)
+
+# Und das Wichtigste: die .env darf das Repository nie erreichen.
+_ignore = open(os.path.join(PROJEKT, ".gitignore"), encoding="utf-8").read()
+assert ".env" in [z.strip() for z in _ignore.split("\n")], (
+    ".env steht nicht in .gitignore - der Schluessel koennte committet werden")
+assert os.path.exists(os.path.join(PROJEKT, ".env.beispiel")), (
+    ".env.beispiel fehlt - ohne Vorlage weiss niemand das Format")
+_vorlage = open(os.path.join(PROJEKT, ".env.beispiel"), encoding="utf-8").read()
+assert "UI_API_KEY=" in _vorlage
+# Die Vorlage GEHT mit ins Repository, darf also keinen echten Schluessel
+# tragen. Ein UniFi-Schluessel ist 32 Zeichen aus [A-Za-z0-9].
+import re as _re
+for _z in _vorlage.split("\n"):
+    if _z.strip().startswith("UI_API_KEY="):
+        _wert = _z.split("=", 1)[1].strip()
+        assert not _re.fullmatch(r"[A-Za-z0-9]{32}", _wert), (
+            "In .env.beispiel steht etwas, das wie ein echter Schluessel aussieht")
+print("36) Schluessel aus der .env, Vorlage ohne echten Wert           OK")
+
+
 print("\nAlle Pruefungen bestanden.")

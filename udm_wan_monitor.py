@@ -89,11 +89,47 @@ TIME_KEYS = ("metrictime", "timestamp", "time", "periodstart", "starttime", "dat
 # API
 # ----------------------------------------------------------------------------
 
+def _aus_env_datei(name):
+    """Einen Wert aus der .env neben diesem Skript lesen.
+
+    Bewusst winzig und ohne Bibliothek: KEY=WERT je Zeile, '#' als Kommentar,
+    Anfuehrungszeichen aussen werden abgestreift. Mehr braucht es nicht, und
+    eine Abhaengigkeit fuer vier Zeilen waere hier verkehrt - das Skript
+    kommt sonst mit der Standardbibliothek aus.
+
+    Die Datei gehoert NICHT ins Repository (.gitignore); .env.beispiel zeigt
+    das Format.
+    """
+    pfad = os.path.join(DATA_DIR, ".env")
+    if not os.path.exists(pfad):
+        return ""
+    try:
+        with open(pfad, encoding="utf-8") as handle:
+            for zeile in handle:
+                zeile = zeile.strip()
+                if not zeile or zeile.startswith("#") or "=" not in zeile:
+                    continue
+                schluessel, _, wert = zeile.partition("=")
+                if schluessel.strip() != name:
+                    continue
+                wert = wert.strip()
+                if len(wert) >= 2 and wert[0] == wert[-1] and wert[0] in "\"'":
+                    wert = wert[1:-1]
+                return wert.strip()
+    except OSError as exc:
+        print(f"Warnung: .env nicht lesbar ({exc}).")
+    return ""
+
+
 def api_key():
-    key = os.environ.get("UI_API_KEY", "").strip()
+    # Reihenfolge mit Bedacht: die Umgebungsvariable sticht die Datei. So
+    # ueberschreibt ein Lauf mit gesetzter Variable (Workflow, Dienst, ein
+    # Versuch mit einem anderen Schluessel) die Datei, ohne sie anzufassen.
+    key = os.environ.get("UI_API_KEY", "").strip() or _aus_env_datei("UI_API_KEY")
     if not key:
         sys.exit(
             "UI_API_KEY ist nicht gesetzt.\n"
+            "  .env-Datei:   UI_API_KEY=...  (neben diesem Skript)\n"
             "  Linux/macOS:  export UI_API_KEY='...'\n"
             "  PowerShell:   $env:UI_API_KEY='...'"
         )

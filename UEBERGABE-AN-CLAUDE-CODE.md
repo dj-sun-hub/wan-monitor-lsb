@@ -36,10 +36,22 @@ Die API liefert rueckwirkend, ein spaeterer Start holt vergangene Stunden nach.
 
 ## Umgang mit dem API-Key
 
-Der Key wird ausschliesslich als Umgebungsvariable UI_API_KEY gesetzt. Er darf
-nicht in eine Datei, nicht ins Repository, nicht in ein Skript und nicht in eine
-Chatnachricht geschrieben werden. Der Nutzer setzt ihn selbst. Ein frueher
-verwendeter Key wurde kompromittiert und ist zu ersetzen.
+Der Key steht in der Umgebungsvariablen UI_API_KEY oder in einer .env-Datei
+neben dem Skript (Format siehe .env.beispiel; die Variable sticht die Datei).
+Die .env steht in .gitignore. Er darf nicht ins Repository, nicht in ein Skript
+und nicht in eine Chatnachricht geschrieben werden. Der Nutzer setzt ihn selbst.
+
+Der frueher kompromittierte Key ist ersetzt (Nutzerbestaetigung 30.10.2026);
+der jetzige ist ein neuer. Zum Vergleichen ohne Anzeigen dienen die ersten
+acht Zeichen seines SHA-256.
+
+Auf dem Leitstand-PC liegt er verschluesselt in C:\WAN-Monitor\schluessel.xml,
+mit DPAPI an die MASCHINE gebunden - nicht an ein Konto, weil ihn dort niemand
+in einer Sitzung des Zielkontos anlegen kann (Richtlinien verbieten dem Konto
+den Prozessstart ueber die Fernverwaltung). Der Schutz liegt damit allein bei
+den Dateirechten: der Ordner ist auf das Zielkonto, SYSTEM und Administratoren
+beschraenkt, die Dateien erben das. Wer diese Rechte lockert, hebt den Schutz
+auf - siehe EINRICHTUNG-LEITSTAND-PC.md.
 
 ## Vorhandene Dateien
 

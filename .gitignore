@@ -14,3 +14,7 @@ wan_report.html
 wan_stand.txt
 public/index.html
 public/wan_stand.txt
+
+# Zugangsdaten. Der Schluessel darf nicht ins Repository - .env.beispiel
+# zeigt das Format und ist die Datei, die mitgeht.
+.env

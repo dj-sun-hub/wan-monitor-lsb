@@ -46,6 +46,17 @@ param(
     # Anzeige liefe nie los.
     [string]$Konto = "$env:USERDOMAIN\$env:USERNAME",
 
+    # Pfad zu python.exe. Ohne Angabe wird im PATH gesucht.
+    #
+    # Fuer ein mitgebrachtes "embeddable package" ausdruecklich angeben: das
+    # ist nicht installiert und steht in keinem PATH - schon gar nicht in dem
+    # von SYSTEM, unter dem die Ferneinrichtung laeuft.
+    [string]$PythonPfad,
+
+    # Den Schluessel nicht abfragen. Fuer einen Lauf ohne Konsole, bei dem
+    # der Schluessel in einem eigenen Schritt gesetzt wird.
+    [switch]$OhneSchluessel,
+
     # Nur pruefen und berichten, nichts aendern.
     [switch]$NurPruefen,
 
@@ -58,6 +69,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+# Fuer ProtectedData (Schluesseldatei). In Windows PowerShell 5.1 noetig, in
+# PowerShell 7 schon vorhanden und der Aufruf dort harmlos.
+Add-Type -AssemblyName System.Security
 
 $IchSelbst = "$env:USERDOMAIN\$env:USERNAME"
 # Laeuft das Skript unter einem anderen Konto als die spaetere Anzeige? Dann
@@ -106,9 +121,15 @@ if ($Konto -like "*\admin-*") {
     Hinweis "mit diesen Rechten. Lieber ein Einzweckkonto nehmen."
 }
 
-$python = (Get-Command python -ErrorAction SilentlyContinue).Source
+if ($PythonPfad) {
+    if (-not (Test-Path $PythonPfad)) { throw "Python nicht gefunden: $PythonPfad" }
+    $python = (Resolve-Path $PythonPfad).Path
+} else {
+    $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+}
 if (-not $python) {
-    throw "Python nicht gefunden. 3.9 oder neuer installieren und PATH pruefen."
+    throw "Python nicht gefunden. 3.9 oder neuer installieren und PATH pruefen, " +
+          "oder ein mitgebrachtes python.exe mit -PythonPfad angeben."
 }
 $version = (& $python -c "import sys;print('%d.%d' % sys.version_info[:2])").Trim()
 Gut "Python $version ($python)"
@@ -137,14 +158,51 @@ foreach ($pfad in @($Verzeichnis, $Protokoll)) {
 # liest jeder authentifizierte Benutzer die Messdaten mit - und, schlimmer,
 # die verschluesselte Schluesseldatei, die dann nur noch das Konto braucht.
 if (-not $NurPruefen) {
+    # (OI)(CI) sind VERERBUNGS-Flags und gelten nur fuer Ordner. Mit /T auch
+    # auf die Dateien angewendet ergeben sie Berechtigungen, die ins Leere
+    # zeigen: die Datei bleibt ohne jeden Zugriff, auch fuer SYSTEM. Am
+    # 30.10.2026 genau so passiert - python.exe hatte danach eine leere
+    # Zugriffsliste und liess sich nicht mehr starten ("Zugriff verweigert").
+    #
+    # Richtig: die Rechte NUR auf den Ordner, mit Vererbung, und die
+    # vorhandenen Kinder per /reset darauf zurueckfuehren.
+    # Reihenfolge ist entscheidend. /reset /T setzt AUCH den Ordner selbst
+    # auf Vererbung zurueck - danach erbt er von C:\, wo "Authentifizierte
+    # Benutzer: Aendern" steht. Die verschluesselte Schluesseldatei waere
+    # damit fuer jeden angemeldeten Benutzer lesbar, und weil die
+    # Verschluesselung an die MASCHINE gebunden ist (nicht an ein Konto),
+    # auch entschluesselbar. Die Dateirechte sind hier der einzige Schutz.
+    #
+    # Also: erst die Kinder von ihren eigenen Eintraegen befreien, DANN den
+    # Ordner schliessen - die Kinder erben das Ergebnis.
+    & icacls.exe $Verzeichnis /reset /T /C /Q 2>$null
+
+    $gruppe = "Administratoren"
     & icacls.exe $Verzeichnis /inheritance:r /grant:r `
-        "${Konto}:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administratoren:(OI)(CI)F" /T /C /Q 2>$null
+        "${Konto}:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "${gruppe}:(OI)(CI)F" /C /Q 2>$null
     if ($LASTEXITCODE -ne 0) {
         # Englisches Windows kennt keine "Administratoren".
+        $gruppe = "Administrators"
         & icacls.exe $Verzeichnis /inheritance:r /grant:r `
-            "${Konto}:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" /T /C /Q 2>$null
+            "${Konto}:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "${gruppe}:(OI)(CI)F" /C /Q 2>$null
     }
-    if ($LASTEXITCODE -eq 0) { Gut "Rechte gesetzt (nur $Konto, SYSTEM, Administratoren)" }
+    if ($LASTEXITCODE -eq 0) {
+        Gut "Rechte gesetzt (nur $Konto, SYSTEM, $gruppe; Kinder erben)"
+
+        # Gegenprobe, weil der Fehler oben lautlos war: eine Datei muss
+        # wieder lesbar sein.
+        $probe = Get-ChildItem $Verzeichnis -File -Recurse -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+        if ($probe) {
+            try {
+                $null = [IO.File]::OpenRead($probe.FullName).Close()
+                Gut "Gegenprobe: Dateien sind lesbar"
+            } catch {
+                Hinweis "Gegenprobe FEHLGESCHLAGEN: $($probe.Name) ist nicht lesbar."
+                Hinweis "Reparatur: icacls '$Verzeichnis' /reset /T"
+            }
+        }
+    }
     else { Hinweis "Rechte konnten nicht gesetzt werden - bitte von Hand pruefen." }
 }
 
@@ -174,36 +232,51 @@ foreach ($datei in @("wan_traffic.csv", "monitor_state.json")) {
 # ------------------------------------------------------------ 2) Schluessel
 Schritt "API-Schluessel"
 
-if ($FremdesKonto) {
-    # Weder anlegen noch pruefen: DPAPI entschluesselt nur fuer das Konto,
-    # das verschluesselt hat. Ein "fehlt"-Befund waere hier bedeutungslos und
-    # ein neu angelegter Schluessel waere fuer die Anzeige wertlos.
-    if (Test-Path $Schluesseldatei) {
-        Gut "Schluesseldatei liegt vor (ob $Konto sie lesen kann, prueft nur $Konto selbst)"
-    } else {
-        Hinweis "Schluesseldatei fehlt. Sie muss in einer Sitzung von $Konto"
-        Hinweis "angelegt werden - die Verschluesselung haengt an diesem Konto."
-    }
-} elseif (Test-Path $Schluesseldatei) {
-    # Lesen beweist, dass DPAPI unter DIESEM Konto entschluesseln kann. Der
-    # Klartext wird nicht angezeigt und nicht aufbewahrt.
+# DPAPI mit Maschinen- statt Kontobindung.
+#
+# Die kontogebundene Form (ConvertFrom-SecureString) waere enger, setzt aber
+# voraus, dass der Schluessel in einer Sitzung des Zielkontos angelegt wird.
+# Auf ws007 verbieten Richtlinien diesem Konto den Prozessstart ueber die
+# Fernverwaltung - die Einrichtung laeuft dort als SYSTEM, und ein von SYSTEM
+# kontogebunden verschluesselter Schluessel waere fuer die Anzeige wertlos.
+#
+# Was die Maschinenbindung kostet: ein lokaler Administrator dieses Rechners
+# kann entschluesseln. Er kann die Datei aber ohnehin lesen und sich als das
+# Zielkonto ausgeben - der Unterschied ist gering. Der Schutz liegt bei den
+# Dateirechten (siehe oben) und beim Zugang zum Geraet.
+if (Test-Path $Schluesseldatei) {
     try {
-        $null = Get-Content $Schluesseldatei -Raw | ConvertTo-SecureString
-        Gut "Schluesseldatei vorhanden und von diesem Konto lesbar"
+        $rohdaten = [Convert]::FromBase64String((Get-Content $Schluesseldatei -Raw).Trim())
+        $null = [Security.Cryptography.ProtectedData]::Unprotect(
+                    $rohdaten, $null, "LocalMachine")
+        Gut "Schluesseldatei vorhanden und auf diesem Rechner lesbar"
     } catch {
-        Hinweis "Schluesseldatei vorhanden, aber von diesem Konto NICHT lesbar."
-        Hinweis "DPAPI bindet sie an Konto und Maschine. Unter einem anderen"
-        Hinweis "Konto angelegt oder von einem anderen Rechner kopiert?"
+        Hinweis "Schluesseldatei vorhanden, aber nicht lesbar: $($_.Exception.Message)"
+        Hinweis "Von einem anderen Rechner kopiert, oder noch im alten Format?"
         Hinweis "Loeschen und neu anlegen: Remove-Item '$Schluesseldatei'"
     }
 } elseif ($NurPruefen) {
     Hinweis "Schluesseldatei fehlt - wuerde abgefragt"
+} elseif ($OhneSchluessel) {
+    Hinweis "Schluesseldatei fehlt - wird uebersprungen (-OhneSchluessel)."
+    Hinweis "Ohne sie startet der Monitor nicht."
 } else {
     Write-Host "  Der Schluessel wird verschluesselt abgelegt (DPAPI, gebunden an"
-    Write-Host "  dieses Konto und diesen Rechner). Die Eingabe bleibt verdeckt."
+    Write-Host "  diesen Rechner). Die Eingabe bleibt verdeckt."
     $sicher = Read-Host -AsSecureString "  UniFi API-Schluessel"
     if ($sicher.Length -eq 0) { throw "Kein Schluessel eingegeben, abgebrochen." }
-    $sicher | ConvertFrom-SecureString | Set-Content $Schluesseldatei -Encoding ASCII
+    $zeiger = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sicher)
+    try {
+        $klar = [Runtime.InteropServices.Marshal]::PtrToStringAuto($zeiger)
+        $bytes = [Text.Encoding]::UTF8.GetBytes($klar)
+        $geschuetzt = [Security.Cryptography.ProtectedData]::Protect(
+                          $bytes, $null, "LocalMachine")
+        Set-Content $Schluesseldatei ([Convert]::ToBase64String($geschuetzt)) -Encoding ASCII
+        # Klartext und Bytes sofort aus dem Speicher nehmen.
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($zeiger)
+    }
     Gut "Schluesseldatei angelegt"
 }
 }  # Ende: nicht bei -NurStarter
@@ -221,19 +294,48 @@ $inhaltMonitor = @"
 `$ErrorActionPreference = "Stop"
 Set-Location "$Verzeichnis"
 
-`$sicher = Get-Content "$Schluesseldatei" -Raw | ConvertTo-SecureString
-`$zeiger = [Runtime.InteropServices.Marshal]::SecureStringToBSTR(`$sicher)
-try {
-    `$env:UI_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringAuto(`$zeiger)
-} finally {
-    # Den Klartext aus dem unverwalteten Speicher nehmen, sobald er in der
-    # Prozessumgebung steht.
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR(`$zeiger)
+# Protokoll ZUERST bestimmen. Vorher stand diese Zeile unten, und alles, was
+# davor schiefging, verschwand spurlos: die Aufgabe meldete nur "Ergebnis 1",
+# das Protokoll blieb 0 Bytes gross. Am 30.10.2026 kostete das eine halbe
+# Stunde Suche nach einem Fehler, der ein einziger Satz gewesen waere.
+# Eine Datei je Tag, damit sie nicht unbegrenzt waechst.
+`$log = Join-Path "$Protokoll" ("monitor-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
+
+function Notiz(`$text) {
+    Add-Content `$log ((Get-Date -Format "HH:mm:ss") + " " + `$text)
 }
 
-# Eine Protokolldatei je Tag, damit sie nicht unbegrenzt waechst.
-`$log = Join-Path "$Protokoll" ("monitor-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
-& "$python" udm_wan_monitor.py --loop --serve --port $Port *>> `$log
+try {
+    # DPAPI mit Maschinenbindung - Begruendung in einrichten-leitstand.ps1.
+    # In Windows PowerShell 5.1 - und die startet die Aufgabenplanung - muss
+    # System.Security erst geladen werden; in PowerShell 7 ist der Aufruf
+    # harmlos.
+    Add-Type -AssemblyName System.Security
+    `$rohdaten = [Convert]::FromBase64String((Get-Content "$Schluesseldatei" -Raw).Trim())
+    `$bytes = [Security.Cryptography.ProtectedData]::Unprotect(
+                 `$rohdaten, `$null, "LocalMachine")
+    try {
+        `$env:UI_API_KEY = [Text.Encoding]::UTF8.GetString(`$bytes)
+    } finally {
+        [Array]::Clear(`$bytes, 0, `$bytes.Length)
+    }
+    Notiz "Start, Schluessel gelesen."
+} catch {
+    Notiz ("ABBRUCH beim Schluessel: " + `$_.Exception.Message)
+    throw
+}
+
+try {
+    # -u (ungepuffert): sonst haelt Python seine Ausgabe zurueck,
+    # solange der Prozess laeuft - bei einem Dauerlaeufer also fuer
+    # immer. Das Protokoll blieb dadurch leer, obwohl jede Minute
+    # gemessen wurde.
+    & "$python" -u udm_wan_monitor.py --loop --serve --port $Port *>> `$log
+    Notiz ("Monitor beendet, Rueckgabewert " + `$LASTEXITCODE + ".")
+} catch {
+    Notiz ("ABBRUCH beim Start von Python: " + `$_.Exception.Message)
+    throw
+}
 "@
 Tun "geschrieben: starte-monitor.ps1" {
     Set-Content $StarterMonitor $inhaltMonitor -Encoding UTF8
@@ -336,11 +438,35 @@ if (-not $NurPruefen) {
     & powercfg.exe /change hibernate-timeout-ac 0
     Gut "Bildschirm, Standby, Platte und Ruhezustand auf 'nie' (Netzbetrieb)"
 
+    # HKCU zeigt auf das Profil des AUSFUEHRENDEN Kontos. Bei der
+    # Ferneinrichtung ist das SYSTEM - dort eingetragen haette es auf die
+    # Anzeige keinerlei Wirkung. Also in die Struktur des Zielkontos, die
+    # geladen ist, solange es angemeldet ist (und das ist es: die Anzeige
+    # laeuft ja).
     $desktop = "HKCU:\Control Panel\Desktop"
-    Set-ItemProperty $desktop -Name ScreenSaveActive -Value "0"
-    Set-ItemProperty $desktop -Name ScreenSaverIsSecure -Value "0"
-    Set-ItemProperty $desktop -Name ScreenSaveTimeOut -Value "0"
-    Gut "Bildschirmschoner aus"
+    if ($FremdesKonto) {
+        $desktop = $null
+        try {
+            $sid = (New-Object Security.Principal.NTAccount($Konto)).Translate(
+                       [Security.Principal.SecurityIdentifier]).Value
+            if (Test-Path "Registry::HKEY_USERS\$sid\Control Panel\Desktop") {
+                $desktop = "Registry::HKEY_USERS\$sid\Control Panel\Desktop"
+                Gut "Zielprofil gefunden ($sid)"
+            } else {
+                Hinweis "Profil von $Konto ist nicht geladen - das Konto ist"
+                Hinweis "gerade nicht angemeldet. Bildschirmschoner bitte in"
+                Hinweis "seiner Sitzung abschalten, sonst verdeckt er die Anzeige."
+            }
+        } catch {
+            Hinweis "Konto $Konto nicht aufloesbar: $($_.Exception.Message)"
+        }
+    }
+    if ($desktop) {
+        Set-ItemProperty $desktop -Name ScreenSaveActive -Value "0"
+        Set-ItemProperty $desktop -Name ScreenSaverIsSecure -Value "0"
+        Set-ItemProperty $desktop -Name ScreenSaveTimeOut -Value "0"
+        Gut "Bildschirmschoner aus"
+    }
 } else {
     Hinweis "wuerde Energieoptionen und Bildschirmschoner setzen"
 }
