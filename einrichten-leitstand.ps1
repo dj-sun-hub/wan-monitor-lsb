@@ -36,6 +36,16 @@ param(
     # ohne ein Kennwort zu beruehren.
     [switch]$MitAutologin,
 
+    # Das Konto, unter dem Monitor und Kiosk laufen sollen, als
+    # "DOMAENE\Benutzer". Standard ist das Konto, das dieses Skript ausfuehrt.
+    #
+    # Ausdruecklich angeben, wenn das Skript unter einem ANDEREN Konto laeuft
+    # als die spaetere Anzeige - etwa bei der Ferneinrichtung, wo die
+    # maschinenweiten Teile ein Administrator macht. Ohne diesen Parameter
+    # bekaeme dort der Administrator die Aufgaben und die Dateirechte, und die
+    # Anzeige liefe nie los.
+    [string]$Konto = "$env:USERDOMAIN\$env:USERNAME",
+
     # Nur pruefen und berichten, nichts aendern.
     [switch]$NurPruefen,
 
@@ -49,7 +59,11 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$Konto = "$env:USERDOMAIN\$env:USERNAME"
+$IchSelbst = "$env:USERDOMAIN\$env:USERNAME"
+# Laeuft das Skript unter einem anderen Konto als die spaetere Anzeige? Dann
+# kann es die DPAPI-Schluesseldatei weder anlegen noch pruefen - das muss in
+# der Sitzung des Zielkontos passieren.
+$FremdesKonto = $Konto -ne $IchSelbst
 $Adresse = "http://127.0.0.1:$Port/"
 $StarterMonitor = Join-Path $Verzeichnis "starte-monitor.ps1"
 $StarterKiosk = Join-Path $Verzeichnis "starte-kiosk.ps1"
@@ -68,6 +82,7 @@ function Tun($text, [scriptblock]$block) {
 
 Write-Host "Leitstand-PC einrichten" -ForegroundColor White
 Write-Host "  Konto       : $Konto"
+if ($FremdesKonto) { Write-Host "  ausgefuehrt von: $IchSelbst" }
 Write-Host "  Verzeichnis : $Verzeichnis"
 Write-Host "  Adresse     : $Adresse"
 if ($NurPruefen) { Hinweis "Nur-Pruefen-Lauf, es wird nichts geaendert." }
@@ -84,7 +99,7 @@ if ($NurStarter -and -not (Test-Path $Verzeichnis)) {
 # Kein Dauerlauf unter einem Admin-Konto, ohne es gesagt zu haben. Der
 # Monitor braucht keine Domaenenrechte - und ein Kiosk mit Autologin gibt
 # jedem mit Zugang zum Raum genau die Rechte dieses Kontos.
-if ($env:USERNAME -like "admin-*") {
+if ($Konto -like "*\admin-*") {
     Hinweis "Dieses Konto sieht nach einem Administrationskonto aus."
     Hinweis "Der Monitor braucht keinerlei Domaenenrechte. Mit Autologin"
     Hinweis "bekommt jeder, der an das Geraet kommt, eine offene Sitzung"
@@ -159,7 +174,17 @@ foreach ($datei in @("wan_traffic.csv", "monitor_state.json")) {
 # ------------------------------------------------------------ 2) Schluessel
 Schritt "API-Schluessel"
 
-if (Test-Path $Schluesseldatei) {
+if ($FremdesKonto) {
+    # Weder anlegen noch pruefen: DPAPI entschluesselt nur fuer das Konto,
+    # das verschluesselt hat. Ein "fehlt"-Befund waere hier bedeutungslos und
+    # ein neu angelegter Schluessel waere fuer die Anzeige wertlos.
+    if (Test-Path $Schluesseldatei) {
+        Gut "Schluesseldatei liegt vor (ob $Konto sie lesen kann, prueft nur $Konto selbst)"
+    } else {
+        Hinweis "Schluesseldatei fehlt. Sie muss in einer Sitzung von $Konto"
+        Hinweis "angelegt werden - die Verschluesselung haengt an diesem Konto."
+    }
+} elseif (Test-Path $Schluesseldatei) {
     # Lesen beweist, dass DPAPI unter DIESEM Konto entschluesseln kann. Der
     # Klartext wird nicht angezeigt und nicht aufbewahrt.
     try {
