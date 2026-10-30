@@ -21,13 +21,18 @@ die Seite daneben, der Browser zeigt sie.
 | **Python** | 3.9 oder neuer, Standardinstallation. Keine Pakete — das Skript nutzt ausschließlich die Standardbibliothek |
 | **Internet** | ausgehend https 443 zu `api.ui.com`. Nichts eingehend, kein offener Port |
 | **Platz** | rund 50 MB. Die Messdatei wächst etwa 3,5 MB in drei Monaten |
-| **Konto** | ein gewöhnlicher Benutzer. Der Monitor braucht keine Domänenrechte — er redet mit der UniFi-Cloud und schreibt Dateien |
+| **Konto** | `j.eismann` (seit 30.10.2026). Der Monitor braucht keine Domänenrechte — er redet mit der UniFi-Cloud und schreibt Dateien |
 
-> **Zum Konto:** Der Bildschirm lief anfangs unter einem Domänen-Administrator.
-> Das ist ein dauerhaft angemeldetes Konto mit den höchsten Rechten der
-> Domäne, an einem Bildschirm in einem Flur. Der Monitor rechtfertigt das
-> nicht — er braucht nichts davon. Ein eigenes Konto mit Rechten nur auf sein
-> eigenes Verzeichnis kostet fünf Minuten.
+> **Zum Konto:** Der Bildschirm lief anfangs unter einem
+> Domänen-Administrator — dauerhaft angemeldet, an einem Bildschirm in einem
+> Flur. Das ist am 30.10.2026 auf ein gewöhnliches Benutzerkonto geändert
+> worden. Damit ist das Wesentliche erledigt.
+>
+> Zwei Punkte bleiben, weil es ein persönliches und kein Dienstkonto ist: ein
+> Kennwortwechsel oder eine Sperrung hält den Monitor an, und die
+> Schlüsseldatei ist an das Konto gebunden, also überall dort lesbar, wo
+> dasselbe Profil angemeldet ist. Beides ist vertretbar; ein eigenes
+> Dienstkonto wäre die saubere Form, falls der Leitstand dauerhaft bleibt.
 
 ## Verzeichnis
 
@@ -40,7 +45,7 @@ C:\WAN-Monitor\
     wan_stand.txt           Zeitstempel für die Neuladeprüfung der Seite
 ```
 
-Rechte: Vollzugriff nur für das Monitor-Konto und Administratoren.
+Rechte: Vollzugriff nur für `j.eismann` und Administratoren.
 
 ## Der API-Schlüssel
 
@@ -57,7 +62,9 @@ Schwesterprojekt WAC für `starface.xml` verwendet wird. Verschlüsselt an
 Konto **und** Maschine gebunden: die Datei ist auf einem anderen Rechner
 oder unter einem anderen Konto wertlos.
 
-Anlegen, einmalig, **angemeldet als das Monitor-Konto**:
+Anlegen, einmalig, **angemeldet als das Sitzungskonto auf dem
+Leitstand-PC** (DPAPI bindet die Datei an das Konto — unter einem anderen
+Konto angelegt ist sie dort wertlos):
 
 ```powershell
 # Fragt den Schlüssel ab, ohne ihn auf den Bildschirm zu schreiben
@@ -88,9 +95,9 @@ Eine Aufgabe, die den Starter bei der Anmeldung startet:
 
 | Feld | Wert |
 |---|---|
-| Trigger | Bei Anmeldung des Monitor-Kontos |
+| Trigger | Bei Anmeldung von `j.eismann` |
 | Aktion | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\WAN-Monitor\starte-monitor.ps1` |
-| Ausführen als | das Monitor-Konto, **nicht** SYSTEM (DPAPI ist an das Konto gebunden) |
+| Ausführen als | `j.eismann`, **nicht** SYSTEM (DPAPI ist an das Konto gebunden) |
 | Neu starten | bei Fehler, alle 5 Minuten, bis zu 999 Mal |
 | Zeitlimit | keines (der Dauerlauf soll laufen) |
 
@@ -114,7 +121,7 @@ per `fetch('wan_stand.txt')` prüft, ob ein neuerer Stand vorliegt, und
 Chromium das für lokale Dateien verweigert. Der Server ist ein Dutzend Zeilen
 Standardbibliothek, kein IIS.
 
-Browser im Kioskmodus, in derselben Aufgabe oder im Autostart des Kontos:
+Browser im Kioskmodus, in derselben Aufgabe oder im Autostart des Sitzungskontos:
 
 ```
 msedge.exe --kiosk http://127.0.0.1:8787/ --edge-kiosk-type=fullscreen --no-first-run
@@ -137,7 +144,8 @@ Ohne das hängt die Messhistorie an einer einzelnen Platte.
 
 ## Umstellung
 
-1. Skript und Daten auf den Rechner, Konto und Schlüsseldatei anlegen
+1. Skript und Daten auf den Rechner, Schlüsseldatei unter dem
+   Sitzungskonto anlegen
 2. Aufgabe und Kioskbrowser einrichten, laufen lassen
 3. Ein paar Tage gegen GitHub Pages vergleichen — beide Seiten zeigen
    dieselben Messwerte, weil beide dieselbe API fragen
