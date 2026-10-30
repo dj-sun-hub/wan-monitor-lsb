@@ -963,4 +963,54 @@ for _regel in ("filter: url(#rissglas)", '.mini-chart-col::after'):
 print("34) Aussetzer (5-20 Min) getrennt von echtem Link Lost          OK")
 
 
+# ---------------------------------------------------------------------------
+# 35) Betrieb am Leitstand-Bildschirm: lokaler Webserver
+# ---------------------------------------------------------------------------
+# Die Seite prueft per fetch('wan_stand.txt'), ob ein neuerer Stand
+# vorliegt. Bei einer file://-Adresse verweigert Chromium das, also laeuft
+# ein winziger Server auf localhost. Zwei Dinge muessen stimmen: '/' zeigt
+# die Uebersicht (sonst steht ein Dateiname in der Kioskverknuepfung), und
+# nichts wird zwischengespeichert (sonst laedt die Seite nie neu).
+import urllib.request as _req
+
+_srv, _adresse = m.serve_local(0)          # Port 0 = einen freien nehmen
+try:
+    assert _adresse.startswith("http://127.0.0.1:"), _adresse
+    # Nur auf der Schleife, nicht im Netz: die Seite gehoert an den
+    # Bildschirm daneben, nicht auf jeden Rechner der Domaene.
+    assert _srv.server_address[0] == "127.0.0.1", _srv.server_address
+
+    with _req.urlopen(_adresse, timeout=5) as _a:
+        _seite = _a.read().decode("utf-8", "replace")
+        assert _a.headers.get("Cache-Control") == "no-store", dict(_a.headers)
+    assert "<html" in _seite.lower(), _seite[:200]
+
+    with _req.urlopen(_adresse + "wan_stand.txt", timeout=5) as _a:
+        _stand = _a.read().decode("utf-8").strip()
+        assert _a.headers.get("Cache-Control") == "no-store", dict(_a.headers)
+    # Die Standdatei traegt einen lesbaren Zeitpunkt - daran entscheidet die
+    # Seite, ob sie sich neu laedt.
+    datetime.fromisoformat(_stand)
+finally:
+    _srv.shutdown()
+    _srv.server_close()
+
+# Der Dauerlauf muss einen Fehlschlag ueberstehen. Im Workflow war jeder
+# Poll ein eigener Prozess, ein Absturz kostete eine Minute. Auf dem Thin
+# Client laeuft EIN Prozess ueber Wochen: beendet ihn eine Ausnahme, friert
+# die Wandanzeige auf dem letzten Stand ein, ohne dass es auffaellt - die
+# Seite ist ja noch da. Deshalb muss die Schleife die Ausnahme fangen.
+_quelle = open(os.path.join(PROJEKT, "udm_wan_monitor.py"), encoding="utf-8").read()
+_schleife = _quelle.split("    while True:")[-1]
+assert "except Exception as exc:" in _schleife, (
+    "Dauerlauf faengt keine Ausnahme - ein Fehler beendet den Monitor")
+assert "except KeyboardInterrupt:" in _schleife, (
+    "Strg+C muss beenden, nicht als Poll-Fehler gelten")
+# ...aber --once (ein Lauf, Aufrufer wertet den Rueckgabewert) muss weiter
+# mit einem Fehlercode enden, sonst sieht die Aufgabenplanung Erfolg.
+assert "if args.once:\n                raise" in _schleife, (
+    "--once verschluckt den Fehler")
+print("35) Lokaler Webserver und sturzfester Dauerlauf                 OK")
+
+
 print("\nAlle Pruefungen bestanden.")

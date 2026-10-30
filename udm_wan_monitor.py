@@ -34,6 +34,7 @@ Aufrufe
 import argparse
 import calendar
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import csv
 from collections import deque
 import heapq
@@ -44,7 +45,9 @@ import os
 import random
 import re
 import sys
+import threading
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -3508,6 +3511,49 @@ def discover(host_id=DEFAULT_HOST_ID):
           "Konsole kann zu MONITORED_HOSTS hinzugefuegt werden.")
 
 
+class _LeitstandHandler(SimpleHTTPRequestHandler):
+    """Liefert die Dateien aus DATA_DIR, '/' ist die Uebersichtsseite.
+
+    Ohne das Mapping muesste der Kioskbrowser auf
+    http://127.0.0.1:8787/wan_report.html zeigen - ein Dateiname in einer
+    Verknuepfung, die niemand pflegt, wenn er sich mal aendert."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs["directory"] = DATA_DIR
+        super().__init__(*args, **kwargs)
+
+    def translate_path(self, path):
+        if path in ("/", "/index.html"):
+            return HTML_PATH
+        return super().translate_path(path)
+
+    def end_headers(self):
+        # Die Seite holt wan_stand.txt im Sekundentakt und entscheidet
+        # daran, ob sie sich neu laedt. Ein Zwischenspeicher wuerde genau
+        # diesen Mechanismus aushebeln, und zwischengespeichert werden muss
+        # hier ohnehin nichts: die Dateien liegen auf derselben Platte.
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def log_message(self, *args):
+        # Ein Zugriff je Sekunde ergibt 86400 Zeilen am Tag. Die Ausgabe des
+        # Monitors soll die Messpunkte zeigen, nicht den Webserver.
+        pass
+
+
+def serve_local(port):
+    """Startet den Webserver im Hintergrund und gibt seine Adresse zurueck.
+
+    Bindet ausdruecklich nur an 127.0.0.1: die Seite ist fuer den Bildschirm
+    gedacht, der daneben haengt, und hat im Netz nichts zu suchen. Der
+    Thread ist ein Daemon - endet der Monitor, endet auch der Server."""
+    server = ThreadingHTTPServer(("127.0.0.1", port), _LeitstandHandler)
+    thread = threading.Thread(target=server.serve_forever,
+                              name="leitstand-http", daemon=True)
+    thread.start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}/"
+
+
 def main():
     parser = argparse.ArgumentParser(description="WAN-Volumen mehrerer UDM Pro messen (Dauerbetrieb)")
     parser.add_argument("--start", help="Messbeginn, z.B. 2026-08-07T12:00 (lokale Zeit). "
@@ -3521,6 +3567,11 @@ def main():
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--report", action="store_true")
+    parser.add_argument("--serve", action="store_true",
+                        help="Die Uebersicht zusaetzlich auf 127.0.0.1 ausliefern "
+                             "(fuer den Kioskbrowser am Leitstand-Bildschirm).")
+    parser.add_argument("--port", type=int, default=8787,
+                        help="Port fuer --serve (Standard 8787)")
     args = parser.parse_args()
 
     if args.discover:
@@ -3621,29 +3672,58 @@ def main():
         targets.append(ziel)
         print(f"Ziel: {name} (site={ziel[2]}, lte_mac={ziel[3]})")
 
+    if args.serve:
+        _server, adresse = serve_local(args.port)
+        print(f"Uebersicht erreichbar unter {adresse}")
+
     rows = load_rows()
+    # Fehlschlaege in Folge. Ein einzelner ist Alltag (ein Standort nicht
+    # erreichbar, die API kurz weg) und darf nicht auffallen; eine Serie
+    # heisst, dass etwas Grundsaetzliches kaputt ist.
+    fehler_serie = 0
     while True:
-        rows, added = poll(rows, targets, args.interval, sim_baseline)
-        # Latenz fuer das Systemschema. Eigener Aufruf, aber hoechstens alle
-        # LATENCY_REFRESH_S - die API liefert ohnehin nur 5-Minuten-Punkte.
-        # Fehlschlaege sind hier folgenlos (siehe refresh_latency).
-        refresh_latency(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
-        # Klima der Standorte, eigener Takt (siehe SENSOR_REFRESH_S).
-        # Fehlschlaege sind auch hier folgenlos.
-        refresh_sensors(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
-        refresh_uplinks(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
-        # Baseline sofort sichern: scheitert die Berichtserzeugung danach,
-        # waere der frisch geholte SIM-Zaehlerstand sonst verloren und der
-        # naechste Lauf muesste neu baselinen (ein Intervall ohne Delta).
-        save_state()
-        # write_reports() ergaenzt state um die Ereignisprotokoll-Eintraege -
-        # die brauchen ein ZWEITES save_state() danach, sonst waeren die
-        # Statuswechsel beim naechsten Prozessstart wieder weg (--once startet
-        # je Poll einen neuen Prozess) und wuerden endlos neu gemeldet.
-        path = write_reports(rows, start, console_names, state=state)
-        save_state()
-        stamp = datetime.now().astimezone().strftime("%H:%M:%S")
-        print(f"[{stamp}] {added} neue Messpunkte, {len(rows)} gesamt -> {path}")
+        try:
+            rows, added = poll(rows, targets, args.interval, sim_baseline)
+            # Latenz fuer das Systemschema. Eigener Aufruf, aber hoechstens alle
+            # LATENCY_REFRESH_S - die API liefert ohnehin nur 5-Minuten-Punkte.
+            # Fehlschlaege sind hier folgenlos (siehe refresh_latency).
+            refresh_latency(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
+            # Klima der Standorte, eigener Takt (siehe SENSOR_REFRESH_S).
+            # Fehlschlaege sind auch hier folgenlos.
+            refresh_sensors(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
+            refresh_uplinks(state, {h: n for n, h in targets_cfg}, datetime.now(timezone.utc))
+            # Baseline sofort sichern: scheitert die Berichtserzeugung danach,
+            # waere der frisch geholte SIM-Zaehlerstand sonst verloren und der
+            # naechste Lauf muesste neu baselinen (ein Intervall ohne Delta).
+            save_state()
+            # write_reports() ergaenzt state um die Ereignisprotokoll-Eintraege -
+            # die brauchen ein ZWEITES save_state() danach, sonst waeren die
+            # Statuswechsel beim naechsten Prozessstart wieder weg (--once startet
+            # je Poll einen neuen Prozess) und wuerden endlos neu gemeldet.
+            path = write_reports(rows, start, console_names, state=state)
+            save_state()
+            stamp = datetime.now().astimezone().strftime("%H:%M:%S")
+            print(f"[{stamp}] {added} neue Messpunkte, {len(rows)} gesamt -> {path}")
+            fehler_serie = 0
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            # Im Workflow war jeder Poll ein eigener Prozess: ein Absturz
+            # kostete eine Minute. Hier laeuft EIN Prozess ueber Wochen, und
+            # dieselbe Ausnahme wuerde den Monitor beenden - die Wandanzeige
+            # friert dann auf dem letzten Stand ein, ohne dass es auffaellt,
+            # weil die Seite ja noch da ist. Also weitermachen und sagen,
+            # was war.
+            fehler_serie += 1
+            stamp = datetime.now().astimezone().strftime("%H:%M:%S")
+            print(f"[{stamp}] Poll fehlgeschlagen ({fehler_serie}. in Folge): "
+                  f"{type(exc).__name__}: {exc}")
+            if fehler_serie == 1:
+                # Nur beim ersten: eine Serie wuerde das Log sonst mit
+                # identischen Ablaeufen fuellen.
+                traceback.print_exc()
+            if args.once:
+                raise
         if args.once:
             break
         time.sleep(args.interval)
