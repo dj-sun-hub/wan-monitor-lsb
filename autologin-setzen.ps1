@@ -86,12 +86,21 @@ if (-not (Test-Path $freigabe)) {
 # Das Gegenstueck. Es liest das Kennwort aus der Zwischendatei, loescht sie
 # als Erstes und ruft Autologon auf. Ausgegeben wird nur, was ueberpruefbar
 # ist - nie das Kennwort.
+#
+# Die Werte kommen aus einer Datei NEBEN dem Gegenstueck, nicht als
+# Parameter. Ueber "cmd /c" durch PsExec hindurch ueberlebten die
+# Anfuehrungszeichen nicht: der Aufruf scheiterte an der Parameterbindung
+# ("kein Positionsparameter gefunden, der das Argument '-Domaene'
+# akzeptiert"), und Autologon lief nie - waehrend das Kennwort schon in der
+# Zwischendatei lag. In der Wertedatei steht kein Geheimnis, nur Pfade und
+# der Kontoname.
 $gegenstueck = @'
-param([Parameter(Mandatory = $true)][string]$Zwischendatei,
-      [Parameter(Mandatory = $true)][string]$Benutzer,
-      [Parameter(Mandatory = $true)][string]$Domaene,
-      [Parameter(Mandatory = $true)][string]$Autologon)
 $ErrorActionPreference = "Stop"
+$werte = Get-Content (Join-Path $PSScriptRoot "autologin-werte.json") -Raw | ConvertFrom-Json
+$Zwischendatei = $werte.Zwischendatei
+$Benutzer      = $werte.Benutzer
+$Domaene       = $werte.Domaene
+$Autologon     = $werte.Autologon
 
 if (-not (Test-Path $Zwischendatei)) { Write-Output "FEHLER: Zwischendatei fehlt"; exit 1 }
 $klar = (Get-Content $Zwischendatei -Raw)
@@ -170,7 +179,15 @@ if (Test-Path (Join-Path $freigabe "Autologon64.exe")) {
 $gegenPfad = Join-Path $PSScriptRoot "autologin-ablegen.tmp.ps1"
 Set-Content $gegenPfad $gegenstueck -Encoding UTF8
 Copy-Item $gegenPfad (Join-Path $freigabe "autologin-ablegen.ps1") -Force
-Gut "Gegenstueck uebertragen"
+# Pfade und Kontoname - kein Geheimnis. Dass sie als Datei statt als
+# Parameter gehen, ist die Lehre aus dem Fehlversuch (siehe oben).
+@{
+    Zwischendatei = $zwischenDatei
+    Benutzer      = $Benutzer
+    Domaene       = $Domaene
+    Autologon     = $autologonZiel
+} | ConvertTo-Json | Set-Content (Join-Path $freigabe "autologin-werte.json") -Encoding UTF8
+Gut "Gegenstueck und Werte uebertragen"
 
 # ------------------------------------------------------------- Kennwort
 Write-Host ""
@@ -185,8 +202,6 @@ $arg = @("\\$Rechner", "-s", "-accepteula", "-nobanner")
 if ($Anmeldung) { $arg += @("-u", $Anmeldung) }
 $arg += @("cmd", "/c",
           "powershell -NoProfile -ExecutionPolicy Bypass -File $gegenDatei " +
-          "-Zwischendatei `"$zwischenDatei`" -Benutzer `"$Benutzer`" " +
-          "-Domaene `"$Domaene`" -Autologon `"$autologonZiel`" " +
           "> $Verzeichnis\logs\autologin.txt 2>&1")
 
 $zeiger = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sicher)
@@ -212,7 +227,8 @@ Write-Host "  Ergebnis vom Rechner:" -ForegroundColor White
 Get-Content (Join-Path $freigabe "logs\autologin.txt") | ForEach-Object { "  | $_" }
 
 # Das Gegenstueck hat seinen Zweck getan.
-Remove-Item (Join-Path $freigabe "autologin-ablegen.ps1") -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $freigabe "autologin-ablegen.ps1"),
+            (Join-Path $freigabe "autologin-werte.json") -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host @"
